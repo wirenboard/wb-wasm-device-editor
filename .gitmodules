@@ -1,0 +1,6 @@
+[submodule "submodule/homeui"]
+	path = submodule/homeui
+	url = git@github.com:wirenboard/homeui.git
+[submodule "submodule/wb-mqtt-serial"]
+	path = submodule/wb-mqtt-serial
+	url = git@github.com:wirenboard/wb-mqtt-serial.git
