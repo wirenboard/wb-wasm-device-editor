@@ -1,0 +1,8 @@
+# common
+.clang-format
+wasm/module.*
+wblib/json
+
+# assets
+wasm/assets/*
+!wasm/assets/*-request.schema.json

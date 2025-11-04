@@ -4,3 +4,6 @@
 [submodule "submodule/wb-mqtt-serial"]
 	path = submodule/wb-mqtt-serial
 	url = git@github.com:wirenboard/wb-mqtt-serial.git
+[submodule "submodule/valijson"]
+	path = submodule/valijson
+	url = git@github.com:wirenboard/valijson.git
