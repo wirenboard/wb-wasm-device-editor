@@ -1,6 +1,6 @@
 #include "log.h"
 #include "port/feature_port.h"
-#include "port/wasm_port.h"
+#include "wasm_port.h"
 
 #include "rpc/rpc_device_load_config_task.h"
 #include "rpc/rpc_device_set_task.h"
