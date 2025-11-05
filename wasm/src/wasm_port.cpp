@@ -1,5 +1,3 @@
-#ifdef __EMSCRIPTEN__
-
 #include "wasm_port.h"
 #include "log.h"
 
@@ -120,5 +118,3 @@ void TWASMPort::ApplySerialPortSettings(const TSerialPortConnectionSettings& set
     LOG(Debug) << "set options: " << settings.BaudRate << " " << settings.DataBits << "-" << settings.Parity << "-"
                << settings.StopBits;
 }
-
-#endif

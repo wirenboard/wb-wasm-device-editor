@@ -1,5 +1,3 @@
-#ifdef __EMSCRIPTEN__
-
 #include "log.h"
 #include "port/feature_port.h"
 #include "port/wasm_port.h"
@@ -195,5 +193,3 @@ EMSCRIPTEN_BINDINGS(module)
     emscripten::function("deviceLoadConfig", &DeviceLoadConfig);
     emscripten::function("deviceSet", &DeviceSet);
 }
-
-#endif

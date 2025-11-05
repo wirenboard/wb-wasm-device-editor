@@ -1,10 +1,7 @@
 CC = emcc
 
 SERIAL_DIR = submodule/wb-mqtt-serial
-VALIJSON_DIR = submodule/valijson
-
-JSONCPP_DIR = $(VALIJSON_DIR)/thirdparty/jsoncpp-1.9.4
-JSONCPP_SRC = $(JSONCPP_DIR)/src/lib_json
+JSONCPP_DIR = submodule/valijson/thirdparty/jsoncpp-1.9.4
 
 WASM_DIR = wasm
 ASSETS_DIR = $(WASM_DIR)/assets
@@ -13,8 +10,6 @@ TEMPLATES_DIR = $(ASSETS_DIR)/templates
 INC = \
 	.                       \
 	$(SERIAL_DIR)/src       \
-	$(JSONCPP_DIR)/include  \
-	$(VALIJSON_DIR)/include \
 	$(WASM_DIR)/src         \
 
 SRC = \
