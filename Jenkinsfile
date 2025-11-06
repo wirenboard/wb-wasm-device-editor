@@ -3,7 +3,7 @@ pipeline {
         label 'devenv'
     }
     stages {
-        stage('Build') {
+        stage('Build WASM Module') {
             agent {
                 docker {
                     image 'registry.wirenboard.lan/emsdk:latest'
