@@ -3,14 +3,20 @@ pipeline {
         label 'devenv'
     }
     stages {
-        stage('Build WASM Module') {
+        stage('Build') {
+            agent {
+                docker {
+                    image 'registry.wirenboard.lan/emsdk:latest'
+                    args '--entrypoint="" -u root:root'
+                    reuseNode true
+                }
+            }
             steps {
-                sh 'docker pull registry.wirenboard.lan/emsdk:latest'
-                sh 'docker run --rm -v /var/lib/docker/volumes/buildagent/_data/workspace/$(basename $(pwd)):/src registry.wirenboard.lan/emsdk:latest emmake make -f wasm.mk'
+                sh 'bash -c "source /emsdk/emsdk_env.sh; emmake make -f wasm.mk"'
             }
             post {
                 success {
-                    archiveArtifacts artifacts: '**/wasm/module.*', fingerprint: true
+                    archiveArtifacts artifacts: 'wasm/module.*', fingerprint: true
                 }
             }
         }
