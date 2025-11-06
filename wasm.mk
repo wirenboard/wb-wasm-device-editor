@@ -66,16 +66,19 @@ OPT = \
 
 TEMPLATES = $(JINJA_TEMPLATES:.json.jinja=.json)
 
-all: $(TEMPLATES)
+all: templates
 # copy files
-	cp $(SERIAL_DIR)/templates/config-map*.json $(TEMPLATES_DIR)
-	cp $(SERIAL_DIR)/templates/config-wb-*.json $(TEMPLATES_DIR)
 	cp $(SERIAL_DIR)/wb-mqtt-serial-confed-common.schema.json $(ASSETS_DIR)
 	cp $(SERIAL_DIR)/wb-mqtt-serial-device-template.schema.json $(ASSETS_DIR)
 # fix include
 	cp -r $(JSONCPP_DIR)/include/json wblib/
 # build module
 	$(CC) -v -O3 $(addprefix -I, $(INC)) $(SRC) wblib/static/wblib.a -o $(WASM_DIR)/module.js --preload-file $(ASSETS_DIR)@/ $(OPT)
+
+templates: $(TEMPLATES)
+	cp $(SERIAL_DIR)/templates/config-map*.json $(TEMPLATES_DIR)
+	cp $(SERIAL_DIR)/templates/config-wb-*.json $(TEMPLATES_DIR)
+	grep -r '"deprecated"' $(TEMPLATES_DIR) | grep 'true' | awk -F ':' '{print $$1}' | xargs rm
 
 $(TEMPLATES): %.json: %.json.jinja
 	mkdir -p $(TEMPLATES_DIR)

@@ -7,7 +7,7 @@ docker build --no-cache --tag emsdk:latest wasm
 
 2. Сборка модуля WASM с помощь полученного Docker-образа:
 ```
-docker run --rm -v $(PWD):/src -u $(id -u):$(id -g) emsdk:latest emmake make -f wasm.mk
+docker run --rm -v $(pwd):/src -u $(id -u):$(id -g) emsdk:latest emmake make -f wasm.mk
 ```
 
 Артефакты сборки будут помещены в папку `wasm`:
