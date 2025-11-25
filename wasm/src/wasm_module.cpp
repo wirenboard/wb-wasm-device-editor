@@ -2,6 +2,7 @@
 #include "port/feature_port.h"
 #include "wasm_port.h"
 
+#include "rpc/rpc_config_handler.h"
 #include "rpc/rpc_device_load_config_task.h"
 #include "rpc/rpc_device_set_task.h"
 #include "rpc/rpc_helpers.h"
@@ -16,16 +17,21 @@ using namespace std::chrono;
 
 namespace
 {
+    const auto GROUP_NAMES_FILE = "groups.json";
+
     const auto COMMON_SCHEMA_FILE = "wb-mqtt-serial-confed-common.schema.json";
+    const auto PORTS_SCHEMA_FILE = "wb-mqtt-serial-ports.schema.json";
     const auto TEMPLATES_SCHEMA_FILE = "wb-mqtt-serial-device-template.schema.json";
 
     const auto PORT_SCAN_SCHEMA_FILE = "wb-mqtt-serial-rpc-port-scan-request.schema.json";
     const auto DEVICE_LOAD_CONFIG_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-load-config-request.schema.json";
     const auto DEVICE_SET_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-set-request.schema.json";
 
+    const auto PROTOCOLS_DIR = "protocols";
     const auto TEMPLATES_DIR = "templates";
 
     PTemplateMap TemplateMap = nullptr;
+    PRPCConfigHandler ConfigHandler = nullptr;
     auto Port = std::make_shared<TFeaturePort>(std::make_shared<TWASMPort>(), false);
     std::list<PSerialDevice> PolledDevices;
 
@@ -51,23 +57,38 @@ namespace
         THelper(const std::string& requestString,
                 const std::string& schemaFilePath,
                 const std::string& rpcName,
-                bool deviceRequest = true)
+                bool deviceRequest = false)
         {
+            auto schema = WBMQTT::JSON::Parse(COMMON_SCHEMA_FILE);
+
+            TSerialDeviceFactory deviceFactory;
+            RegisterProtocols(deviceFactory);
+
             if (!TemplateMap) {
-                auto schema = WBMQTT::JSON::Parse(COMMON_SCHEMA_FILE);
                 TemplateMap = std::make_shared<TTemplateMap>(LoadConfigTemplatesSchema(TEMPLATES_SCHEMA_FILE, schema));
                 TemplateMap->AddTemplatesDir(TEMPLATES_DIR);
             }
 
+            if (!ConfigHandler) {
+                TDevicesConfedSchemasMap devicesSchemasMap(*TemplateMap, deviceFactory, schema);
+                TProtocolConfedSchemasMap protocolSchemasMap(PROTOCOLS_DIR, schema);
+                ConfigHandler = std::make_shared<TRPCConfigHandler>(WBMQTT::JSON::Parse(PORTS_SCHEMA_FILE),
+                                                                    TemplateMap,
+                                                                    devicesSchemasMap,
+                                                                    protocolSchemasMap,
+                                                                    WBMQTT::JSON::Parse(GROUP_NAMES_FILE));
+            }
+
             ParseRequest(requestString);
-            ValidateRPCRequest(Request, LoadRPCRequestSchema(schemaFilePath, rpcName));
+
+            if (!schemaFilePath.empty()) {
+                ValidateRPCRequest(Request, LoadRPCRequestSchema(schemaFilePath, rpcName));
+            }
 
             if (!deviceRequest) {
                 return;
             }
 
-            TSerialDeviceFactory deviceFactory;
-            RegisterProtocols(deviceFactory);
             Params = deviceFactory.GetProtocolParams("modbus");
 
             auto config = std::make_shared<TDeviceConfig>("WASM Device", Request["slave_id"].asString(), "modbus");
@@ -138,10 +159,30 @@ namespace
     }
 }
 
+void ConfigGetDeviceTypes(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, std::string(), "config/GetDeviceTypes");
+        OnResult(ConfigHandler->GetDeviceTypes(helper.Request));
+    } catch (const std::runtime_error& e) {
+        LOG(Error) << "config/GetDeviceTypes RPC failed: " << e.what();
+    }
+}
+
+void ConfigGetSchema(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, std::string(), "config/GetSchema");
+        OnResult(ConfigHandler->GetSchema(helper.Request));
+    } catch (const std::runtime_error& e) {
+        LOG(Error) << "config/GetSchema RPC failed: " << e.what();
+    }
+}
+
 void PortScan(const std::string& requestString)
 {
     try {
-        THelper helper(requestString, PORT_SCAN_SCHEMA_FILE, "port/Scan", false);
+        THelper helper(requestString, PORT_SCAN_SCHEMA_FILE, "port/Scan");
         auto accessHandler = helper.GetAccessHandler();
         TRPCPortScanSerialClientTask(helper.Request, OnResult, OnError).Run(Port, accessHandler, PolledDevices);
     } catch (const std::runtime_error& e) {
@@ -152,7 +193,7 @@ void PortScan(const std::string& requestString)
 void DeviceLoadConfig(const std::string& requestString)
 {
     try {
-        THelper helper(requestString, DEVICE_LOAD_CONFIG_SCHEMA_FILE, "device/LoadConfig");
+        THelper helper(requestString, DEVICE_LOAD_CONFIG_SCHEMA_FILE, "device/LoadConfig", true);
         TRPCDeviceParametersCache parametersCache;
         auto rpcRequest = ParseRPCDeviceLoadConfigRequest(helper.Request,
                                                           helper.Params,
@@ -172,7 +213,7 @@ void DeviceLoadConfig(const std::string& requestString)
 void DeviceSet(const std::string& requestString)
 {
     try {
-        THelper helper(requestString, DEVICE_SET_SCHEMA_FILE, "device/Set");
+        THelper helper(requestString, DEVICE_SET_SCHEMA_FILE, "device/Set", true);
         auto rpcRequest = ParseRPCDeviceSetRequest(helper.Request,
                                                    helper.Params,
                                                    helper.Device,
@@ -189,6 +230,8 @@ void DeviceSet(const std::string& requestString)
 
 EMSCRIPTEN_BINDINGS(module)
 {
+    emscripten::function("configGetDeviceTypes", &ConfigGetDeviceTypes);
+    emscripten::function("configGetSchema", &ConfigGetSchema);
     emscripten::function("portScan", &PortScan);
     emscripten::function("deviceLoadConfig", &DeviceLoadConfig);
     emscripten::function("deviceSet", &DeviceSet);

@@ -19,6 +19,8 @@ var Module =
 
         switch (type)
         {
+            case 'configGetDeviceTypes': this.portScan(JSON.stringify(data)); break;
+            case 'configGetSchema': this.portScan(JSON.stringify(data)); break;
             case 'portScan': this.portScan(JSON.stringify(data)); break;
             case 'deviceLoadConfig': this.deviceLoadConfig(JSON.stringify(data)); break;
             case 'deviceSet': this.deviceSet(JSON.stringify(data)); break;
