@@ -1,5 +1,6 @@
 # common
 .clang-format
+.vscode
 wasm/module.*
 wblib/json
 
