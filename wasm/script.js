@@ -53,130 +53,55 @@ var Module =
 
 class PortScan
 {
-    baudRates = [115200, 57600, 38400, 19200, 9600, 4800, 2400, 1200];
-    index = 0;
-
-    signatureMap =
-    {
-        'MAP3E': 'WB-MAP3E fw2',
-        'MAP6S': 'WB-MAP6S fw2',
-        'MAP12E': 'WB-MAP12E fw2',
-        'MR6CU': 'WB-MR6CU',
-        'WBMAO4': 'tpl1_wb_mao4',
-        'WBMCM8': 'WB-MCM8',
-        'WBMD3': 'tpl1_wb_mdm3',
-        'MRWL3': 'WB-MR3',
-        'WBMAI6': 'WB-MAI6',
-        'WBMR6': 'WB-MR6C',
-        'WB-UPS v.3': 'wb_ups_v3'
-    }
+    baudRate = [115200, 57600, 38400, 19200, 9600, 4800, 2400, 1200];
+    parity = ['N', 'E', 'O'];
 
     async request(start)
     {
-        Module.print('Scan ' + (start ? 'start' : 'next') + ': ' + this.baudRates[this.index]);
-
         let request =
         {
             command: 96,
             mode: start ? 'start' : 'next',
-            baud_rate: this.baudRates[this.index],
+            baud_rate: this.baudRate[this.baudRateIndex],
             data_bits: 8,
-            parity: 'N',
+            parity: this.parity[this.parityIndex],
             stop_bits: 2
         };
 
         return await Module.request('portScan', request);
     }
 
-    async scan()
+    async exec()
     {
-        let table = document.querySelector('table');
         let devices = new Array();
         let start = true;
 
-        table.innerHTML = null;
+        this.baudRateIndex = 0;
 
-        while (this.index < this.baudRates.length)
+        while (this.baudRateIndex < this.baudRate.length)
         {
-            let reply = await this.request(start);
+            this.parityIndex = 0;
 
-            if (reply.result?.devices?.length)
+            while (this.parityIndex < this.parity.length)
             {
-                reply.result.devices.forEach(device => devices.push(device));
-                start = false;
-                continue;
+                let reply = await this.request(start);
+
+                if (reply.result?.devices?.length)
+                {
+                    reply.result.devices.forEach(device => devices.push(device));
+                    start = false;
+                    continue;
+                }
+
+                this.parityIndex++;
+                start = true;
             }
 
-            this.index++;
+            this.baudRateIndex++;
             start = true;
         }
 
-        Module.print(devices.length + ' devices found');
-
-        devices.forEach(device =>
-        {
-            let deviceType = this.signatureMap[device.device_signature];
-            let row = table.insertRow();
-
-            for (let i = 0; i < 7; i++)
-            {
-                let cell = row.insertCell();
-
-                switch (i)
-                {
-                    case 0: cell.innerHTML = device.device_signature; break;
-                    case 1: cell.innerHTML = device.sn; break;
-                    case 2: cell.innerHTML = device.fw_signature; break;
-                    case 3: cell.innerHTML = device.fw.version; break;
-                    case 4: cell.innerHTML = device.cfg.slave_id; break;
-
-                    case 5:
-                    {
-                        let select = document.createElement('select');
-                        let button = document.createElement('button');
-
-                        this.baudRates.reverse().forEach(baudRate => select.innerHTML += '<option' + (baudRate == device.cfg.baud_rate ? ' selected' : '') + '>' + baudRate + '</option>');
-
-                        button.innerHTML = 'set';
-                        button.addEventListener('click', async function()
-                        {
-                            let value = parseInt(select.value);
-                            let request = {...device.cfg, device_type: deviceType ?? device.device_signature, parameters: {baud_rate: value / 100}};
-                            let reply = await Module.request('deviceSet', request);
-
-                            if (reply.error)
-                                return;
-
-                            device.cfg.baud_rate = value;
-                        });
-
-                        cell.append(select);
-                        cell.append(button);
-                        break;
-                    }
-
-                    case 6:
-                    {
-                        let button = document.createElement('button');
-
-                        button.innerHTML = 'read params';
-                        button.addEventListener('click', async function()
-                        {
-                            let request = {...device.cfg, device_type: deviceType ?? device.device_signature};
-                            let reply = await Module.request('deviceLoadConfig', request);
-
-                            if (reply.error)
-                                return;
-
-                            Module.print(JSON.stringify(reply.result, null, 2));
-                        });
-
-                        cell.append(button);
-                        break;
-                    }
-                }
-            }
-        });
+        return {devices: devices};
     }
 }
 
@@ -191,6 +116,14 @@ window.onload = function()
 
     document.querySelector('#scanButton').addEventListener('click', async function()
     {
-        await new PortScan().scan();
+        let data = await new PortScan().exec();
+
+        if (!data.devices.length)
+        {
+            Module.print('no devices found');
+            return;
+        }
+
+        Module.print(data.devices.length + ' devices found:\n' + JSON.stringify(data, null, 2));
     });
 }
