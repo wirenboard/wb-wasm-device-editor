@@ -30,13 +30,22 @@ namespace
     const auto PROTOCOLS_DIR = "protocols";
     const auto TEMPLATES_DIR = "templates";
 
-    PTemplateMap TemplateMap = nullptr;
-    PRPCConfigHandler ConfigHandler = nullptr;
+    const auto CommonSchema = WBMQTT::JSON::Parse(COMMON_SCHEMA_FILE);
+
+    auto Prepare = true;
     auto Port = std::make_shared<TFeaturePort>(std::make_shared<TWASMPort>(), false);
+    TSerialDeviceFactory DeviceFactory;
     std::list<PSerialDevice> PolledDevices;
+
+    PTemplateMap TemplateMap;
+    PRPCConfigHandler ConfigHandler;
+
+    std::shared_ptr<TDevicesConfedSchemasMap> DevicesSchemasMap;
+    std::shared_ptr<TProtocolConfedSchemasMap> ProtocolSchemasMap;
 
     class THelper
     {
+
         void ParseRequest(const std::string& requestString)
         {
             std::stringstream stream(requestString);
@@ -59,24 +68,24 @@ namespace
                 const std::string& rpcName,
                 bool deviceRequest = false)
         {
-            auto schema = WBMQTT::JSON::Parse(COMMON_SCHEMA_FILE);
+            RegisterProtocols(DeviceFactory);
 
-            TSerialDeviceFactory deviceFactory;
-            RegisterProtocols(deviceFactory);
+            if (Prepare) {
+                TemplateMap =
+                    std::make_shared<TTemplateMap>(LoadConfigTemplatesSchema(TEMPLATES_SCHEMA_FILE, CommonSchema));
+                DevicesSchemasMap =
+                    std::make_shared<TDevicesConfedSchemasMap>(*TemplateMap, DeviceFactory, CommonSchema);
+                ProtocolSchemasMap = //
+                    std::make_shared<TProtocolConfedSchemasMap>(PROTOCOLS_DIR, CommonSchema);
+                ConfigHandler = //
+                    std::make_shared<TRPCConfigHandler>(WBMQTT::JSON::Parse(PORTS_SCHEMA_FILE),
+                                                        TemplateMap,
+                                                        *DevicesSchemasMap,
+                                                        *ProtocolSchemasMap,
+                                                        WBMQTT::JSON::Parse(GROUP_NAMES_FILE));
 
-            if (!TemplateMap) {
-                TemplateMap = std::make_shared<TTemplateMap>(LoadConfigTemplatesSchema(TEMPLATES_SCHEMA_FILE, schema));
                 TemplateMap->AddTemplatesDir(TEMPLATES_DIR);
-            }
-
-            if (!ConfigHandler) {
-                TDevicesConfedSchemasMap devicesSchemasMap(*TemplateMap, deviceFactory, schema);
-                TProtocolConfedSchemasMap protocolSchemasMap(PROTOCOLS_DIR, schema);
-                ConfigHandler = std::make_shared<TRPCConfigHandler>(WBMQTT::JSON::Parse(PORTS_SCHEMA_FILE),
-                                                                    TemplateMap,
-                                                                    devicesSchemasMap,
-                                                                    protocolSchemasMap,
-                                                                    WBMQTT::JSON::Parse(GROUP_NAMES_FILE));
+                Prepare = false;
             }
 
             ParseRequest(requestString);
@@ -89,7 +98,7 @@ namespace
                 return;
             }
 
-            Params = deviceFactory.GetProtocolParams("modbus");
+            Params = DeviceFactory.GetProtocolParams("modbus");
 
             auto config = std::make_shared<TDeviceConfig>("WASM Device", Request["slave_id"].asString(), "modbus");
             config->MaxRegHole = Modbus::MAX_HOLE_CONTINUOUS_16_BIT_REGISTERS;
