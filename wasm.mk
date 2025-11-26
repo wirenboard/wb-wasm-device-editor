@@ -5,6 +5,7 @@ JSONCPP_DIR = submodule/valijson/thirdparty/jsoncpp-1.9.4
 
 WASM_DIR = wasm
 ASSETS_DIR = $(WASM_DIR)/assets
+PROTOCOLS_DIR = $(ASSETS_DIR)/protocols
 TEMPLATES_DIR = $(ASSETS_DIR)/templates
 
 INC = \
@@ -17,6 +18,9 @@ SRC = \
 	$(SERIAL_DIR)/src/bin_utils.cpp                            \
 	$(SERIAL_DIR)/src/crc16.cpp                                \
 	$(SERIAL_DIR)/src/common_utils.cpp                         \
+	$(SERIAL_DIR)/src/confed_device_schemas_map.cpp            \
+	$(SERIAL_DIR)/src/confed_protocol_schemas_map.cpp          \
+	$(SERIAL_DIR)/src/confed_schema_generator.cpp              \
 	$(SERIAL_DIR)/src/config_merge_template.cpp                \
 	$(SERIAL_DIR)/src/expression_evaluator.cpp                 \
 	$(SERIAL_DIR)/src/file_utils.cpp                           \
@@ -42,6 +46,7 @@ SRC = \
 	$(SERIAL_DIR)/src/devices/modbus_device.cpp                \
 	$(SERIAL_DIR)/src/port/port.cpp                            \
 	$(SERIAL_DIR)/src/port/feature_port.cpp                    \
+	$(SERIAL_DIR)/src/rpc/rpc_config_handler.cpp               \
 	$(SERIAL_DIR)/src/rpc/rpc_config.cpp                       \
 	$(SERIAL_DIR)/src/rpc/rpc_device_handler.cpp               \
 	$(SERIAL_DIR)/src/rpc/rpc_device_load_task.cpp             \
@@ -67,8 +72,12 @@ OPT = \
 TEMPLATES = $(JINJA_TEMPLATES:.json.jinja=.json)
 
 all: templates
-# copy files
+# copy assets
+	mkdir -p $(PROTOCOLS_DIR)
+	cp $(SERIAL_DIR)/protocols/modbus.schema.json $(PROTOCOLS_DIR)
+	cp $(SERIAL_DIR)/groups.json $(ASSETS_DIR)
 	cp $(SERIAL_DIR)/wb-mqtt-serial-confed-common.schema.json $(ASSETS_DIR)
+	cp $(SERIAL_DIR)/wb-mqtt-serial-ports.schema.json $(ASSETS_DIR)
 	cp $(SERIAL_DIR)/wb-mqtt-serial-device-template.schema.json $(ASSETS_DIR)
 # fix include
 	cp -r $(JSONCPP_DIR)/include/json wblib/
