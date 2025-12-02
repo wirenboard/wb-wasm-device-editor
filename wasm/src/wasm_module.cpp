@@ -173,7 +173,7 @@ void ConfigGetDeviceTypes(const std::string& requestString)
     try {
         THelper helper(requestString, std::string(), "config/GetDeviceTypes");
         OnResult(ConfigHandler->GetDeviceTypes(helper.Request));
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
         LOG(Error) << "config/GetDeviceTypes RPC failed: " << e.what();
     }
 }
@@ -183,7 +183,7 @@ void ConfigGetSchema(const std::string& requestString)
     try {
         THelper helper(requestString, std::string(), "config/GetSchema");
         OnResult(ConfigHandler->GetSchema(helper.Request));
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
         LOG(Error) << "config/GetSchema RPC failed: " << e.what();
     }
 }
@@ -194,7 +194,7 @@ void PortScan(const std::string& requestString)
         THelper helper(requestString, PORT_SCAN_SCHEMA_FILE, "port/Scan");
         auto accessHandler = helper.GetAccessHandler();
         TRPCPortScanSerialClientTask(helper.Request, OnResult, OnError).Run(Port, accessHandler, PolledDevices);
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
         LOG(Error) << "port/Scan RPC failed: " << e.what();
     }
 }
@@ -214,7 +214,7 @@ void DeviceLoadConfig(const std::string& requestString)
                                                           OnError);
         auto accessHandler = helper.GetAccessHandler();
         TRPCDeviceLoadConfigSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
         LOG(Error) << "device/LoadConfig RPC failed: " << e.what();
     }
 }
@@ -232,7 +232,7 @@ void DeviceSet(const std::string& requestString)
                                                    OnError);
         auto accessHandler = helper.GetAccessHandler();
         TRPCDeviceSetSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
         LOG(Error) << "device/Set RPC failed: " << e.what();
     }
 }
