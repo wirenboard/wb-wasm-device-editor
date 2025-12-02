@@ -26,6 +26,20 @@ window.onload = function()
 
     document.querySelector('#schemaButton').addEventListener('click', async function()
     {
-        Module.print(await Module.request('configGetSchema', {type: 'WB-LED'}));
+        Module.print(await Module.request('configGetSchema', {type: 'WB-MSW v.3'}));
+    });
+
+    document.querySelector('#loadButton').addEventListener('click', async function()
+    {
+        let request = {
+            baud_rate: 9600,
+            data_bits: 8,
+            parity: 'N',
+            slave_id: 151,
+            stop_bits: 2,
+            device_type: 'WB-MAP6S fw2'
+        }
+
+        Module.print(await Module.request('deviceLoadConfig', request));
     });
 }
