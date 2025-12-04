@@ -4,7 +4,7 @@ var Module =
 
     async request(type, data)
     {
-        this.finished = false;
+        let json = JSON.stringify(data);
 
         function wait(resolve)
         {
@@ -17,11 +17,15 @@ var Module =
             setTimeout(wait.bind(this, resolve), 1);
         }
 
+        this.finished = false;
+
         switch (type)
         {
-            case 'portScan': this.portScan(JSON.stringify(data)); break;
-            case 'deviceLoadConfig': this.deviceLoadConfig(JSON.stringify(data)); break;
-            case 'deviceSet': this.deviceSet(JSON.stringify(data)); break;
+            case 'configGetDeviceTypes': this.configGetDeviceTypes(json); break;
+            case 'configGetSchema': this.configGetSchema(json); break;
+            case 'portScan': this.portScan(json); break;
+            case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
+            case 'deviceSet': this.deviceSet(json); break;
         }
 
         await new Promise(wait.bind(this));
@@ -45,9 +49,7 @@ var Module =
 
     print(text)
     {
-        let output = document.querySelector('#output');
-        output.value += text + '\n';
-        output.scrollTop = output.scrollHeight;
+        console.log(text);
     }
 };
 
@@ -103,27 +105,4 @@ class PortScan
 
         return {devices: devices};
     }
-}
-
-var Relay = 0;
-
-window.onload = function()
-{
-    document.querySelector('#portButton').addEventListener('click', async function()
-    {
-        await Module.serial.select(true);
-    });
-
-    document.querySelector('#scanButton').addEventListener('click', async function()
-    {
-        let data = await new PortScan().exec();
-
-        if (!data.devices.length)
-        {
-            Module.print('no devices found');
-            return;
-        }
-
-        Module.print(data.devices.length + ' devices found:\n' + JSON.stringify(data, null, 2));
-    });
 }
