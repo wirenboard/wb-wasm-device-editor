@@ -68,9 +68,8 @@ namespace
                 const std::string& rpcName,
                 bool deviceRequest = false)
         {
-            RegisterProtocols(DeviceFactory);
-
             if (Prepare) {
+                RegisterProtocols(DeviceFactory);
                 TemplateMap =
                     std::make_shared<TTemplateMap>(LoadConfigTemplatesSchema(TEMPLATES_SCHEMA_FILE, CommonSchema));
                 DevicesSchemasMap =
@@ -83,7 +82,6 @@ namespace
                                                         *DevicesSchemasMap,
                                                         *ProtocolSchemasMap,
                                                         WBMQTT::JSON::Parse(GROUP_NAMES_FILE));
-
                 TemplateMap->AddTemplatesDir(TEMPLATES_DIR);
                 Prepare = false;
             }
