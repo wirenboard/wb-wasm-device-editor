@@ -59,17 +59,25 @@ class SerialPort
         if (this.isOpen)
             await this.close();
 
-        try
+        for (let i = 0; i < 100; i++)
         {
-            await this.select(false);
-            await this.port.open(this.options);
-            this.isOpen = true;
+            try
+            {
+                await this.select(false);
+                await this.port.open(this.options);
+                this.isOpen = true;
+            }
+            catch (error)
+            {
+                await new Promise(resolve => setTimeout(resolve, 1));
+                continue;
+            }
+
+            return;
         }
-        catch (error)
-        {
-            console.error('Can\'t open serial port: ', error);
-            delete this.port;
-        }
+
+        console.error('Can\'t open serial port: ', error);
+        delete this.port;
     }
 
     async close()
