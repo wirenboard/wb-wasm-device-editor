@@ -82,7 +82,7 @@ class SerialPort
 
     async close()
     {
-        if (!this.port && !this.isOpen)
+        if (!this.port || !this.isOpen)
             return;
 
         await this.port.close();
