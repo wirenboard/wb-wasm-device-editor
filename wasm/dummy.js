@@ -1,3 +1,8 @@
+function scanCallback(status)
+{
+    console.log('Port scan progress: ' + status.progress + '%' + (status.options ? ', options: ' + status.options : ''));
+}
+
 window.onload = function()
 {
     document.querySelector('#portButton').addEventListener('click', async function()
@@ -7,7 +12,7 @@ window.onload = function()
 
     document.querySelector('#scanButton').addEventListener('click', async function()
     {
-        let data = await new PortScan().exec();
+        let data = await new PortScan(scanCallback).exec();
 
         if (!data.devices.length)
         {

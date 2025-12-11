@@ -79,6 +79,14 @@ class PortScan
     baudRate = [115200, 57600, 38400, 19200, 9600, 4800, 2400, 1200];
     parity = ['N', 'E', 'O'];
 
+    progress = 0;
+    step = 100 / this.baudRate.length / this.parity.length;
+
+    constructor(callback)
+    {
+        this.callback = callback;
+    }
+
     async request(start)
     {
         let request =
@@ -107,6 +115,7 @@ class PortScan
 
             while (this.parityIndex < this.parity.length)
             {
+                this.updateStatus();
                 let reply = await this.request(start);
 
                 if (reply.result?.devices?.length)
@@ -116,6 +125,7 @@ class PortScan
                     continue;
                 }
 
+                this.progress += this.step;
                 this.parityIndex++;
                 start = true;
             }
@@ -124,6 +134,20 @@ class PortScan
             start = true;
         }
 
+        this.updateStatus();
         return {devices: devices};
+    }
+
+    updateStatus()
+    {
+        if (!this.callback)
+            return;
+
+        let status = { progress: Math.round(this.progress) };
+
+        if (this.progress < 100)
+            status.options = this.baudRate[this.progress ? this.baudRateIndex : 0] + ' 8' + this.parity[this.progress ? this.parityIndex : 0] + '2';
+
+        this.callback(status);
     }
 }
