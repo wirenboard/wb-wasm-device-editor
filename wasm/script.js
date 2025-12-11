@@ -2,6 +2,22 @@ var Module =
 {
     serial: new SerialPort(),
 
+    async wait()
+    {
+        function check(resolve)
+        {
+            if (!this.ready)
+            {
+                setTimeout(check.bind(this, resolve), 1);
+                return;
+            }
+
+            resolve();
+        }
+
+        return new Promise(check.bind(this));
+    },
+
     async request(type, data)
     {
         let json = JSON.stringify(data);
@@ -32,14 +48,9 @@ var Module =
         return this.reply;
     },
 
-    parseReply(reply)
+    onRuntimeInitialized()
     {
-        this.reply = JSON.parse(reply);
-
-        if (this.reply.error)
-            this.print('request error ' + this.reply.error.code + ': ' + this.reply.error.message);
-
-        this.finished = true;
+        this.ready = true;
     },
 
     setStatus(text)
@@ -50,6 +61,16 @@ var Module =
     print(text)
     {
         console.log(text);
+    },
+
+    parseReply(reply)
+    {
+        this.reply = JSON.parse(reply);
+
+        if (this.reply.error)
+            this.print('request error ' + this.reply.error.code + ': ' + this.reply.error.message);
+
+        this.finished = true;
     }
 };
 
