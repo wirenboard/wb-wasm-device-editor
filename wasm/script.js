@@ -2,6 +2,22 @@ var Module =
 {
     serial: new SerialPort(),
 
+    async wait()
+    {
+        function check(resolve)
+        {
+            if (!this.ready)
+            {
+                setTimeout(check.bind(this, resolve), 1);
+                return;
+            }
+
+            resolve();
+        }
+
+        return new Promise(check.bind(this));
+    },
+
     async request(type, data)
     {
         let json = JSON.stringify(data);
@@ -32,14 +48,9 @@ var Module =
         return this.reply;
     },
 
-    parseReply(reply)
+    onRuntimeInitialized()
     {
-        this.reply = JSON.parse(reply);
-
-        if (this.reply.error)
-            this.print('request error ' + this.reply.error.code + ': ' + this.reply.error.message);
-
-        this.finished = true;
+        this.ready = true;
     },
 
     setStatus(text)
@@ -50,6 +61,16 @@ var Module =
     print(text)
     {
         console.log(text);
+    },
+
+    parseReply(reply)
+    {
+        this.reply = JSON.parse(reply);
+
+        if (this.reply.error)
+            this.print('request error ' + this.reply.error.code + ': ' + this.reply.error.message);
+
+        this.finished = true;
     }
 };
 
@@ -57,6 +78,14 @@ class PortScan
 {
     baudRate = [115200, 57600, 38400, 19200, 9600, 4800, 2400, 1200];
     parity = ['N', 'E', 'O'];
+
+    progress = 0;
+    step = 100 / this.baudRate.length / this.parity.length;
+
+    constructor(callback)
+    {
+        this.callback = callback;
+    }
 
     async request(start)
     {
@@ -86,6 +115,7 @@ class PortScan
 
             while (this.parityIndex < this.parity.length)
             {
+                this.updateStatus();
                 let reply = await this.request(start);
 
                 if (reply.result?.devices?.length)
@@ -95,6 +125,7 @@ class PortScan
                     continue;
                 }
 
+                this.progress += this.step;
                 this.parityIndex++;
                 start = true;
             }
@@ -103,6 +134,20 @@ class PortScan
             start = true;
         }
 
+        this.updateStatus();
         return {devices: devices};
+    }
+
+    updateStatus()
+    {
+        if (!this.callback)
+            return;
+
+        let status = { progress: Math.round(this.progress) };
+
+        if (this.progress < 100)
+            status.options = this.baudRate[this.progress ? this.baudRateIndex : 0] + ' 8' + this.parity[this.progress ? this.parityIndex : 0] + '2';
+
+        this.callback(status);
     }
 }
