@@ -3,6 +3,9 @@
 .vscode
 wasm/module.*
 wblib/json
+.vite
+node_modules
+package-lock.json
 
 # assets
 wasm/assets/*

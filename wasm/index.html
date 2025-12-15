@@ -1,21 +1,11 @@
 <!doctype html>
-<html>
-
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Modbus WASM Magic</title>
-    <script async type="text/javascript" src="serial.js"></script>
-    <script async type="text/javascript" src="script.js"></script>
-    <script async type="text/javascript" src="dummy.js"></script>
-    <script async type="text/javascript" src="module.js"></script>
+    <meta charset="utf-8" />
+    <title>Wiren Board Web Serial</title>
 </head>
-
-<body>
-    <button id="portButton">select port</button>
-    <button id="scanButton">scan port</button>
-    <button id="typesButton">get device types</button>
-    <button id="schemaButton">get schema</button>
-    <button id="loadButton">load config</button>
+<body style="padding: 12px; height: 100dvh;">
+<div id="root" style="height: 100%;"></div>
+<script type="module" src="./src/main.tsx"></script>
 </body>
-
 </html>

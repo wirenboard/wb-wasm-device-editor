@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./submodule/homeui/frontend",
+    "outDir": "./dist-submodule",
+    "baseUrl": "./submodule/homeui/frontend",
+    "paths": {
+      "@/*": ["./src/*"],
+      "~/*": ["./app/scripts/*"],
+      "~styles/*": ["./app/styles/*"]
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "./submodule/homeui/frontend/@types"
+    ]
+  },
+  "include": [
+    "submodule/homeui/frontend/src/**/*.ts",
+    "submodule/homeui/frontend/src/**/*.tsx",
+    "submodule/homeui/frontend/app/scripts/**/*.ts",
+    "submodule/homeui/frontend/app/scripts/**/*.tsx"
+  ],
+  "exclude": ["node_modules", "dist", "dist-submodule"]
+}
