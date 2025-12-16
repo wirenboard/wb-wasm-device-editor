@@ -5,17 +5,17 @@
 docker build --no-cache --tag emsdk:latest wasm
 ```
 
-2. Сборка модуля WASM с помощь полученного Docker-образа:
+2. Сборка модуля _WASM_ с помощь полученного Docker-образа:
 ```
 docker run --rm -v $(pwd):/src -u $(id -u):$(id -g) emsdk:latest emmake make -f wasm.mk
 ```
 
-3. Установка модулей Node.js для сабмодуля homeui
+3. Установка модулей _Node.js_ для сабмодуля homeui:
 ```
 docker run -it --rm -v $(PWD):/src -w /src/submodule/homeui/frontend node:latest npm install
 ```
 
-4. Установка модулей Node.js для сборки конфигуратора:
+4. Установка модулей _Node.js_ для сборки конфигуратора:
 ```
 docker run -it --rm -v $(PWD):/src -w /src/wasm node:latest npm install
 ```
@@ -25,4 +25,4 @@ docker run -it --rm -v $(PWD):/src -w /src/wasm node:latest npm install
 docker run -it --rm -v $(PWD):/src -w /src/wasm node:latest npm run build
 ```
 
-После сборки готовые файлы конфигуратора будут находиться в директории `wasm/dist-configurator`
+После сборки готовые файлы конфигуратора будут находиться в директории `wasm/dist-configurator`.
