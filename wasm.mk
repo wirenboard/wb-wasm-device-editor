@@ -82,7 +82,7 @@ all: templates
 # fix include
 	cp -r $(JSONCPP_DIR)/include/json wblib/
 # build module
-	$(CC) -v -O3 $(addprefix -I, $(INC)) $(SRC) wblib/static/wblib.a -o $(WASM_DIR)/module.js --preload-file $(ASSETS_DIR)@/ $(OPT)
+	$(CC) -v -O3 $(addprefix -I, $(INC)) $(SRC) wblib/static/wblib.a -o $(WASM_DIR)/public/module.js --preload-file $(ASSETS_DIR)@/ $(OPT)
 
 templates: $(TEMPLATES)
 	cp $(SERIAL_DIR)/templates/config-map*.json $(TEMPLATES_DIR)
