@@ -15,10 +15,10 @@ pipeline {
                 sh 'bash -c "source /emsdk/emsdk_env.sh; emmake make -f wasm.mk"'
             }
         }
-        stage('Build configurator') {
+        stage('Build Сonfigurator') {
             agent {
                 docker {
-                    image 'node:22.14.0'
+                    image 'node:latest'
                     args '--entrypoint="" -u root:root'
                     reuseNode true
                 }
