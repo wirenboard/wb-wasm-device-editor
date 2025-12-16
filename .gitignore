@@ -3,10 +3,12 @@
 .vscode
 wasm/public/module.*
 wblib/json
-.vite
-node_modules
-package-lock.json
 
 # assets
 wasm/assets/*
 !wasm/assets/*-request.schema.json
+
+# artifacts
+dist-configurator*
+node_modules
+package-lock.json
