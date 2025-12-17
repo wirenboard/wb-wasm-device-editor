@@ -1,44 +1,39 @@
-class SerialPort
-{
+class SerialPort {
     filters =
-    [
-        {usbVendorId: 0x0403, usbProductId: 0x6001},
-        {usbVendorId: 0x0403, usbProductId: 0x6014},
-        {usbVendorId: 0x0403, usbProductId: 0x6015},
-        {usbVendorId: 0x04d9, usbProductId: 0xb534},
-        {usbVendorId: 0x10c4, usbProductId: 0xea60},
-        {usbVendorId: 0x10c4, usbProductId: 0xea61},
-        {usbVendorId: 0x10c4, usbProductId: 0xea63},
-        {usbVendorId: 0x1a86, usbProductId: 0x55d3},
-        {usbVendorId: 0x1a86, usbProductId: 0x7522},
-        {usbVendorId: 0x1a86, usbProductId: 0x7523}
-    ];
+      [
+          { usbVendorId: 0x0403, usbProductId: 0x6001 },
+          { usbVendorId: 0x0403, usbProductId: 0x6014 },
+          { usbVendorId: 0x0403, usbProductId: 0x6015 },
+          { usbVendorId: 0x04d9, usbProductId: 0xb534 },
+          { usbVendorId: 0x10c4, usbProductId: 0xea60 },
+          { usbVendorId: 0x10c4, usbProductId: 0xea61 },
+          { usbVendorId: 0x10c4, usbProductId: 0xea63 },
+          { usbVendorId: 0x1a86, usbProductId: 0x55d3 },
+          { usbVendorId: 0x1a86, usbProductId: 0x7522 },
+          { usbVendorId: 0x1a86, usbProductId: 0x7523 },
+      ];
 
     options = new Object();
     isOpen = false;
 
-    constructor()
-    {
+    constructor() {
         if (navigator.serial)
             return;
 
         alert('Web Serial API is not supported by this browser :(\n\nIt\'s currently supported by Chrome/Chromium, Edge and Opera browsers.');
     }
 
-    setOptions(baudRate, dataBits, parity, stopBits)
-    {
-        switch (true)
-        {
-            case baudRate < 4800:  this.replyTimeout = 1000; break;
-            case baudRate < 38400: this.replyTimeout = 500;  break;
-            default:               this.replyTimeout = 250;  break;
+    setOptions(baudRate, dataBits, parity, stopBits) {
+        switch (true) {
+            case baudRate < 4800: this.replyTimeout = 1000; break;
+            case baudRate < 38400: this.replyTimeout = 500; break;
+            default: this.replyTimeout = 250; break;
         }
 
-        switch (String.fromCharCode(parity))
-        {
+        switch (String.fromCharCode(parity)) {
             case 'E': this.options.parity = 'even'; break;
-            case 'O': this.options.parity = 'odd';  break;
-            default:  this.options.parity = 'none'; break;
+            case 'O': this.options.parity = 'odd'; break;
+            default: this.options.parity = 'none'; break;
         }
 
         this.options.baudRate = baudRate;
@@ -46,30 +41,24 @@ class SerialPort
         this.options.stopBits = stopBits;
     }
 
-    async select(force)
-    {
+    async select(force) {
         if (this.port && !force)
             return;
 
-        this.port = await navigator.serial.requestPort({filters: this.filters});
+        this.port = await navigator.serial.requestPort({ filters: this.filters });
     }
 
-    async open()
-    {
+    async open() {
         if (this.isOpen)
             await this.close();
 
-        for (let i = 0; i < 100; i++)
-        {
-            try
-            {
+        for (let i = 0; i < 100; i++) {
+            try {
                 await this.select(false);
                 await this.port.open(this.options);
                 this.isOpen = true;
-            }
-            catch (error)
-            {
-                await new Promise(resolve => setTimeout(resolve, 1));
+            } catch (error) {
+                await new Promise((resolve) => setTimeout(resolve, 1));
                 continue;
             }
 
@@ -80,8 +69,7 @@ class SerialPort
         delete this.port;
     }
 
-    async close()
-    {
+    async close() {
         if (!this.port || !this.isOpen)
             return;
 
@@ -89,12 +77,10 @@ class SerialPort
         this.isOpen = false;
     }
 
-    async write(data)
-    {
+    async write(data) {
         await this.open();
 
-        if (!this.port || !this.port.writable)
-        {
+        if (!this.port || !this.port.writable) {
             console.error('Serial port is not open or not writable');
             return;
         }
@@ -104,10 +90,8 @@ class SerialPort
         writer.releaseLock();
     }
 
-    async read(count)
-    {
-        if (!this.port || !this.port.readable)
-        {
+    async read(count) {
+        if (!this.port || !this.port.readable) {
             console.error('Serial port is not open or not readable');
             return;
         }
@@ -116,17 +100,15 @@ class SerialPort
         let data = new Uint8Array();
         let read = true;
 
-        async function receive()
-        {
-            while (read)
-            {
-                let {value} = await reader.read();
+        async function receive() {
+            while (read) {
+                let { value } = await reader.read();
 
                 if (!read)
                     break;
 
                 let buffer = new Uint8Array(data.length + value.length);
-                buffer.set(data, 0)
+                buffer.set(data, 0);
                 buffer.set(value, data.length);
                 data = buffer;
 
@@ -139,12 +121,10 @@ class SerialPort
             return data;
         }
 
-        async function wait(timeout)
-        {
-            await new Promise(resolve => setTimeout(resolve, timeout));
+        async function wait(timeout) {
+            await new Promise((resolve) => setTimeout(resolve, timeout));
 
-            if (read)
-            {
+            if (read) {
                 read = false;
                 reader.cancel();
             }

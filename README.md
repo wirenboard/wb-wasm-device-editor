@@ -1,21 +1,28 @@
-#### Сборка модуля WASM
+#### Сборка конфигуратора
 
 1. Сборка Docker-образа [`emsdk`](https://hub.docker.com/r/emscripten/emsdk) c добавлением пакета `j2cli` (достаточно собрать один раз):
 ```
 docker build --no-cache --tag emsdk:latest wasm
 ```
 
-2. Сборка модуля WASM с помощь полученного Docker-образа:
+2. Сборка модуля _WASM_ с помощь полученного Docker-образа:
 ```
 docker run --rm -v $(pwd):/src -u $(id -u):$(id -g) emsdk:latest emmake make -f wasm.mk
 ```
 
-Артефакты сборки будут помещены в папку `wasm`:
-- `wasm/module.data` - "файловая система" модуля, включающая в себя файлы шаблонов устройств и JSON-схемы
-- `wasm/module.js` - поключаемый JS-файл для загрузки модуля
-- `wasm/module.wasm` - сам модуль
+3. Установка модулей _Node.js_ для сабмодуля homeui:
+```
+docker run --rm -v $(PWD):/src -w /src/submodule/homeui/frontend node:latest npm install
+```
 
-Дополнительные файлы для работы с модулем:
-- `wasm/serial.js` - обертка для общения модуля с физическим портом посредством WebSerial API
-- `wasm/script.js` - тестовый скрипт для демонстрации работоспособности модуля
-- `wasm/index.html` - тестовый индексный файл для загрузки скриптов
+4. Установка модулей _Node.js_ для сборки конфигуратора:
+```
+docker run --rm -v $(PWD):/src -w /src/wasm node:latest npm install
+```
+
+5. Сборка конфигуратора:
+```
+docker run --rm -v $(PWD):/src -w /src/wasm node:latest npm run build
+```
+
+После сборки готовые файлы конфигуратора будут находиться в директории `wasm/dist-configurator`.

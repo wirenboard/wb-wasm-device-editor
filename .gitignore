@@ -1,9 +1,14 @@
 # common
 .clang-format
 .vscode
-wasm/module.*
+wasm/public/module.*
 wblib/json
 
 # assets
 wasm/assets/*
 !wasm/assets/*-request.schema.json
+
+# artifacts
+dist-configurator*
+node_modules
+package-lock.json

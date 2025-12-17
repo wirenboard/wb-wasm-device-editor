@@ -1,0 +1,24 @@
+.deviceSettingsWasm-container {
+    width: 100%;
+    display: flex;
+    gap: 12px;
+}
+
+.deviceSettingsWasm-aside {
+    min-width: 220px;
+}
+
+.deviceSettingsWasm-content {
+    width: 100%;
+}
+
+.deviceSettingsWasm-title {
+    margin-top: 6px;
+}
+
+.deviceSettingsWasm-loaderWrapper {
+    display: flex;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+}
