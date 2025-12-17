@@ -12,17 +12,17 @@ docker run --rm -v $(pwd):/src -u $(id -u):$(id -g) emsdk:latest emmake make -f 
 
 3. Установка модулей _Node.js_ для сабмодуля homeui:
 ```
-docker run -it --rm -v $(PWD):/src -w /src/submodule/homeui/frontend node:latest npm install
+docker run --rm -v $(PWD):/src -w /src/submodule/homeui/frontend node:latest npm install
 ```
 
 4. Установка модулей _Node.js_ для сборки конфигуратора:
 ```
-docker run -it --rm -v $(PWD):/src -w /src/wasm node:latest npm install
+docker run --rm -v $(PWD):/src -w /src/wasm node:latest npm install
 ```
 
 5. Сборка конфигуратора:
 ```
-docker run -it --rm -v $(PWD):/src -w /src/wasm node:latest npm run build
+docker run --rm -v $(PWD):/src -w /src/wasm node:latest npm run build
 ```
 
 После сборки готовые файлы конфигуратора будут находиться в директории `wasm/dist-configurator`.
