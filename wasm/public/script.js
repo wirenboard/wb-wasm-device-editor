@@ -11,20 +11,6 @@ window.Module =
 
       onRuntimeInitialized() {
           wasmReadyResolve();
-          this.ready = true;
-      },
-
-      async wait() {
-          function check(resolve) {
-              if (!this.ready) {
-                  setTimeout(check.bind(this, resolve), 1);
-                  return;
-              }
-
-              resolve();
-          }
-
-          return new Promise(check.bind(this));
       },
 
       async request(type, data) {
