@@ -7,7 +7,7 @@ import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager/';
 import { DeviceSettingsEditor } from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-editor';
-import type {Device, DeviceSettingsWasmProps} from './types';
+import type { Device, DeviceSettingsWasmProps } from './types';
 import './styles.css';
 
 export const DeviceSettingsWasm = observer(({
@@ -23,10 +23,11 @@ export const DeviceSettingsWasm = observer(({
   const [devices, setDevices] = useState<Device[]>([]);
   const [tabstore, setTabstore] = useState(null);
   const [title, setTitle] = useState('');
+  const [selectedDevice, setSelectedDevice] = useState(null);
   const [isConfigLoading, setIsConfigLoading] = useState(false);
   const [configDeviceTypes, setConfigDeviceTypes] = useState(null);
   const { activeTab } = useTabs({
-    defaultTab: devices[0]?.device_signature,
+    defaultTab: selectedDevice,
     items: devices,
   });
 
@@ -47,11 +48,12 @@ export const DeviceSettingsWasm = observer(({
   const handleScan = async () => {
     reset();
     const res = await scan();
+    setSelectedDevice(res.at(0)?.device_signature);
     setDevices(res);
     loadDeviceSettings(res.at(0));
   };
 
-  const loadDeviceSettings = useCallback(async (device) => {
+  const loadDeviceSettings = useCallback(async (device: Device) => {
     const deviceTypesStore = new DeviceTypesStore(getSchema);
     deviceTypesStore.setDeviceTypeGroups(configDeviceTypes);
     const deviceTypes = deviceTypesStore.findNotDeprecatedDeviceTypes(
@@ -75,8 +77,7 @@ export const DeviceSettingsWasm = observer(({
   }, [configDeviceTypes]);
 
   const handleSave = () => {
-    // TODO сохранение выбранного девайса
-    const device = devices.at(0);
+    const device = devices.find((device) => device.device_signature === selectedDevice)
     const data = {
       device_type: tabstore.deviceType,
       ...device.cfg,
@@ -111,6 +112,7 @@ export const DeviceSettingsWasm = observer(({
               activeTab={activeTab}
               onTabChange={(id: string) => {
                 const device = devices.find((item) => item.device_signature === id);
+                setSelectedDevice(id);
                 loadDeviceSettings(device);
               }}
             />

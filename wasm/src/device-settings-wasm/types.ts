@@ -24,5 +24,5 @@ export interface Device {
     version: string;
   },
   fw_signature: string;
-  sn: number;
+  sn: string;
 }
