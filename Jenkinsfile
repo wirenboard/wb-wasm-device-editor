@@ -41,13 +41,13 @@ pipeline {
         }
         stage('Build and publish Docker image') {
             environment {
-                IMAGE_TAG = "ghcr.io/wirenboard/wb-wasm-device-editor:latest"
-                GHCR_CREDS = credentials('ghcr-login')
+                IMAGE_TAG = "contactless/wasm-device-editor:latest"
+                DOCKERHUB_CREDS = credentials('dockerhub-login')
             }
             steps {
                 sh """
                 docker build --no-cache --tag "$IMAGE_TAG" wasm
-                echo "$GHCR_CREDS_PSW" | docker login ghcr.io --username "$GHCR_CREDS_USR" --password-stdin
+                echo "$DOCKERHUB_CREDS_PSW" | docker login --username "$DOCKERHUB_CREDS_USR" --password-stdin
                 docker push "$IMAGE_TAG"
                 docker logout
                 """
