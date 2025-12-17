@@ -25,4 +25,9 @@ docker run --rm -v $(PWD):/src -w /src/wasm node:latest npm install
 docker run --rm -v $(PWD):/src -w /src/wasm node:latest npm run build
 ```
 
+6. Сборка Docker-образа с конфигуратором:
+```
+docker build --no-cache --tag wb-wasm-device-editor:latest wasm
+```
+
 После сборки готовые файлы конфигуратора будут находиться в директории `wasm/dist-configurator`.
