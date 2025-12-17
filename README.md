@@ -2,7 +2,7 @@
 
 1. Сборка Docker-образа [`emsdk`](https://hub.docker.com/r/emscripten/emsdk) c добавлением пакета `j2cli` (достаточно собрать один раз):
 ```
-docker build --no-cache --tag emsdk:latest wasm
+docker build --no-cache --tag emsdk:latest emsdk
 ```
 
 2. Сборка модуля _WASM_ с помощь полученного Docker-образа:
