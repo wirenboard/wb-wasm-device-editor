@@ -52,6 +52,9 @@ pipeline {
                 docker logout
                 """
             }
+            when {
+                branch 'master'
+            }
         }
     }
 }
