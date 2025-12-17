@@ -60,7 +60,6 @@ window.Module =
 class PortScan {
     baudRate = [115200, 57600, 38400, 19200, 9600, 4800, 2400, 1200];
     parity = ['N', 'E', 'O'];
-    progress = 0;
     step = 100 / this.baudRate.length / this.parity.length;
 
     constructor(callback) {
@@ -87,6 +86,7 @@ class PortScan {
 
         this.baudRateIndex = 0;
         this.progress = 0;
+        this.count = 0;
 
         while (this.baudRateIndex < this.baudRate.length) {
             this.parityIndex = 0;
@@ -102,6 +102,7 @@ class PortScan {
                 }
 
                 this.progress += this.step;
+                this.count += devices.length;
                 this.parityIndex++;
                 start = true;
             }
@@ -118,7 +119,10 @@ class PortScan {
         if (!this.callback)
             return;
 
-        let status = { progress: Math.round(this.progress) };
+        let status = {
+            progress: Math.round(this.progress),
+            count: this.count
+        };
 
         if (this.progress < 100)
             status.options = this.baudRate[this.progress ? this.baudRateIndex : 0] + ' 8' + this.parity[this.progress ? this.parityIndex : 0] + '2';
