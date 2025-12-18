@@ -48,9 +48,10 @@ export const DeviceSettingsWasm = observer(({
   const handleScan = async () => {
     reset();
     const res = await scan();
-    setSelectedDevice(res.at(0)?.device_signature);
+    const firstDevice = res.at(0);
+    setSelectedDevice(firstDevice?.cfg.slave_id);
     setDevices(res);
-    loadDeviceSettings(res.at(0));
+    loadDeviceSettings(firstDevice);
   };
 
   const loadDeviceSettings = useCallback(async (device: Device) => {
@@ -77,7 +78,7 @@ export const DeviceSettingsWasm = observer(({
   }, [configDeviceTypes]);
 
   const handleSave = () => {
-    const device = devices.find((device) => device.device_signature === selectedDevice)
+    const device = devices.find((device) => device.cfg.slave_id === selectedDevice)
     const data = {
       device_type: tabstore.deviceType,
       ...device.cfg,
@@ -108,10 +109,10 @@ export const DeviceSettingsWasm = observer(({
         <aside className="deviceSettingsWasm-aside">
           {!!devices.length && (
             <Tabs
-              items={devices.map((device) => ({ id: device.device_signature, label: `${device.cfg.slave_id} ${device.device_signature}` }))}
+              items={devices.map((device) => ({ id: device.cfg.slave_id, label: `${device.cfg.slave_id} ${device.device_signature}` }))}
               activeTab={activeTab}
-              onTabChange={(id: string) => {
-                const device = devices.find((item) => item.device_signature === id);
+              onTabChange={(id: number) => {
+                const device = devices.find((item: Device) => item.cfg.slave_id === id);
                 setSelectedDevice(id);
                 loadDeviceSettings(device);
               }}
