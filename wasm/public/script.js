@@ -59,6 +59,7 @@ class PortScan {
     baudRate = [115200, 57600, 38400, 19200, 9600, 4800, 2400, 1200];
     parity = ['N', 'E', 'O'];
     step = 100 / this.baudRate.length / this.parity.length;
+    progress = 0;
 
     constructor(callback) {
         this.callback = callback;
