@@ -58,6 +58,7 @@ class SerialPort {
                 await this.port.open(this.options);
                 this.isOpen = true;
             } catch (error) {
+                this.error = error;
                 await new Promise((resolve) => setTimeout(resolve, 1));
                 continue;
             }
@@ -65,7 +66,7 @@ class SerialPort {
             return;
         }
 
-        console.error('Can\'t open serial port: ', error);
+        console.error('Can\'t open serial port: ', this.error);
         delete this.port;
     }
 

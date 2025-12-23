@@ -2,14 +2,12 @@ let wasmReadyResolve;
 
 window.Module =
   {
-      serial: new SerialPort(),
-      ready: false,
-
       isReady: new Promise((resolve) => {
           wasmReadyResolve = resolve;
       }),
 
       onRuntimeInitialized() {
+          this.serial = new SerialPort();
           wasmReadyResolve();
       },
 
