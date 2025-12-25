@@ -91,7 +91,7 @@ export const DeviceSettingsWasm = observer(({
 
   return (
     <PageLayout
-      title="Web Serial"
+      title="Wiren Board Device Editor"
       actions={
         <>
           <Button label="Select port" variant="secondary" onClick={selectPort} />
