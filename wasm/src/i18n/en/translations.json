@@ -1,0 +1,10 @@
+{
+   "wasm": {
+      "title": "Wiren Board Device Editor",
+      "buttons": {
+         "select": "Select port",
+         "scan": "Scan",
+         "save": "Save"
+      }
+   }
+}
