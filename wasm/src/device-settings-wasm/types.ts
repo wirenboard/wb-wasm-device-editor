@@ -7,7 +7,7 @@ export interface DeviceSettingsWasmProps {
   }
   loadConfig: (_data: any) => Promise<any>;
   getSchema: (_deviceType: string) => Promise<any>;
-  getDeviceTypes: () => Promise<any>;
+  getDeviceTypes: (_lang: string) => Promise<any>;
   save: (_data: any) => Promise<void>;
 }
 

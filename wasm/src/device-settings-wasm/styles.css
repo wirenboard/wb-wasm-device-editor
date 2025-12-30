@@ -22,3 +22,19 @@
     height: 100%;
     width: 100%;
 }
+
+.deviceSettingsWasm-footer {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.deviceSettingsWasm-logo {
+    width: 140px;
+}
+
+.deviceSettingsWasm-footer .dropdown__control {
+    padding: 0 6px;
+    border: 0;
+    box-shadow: none;
+}

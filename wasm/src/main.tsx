@@ -5,6 +5,8 @@ import { initReactI18next } from 'react-i18next';
 import { DeviceSettingsWasm } from './device-settings-wasm';
 import type { Device } from './device-settings-wasm/types';
 import engLocale from '~/i18n/react/locales/en/translations.json';
+import engModuleLocale from './i18n/en/translations.json';
+import ruModuleLocale from './i18n/ru/translations.json';
 import ruLocale from '~/i18n/react/locales/ru/translations.json';
 import '@/assets/styles/variables.css';
 import '@/assets/styles/animations.css';
@@ -22,10 +24,10 @@ i18n.use(initReactI18next).init({
   lng: 'en',
   resources: {
     en: {
-      translations: engLocale,
+      translations: {...engLocale, ...engModuleLocale},
     },
     ru: {
-      translations: ruLocale,
+      translations: {...ruLocale, ...ruModuleLocale},
     },
   },
   ns: ['translations'],
@@ -67,8 +69,8 @@ const loadConfig = async (cfg) => {
   return Module.request('deviceLoadConfig', cfg);
 };
 
-const configGetDeviceTypes = async () => {
-  return Module.request('configGetDeviceTypes', { lang: 'ru' }).then((res) => res.result);
+const configGetDeviceTypes = async (lang: string) => {
+  return Module.request('configGetDeviceTypes', { lang }).then((res) => res.result);
 };
 
 const configGetSchema = async (deviceType: string) => {
