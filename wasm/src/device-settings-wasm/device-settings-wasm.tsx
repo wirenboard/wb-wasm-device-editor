@@ -93,7 +93,6 @@ export const DeviceSettingsWasm = observer(({
     );
     await store.loadContent(device.cfg);
     store.setDeviceType(device.device_signature, cfg);
-    store.schemaStore.showChannels = false;
     await store.updateEmbeddedSoftwareVersion(device.cfg);
 
     setTabstore(store);
@@ -103,7 +102,6 @@ export const DeviceSettingsWasm = observer(({
   const getDevice = (slaveId: number = selectedDevice) => devices.find((device) => device.cfg.slave_id === slaveId);
 
   const handleSave = () => {
-    const device = devices.find((device) => device.cfg.slave_id === selectedDevice)
     const data = {
       device_type: tabstore.deviceType,
       ...getDevice().cfg,
@@ -172,7 +170,11 @@ export const DeviceSettingsWasm = observer(({
               <>
                 <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
                 <FirmwareVersionPanel firmwareVersion={getDevice().fw?.version} />
-                <DeviceSettingsEditor store={tabstore.schemaStore} translator={tabstore.schemaStore.schemaTranslator} />
+                <DeviceSettingsEditor
+                  store={tabstore.schemaStore}
+                  translator={tabstore.schemaStore.schemaTranslator}
+                  showChannels={false}
+                />
               </>
             )
           )}
