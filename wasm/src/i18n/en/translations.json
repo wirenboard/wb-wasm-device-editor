@@ -4,7 +4,23 @@
       "buttons": {
          "select": "Select port",
          "scan": "Scan",
-         "save": "Save"
+         "save": "Save",
+         "save-local": "Save local",
+         "remove-local": "Remove local",
+         "add-device": "Manually add device",
+         "add": "Add"
+      },
+      "labels": {
+         "scanning": "Scanning in progresss {{message}}…",
+         "device-type": "Device type",
+         "slave-id": "Slave id of the device",
+         "baudrate": "Baudrate",
+         "databits": "Data bits",
+         "stopbits": "Stop bits",
+         "parity": "Parity",
+         "parity-never": "Never",
+         "parity-even": "Even",
+         "parity-odd": "Odd"
       }
    }
 }
