@@ -4,12 +4,16 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "npx eslint --cache --cache-location .eslintcache",
+    "lint:fix": "npx eslint --fix"
   },
   "devDependencies": {
     "@types/react": "18.2.0",
     "@types/react-dom": "18.2.0",
     "@vitejs/plugin-react": "5.0.4",
+    "@wirenboard/eslint": "1.6.0",
+    "eslint": "9.39.1",
     "path-type": "^6.0.0",
     "typescript": "5.7.3",
     "vite": "7.3.0",

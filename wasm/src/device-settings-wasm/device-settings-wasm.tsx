@@ -1,40 +1,52 @@
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Alert } from '@/components/alert';
 import { Button } from '@/components/button';
 import { Dropdown, type Option } from '@/components/dropdown';
 import { Loader } from '@/components/loader';
 import { Progress } from '@/components/progress';
 import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
+import { DeviceSettingsEditor, FirmwareVersionPanel } from '@/pages/settings/device-manager';
+import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { setReactLocale } from '~/react-directives/locale';
-import { FirmwareVersionPanel } from '@/pages/settings/device-manager/components/embedded-software-panel/embedded-software-panel';
-import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager/';
-import { DeviceSettingsEditor } from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-editor';
-import type { Device, DeviceSettingsWasmProps } from './types';
+import { useLocalStorage } from '../utils/useLocalStorage';
+import { AddDevice } from './components/add-device';
+import { useModule } from './module';
+import type { Device } from './types';
 import './styles.css';
 
-export const DeviceSettingsWasm = observer(({
-  scan,
-  isReady,
-  loadConfig,
-  portScan,
-  selectPort,
-  getSchema,
-  getDeviceTypes,
-  save,
-}: DeviceSettingsWasmProps) => {
+export const DeviceSettingsWasm = observer(() => {
   const { t } = useTranslation();
   const [language, setLanguage] = useState(localStorage.getItem('language') || 'en');
   const [devices, setDevices] = useState<Device[]>([]);
   const [tabstore, setTabstore] = useState(null);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [isConfigLoading, setIsConfigLoading] = useState(false);
+  const [isModalOpened, setIsModalOpened] = useState(false);
   const [configDeviceTypesStore, setConfigDeviceTypesStore] = useState(null);
+  const [error, setError] = useState(null);
+  const [manualDevices, updateManualDevices] = useLocalStorage('devices');
+  const allDevices = useMemo(() => [...devices, ...(devices.length ? manualDevices.filter((device) => {
+    return !devices.map((device) => device.cfg.slave_id).includes(device.cfg.slave_id);
+  }) : manualDevices)], [devices, manualDevices]);
   const { activeTab } = useTabs({
     defaultTab: selectedDevice,
-    items: devices,
+    items: allDevices,
   });
+
+  const {
+    moduleInitialized,
+    progress,
+    selectPort,
+    scan,
+    scanMessage,
+    loadConfig,
+    configGetDeviceTypes,
+    configGetSchema,
+    save,
+  } = useModule();
 
   const reset = () => {
     setDevices([]);
@@ -42,8 +54,8 @@ export const DeviceSettingsWasm = observer(({
   };
 
   const configDeviceTypes = async () => {
-    return getDeviceTypes(language).then((res) => {
-      const deviceTypesStore = new DeviceTypesStore(getSchema);
+    return configGetDeviceTypes(language).then((res) => {
+      const deviceTypesStore = new DeviceTypesStore(configGetSchema);
       deviceTypesStore.setDeviceTypeGroups(res);
       setConfigDeviceTypesStore(deviceTypesStore);
       return deviceTypesStore;
@@ -55,13 +67,14 @@ export const DeviceSettingsWasm = observer(({
   }, []);
 
   useEffect(() => {
-    isReady.then(async () => {
-      const store = await configDeviceTypes();
-      if (selectedDevice) {
-        loadDeviceSettings(getDevice(), store);
-      }
-    });
-  }, [isReady, language]);
+    if (moduleInitialized) {
+      configDeviceTypes().then((store) => {
+        if (selectedDevice) {
+          loadDeviceSettings(getDevice(), store);
+        }
+      });
+    }
+  }, [moduleInitialized, language]);
 
   const handleScan = async () => {
     reset();
@@ -74,22 +87,36 @@ export const DeviceSettingsWasm = observer(({
     loadDeviceSettings(firstDevice, configDeviceTypesStore);
   };
 
-  const loadDeviceSettings = useCallback(async (device: Device, deviceTypesStore = configDeviceTypesStore) => {
-    const deviceTypes = deviceTypesStore.findNotDeprecatedDeviceTypes(
+  const getType = (device: Device) => {
+    return configDeviceTypesStore.findNotDeprecatedDeviceTypes(
       device.device_signature,
-      device.fw?.version
-    );
+      device.fw?.version,
+    ).at(0) || device.device_signature;
+  };
+
+  const loadDeviceSettings = useCallback(async (device: Device, deviceTypesStore = configDeviceTypesStore) => {
+    setError(null);
+    const deviceType = getType(device);
 
     setIsConfigLoading(true);
 
     const initialData = { slave_id: String(device.cfg.slave_id) };
-    const cfg = { device_type: deviceTypes.at(0), ...device.cfg };
+    const cfg = { device_type: deviceType, ...device.cfg };
     const store = new DeviceTabStore(
       initialData,
-      deviceTypes.at(0),
+      deviceType,
       deviceTypesStore,
       { GetFirmwareInfo: () => ({ fw: device.fw?.version }), hasMethod: () => true },
-      { LoadConfig: () => loadConfig(cfg).then(res => res.result) }
+      {
+        LoadConfig: () => loadConfig(cfg).then((res) => {
+          if (res.error) {
+            return Promise.reject(res.error);
+          }
+          return res.result;
+        }).catch((err) => {
+          setError(err.message);
+        }),
+      },
     );
     await store.loadContent(device.cfg);
     store.setDeviceType(device.device_signature, cfg);
@@ -99,7 +126,9 @@ export const DeviceSettingsWasm = observer(({
     setIsConfigLoading(false);
   }, [configDeviceTypesStore]);
 
-  const getDevice = (slaveId: number = selectedDevice) => devices.find((device) => device.cfg.slave_id === slaveId);
+  const getDevice = useCallback((slaveId: number = selectedDevice) => {
+    return allDevices.find((device) => device.cfg.slave_id === slaveId) || {};
+  }, [allDevices, selectedDevice]);
 
   const handleSave = () => {
     const data = {
@@ -112,14 +141,37 @@ export const DeviceSettingsWasm = observer(({
     save(data);
   };
 
+  const addDevice = (device: Device) => {
+    const devices = JSON.parse(localStorage.getItem('devices')) || [];
+    updateManualDevices([...devices, device]);
+    setIsModalOpened(false);
+  };
+
+  const saveLocal = () => {
+    const devices = JSON.parse(localStorage.getItem('devices')) || [];
+    updateManualDevices([...devices, getDevice()]);
+  };
+
+  const removeLocal = (id = selectedDevice) => {
+    const isRealDevice = !!devices.find(({ cfg }) => cfg.slave_id === id);
+    if (!isRealDevice) {
+      setTabstore(null);
+      setError(null);
+    }
+    let res = (JSON.parse(localStorage.getItem('devices')) || [])
+      .filter((device) => device.cfg.slave_id !== id);
+    updateManualDevices(res);
+  };
+
   return (
     <PageLayout
       title={t('wasm.title')}
       actions={
         <>
+          <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)}/>
           <Button label={t('wasm.buttons.select')} variant="secondary" onClick={selectPort} />
           <Button label={t('wasm.buttons.scan')} onClick={handleScan} />
-          <Button label={t('wasm.buttons.save')} disabled={!devices.length} variant="success" onClick={handleSave} />
+          <Button label={t('wasm.buttons.save')} disabled={!devices.length} variant="primary" onClick={handleSave} />
         </>
       }
       isLoading={!configDeviceTypesStore}
@@ -144,35 +196,73 @@ export const DeviceSettingsWasm = observer(({
       }
       hasRights
     >
-      {portScan.progress !== 0 && portScan.progress < 100 && (
-        <Progress value={portScan.progress} caption={portScan.progress.toFixed() + '%'} />
+      {progress !== 0 && progress < 100 && (
+        <>
+          <Progress value={progress} caption={progress.toFixed() + '%'} />
+          <div className="deviceSettingsWasm-scanning">{t('wasm.labels.scanning', { message: scanMessage })}</div>
+        </>
       )}
       <main className="deviceSettingsWasm-container">
         <aside className="deviceSettingsWasm-aside">
-          {!!devices.length && (
+          {!!(devices.length || manualDevices.length) && (
             <Tabs
-              items={devices.map((device) => ({ id: device.cfg.slave_id, label: `${device.cfg.slave_id} ${configDeviceTypesStore.findNotDeprecatedDeviceTypes(device.device_signature, device.fw?.version).at(0)}` }))}
+              items={allDevices
+                .map((device) => ({
+                  id: device.cfg.slave_id,
+                  label: `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
+                }))}
               activeTab={activeTab}
               onTabChange={(id: number) => {
                 const device = getDevice(id);
                 setSelectedDevice(id);
-                loadDeviceSettings(device);
+                loadDeviceSettings(device, configDeviceTypesStore);
               }}
             />
           )}
 
         </aside>
         <section className="deviceSettingsWasm-content">
+          {error && (
+            <Alert
+              className="deviceSettingsWasm-alert"
+              variant="danger"
+            >
+              {t('device-manager.errors.load-registers', { error })}
+            </Alert>
+          )}
           {isConfigLoading ? (
-            <div className="deviceSettingsWasm-loaderWrapper"><Loader caption={t('device-manager.labels.reading-parameters')} /></div>
+            <div className="deviceSettingsWasm-loaderWrapper">
+              <Loader caption={t('device-manager.labels.reading-parameters')} />
+            </div>
           ) : (
             tabstore && (
               <>
-                <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
+                <header className="deviceSettingsWasm-header">
+                  <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
+                  {manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)
+                    ? (
+                      <Button
+                        label={t('wasm.buttons.remove-local')}
+                        variant="secondary"
+                        size="small"
+                        onClick={() => removeLocal()}
+                      />
+                    )
+                    : (
+                      <Button
+                        label={t('wasm.buttons.save-local')}
+                        variant="secondary"
+                        size="small"
+                        onClick={() => saveLocal()}
+                      />
+                    )
+                  }
+
+                </header>
                 <FirmwareVersionPanel firmwareVersion={getDevice().fw?.version} />
                 <DeviceSettingsEditor
                   store={tabstore.schemaStore}
-                  translator={tabstore.schemaStore.schemaTranslator}
+                  translator={tabstore.schemaStore?.schemaTranslator}
                   showChannels={false}
                 />
               </>
@@ -180,6 +270,15 @@ export const DeviceSettingsWasm = observer(({
           )}
         </section>
       </main>
+
+      {isModalOpened && (
+        <AddDevice
+          isOpened={isModalOpened}
+          deviceTypes={configDeviceTypesStore?.deviceTypeDropdownOptions || []}
+          onSave={addDevice}
+          onClose={() => setIsModalOpened(false)}
+        />
+      )}
     </PageLayout>
   );
 });

@@ -8,12 +8,32 @@
     min-width: 220px;
 }
 
+.deviceSettingsWasm-scanning {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 6px;
+}
+
+.deviceSettingsWasm-addDeviceButton {
+    margin-top: 12px;
+    width: 100%;
+}
+
 .deviceSettingsWasm-content {
     width: 100%;
 }
 
+.deviceSettingsWasm-header {
+    display: flex;
+    justify-content: space-between;
+}
+
 .deviceSettingsWasm-title {
     margin-top: 6px;
+}
+
+.deviceSettingsWasm-alert {
+    margin-bottom: 12px;
 }
 
 .deviceSettingsWasm-loaderWrapper {
