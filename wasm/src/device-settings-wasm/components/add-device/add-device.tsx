@@ -17,7 +17,7 @@ export const AddDevice = ({ isOpened, deviceTypes, onSave, onClose }: AddDeviceP
     parity: 'N',
     stop_bits: 2,
   });
-  const baudrateOptions = [9600, 19200, 38400, 57600, 115200];
+  const baudrateOptions = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
   const parityOptions = [
     { value: 'N', label: t('wasm.labels.parity-never') },
     { value: 'E', label: t('wasm.labels.parity-even') },
