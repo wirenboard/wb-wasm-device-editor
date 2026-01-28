@@ -40,6 +40,9 @@ pipeline {
             }
         }
         stage('Build and publish Docker image') {
+            when { expression {
+                wb.isBranchRelease(env.BRANCH_NAME)
+            }}
             environment {
                 IMAGE_TAG = "contactless/wasm-device-editor:latest"
                 DOCKERHUB_CREDS = credentials('dockerhub-login')
@@ -52,9 +55,18 @@ pipeline {
                 docker logout
                 """
             }
-            when {
-                branch 'master'
-            }
         }
+    }
+    post {
+        always { script {
+            if (wb.isBranchRelease(env.BRANCH_NAME)) {
+                wb.notifyMaybeBuildRestored()
+            }
+        }}
+        failure { script {
+            if (wb.isBranchRelease(env.BRANCH_NAME)) {
+                wb.notifyBuildFailed()
+            }
+        }}
     }
 }
