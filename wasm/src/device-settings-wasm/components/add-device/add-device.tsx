@@ -40,6 +40,7 @@ export const AddDevice = ({ isOpened, deviceTypes, onSave, onClose }: AddDeviceP
           id="device-type"
           options={deviceTypes}
           value={device}
+          isSearchable
           onChange={({ value }: Option<string>) => setDevice(value)}
         />
       </label>

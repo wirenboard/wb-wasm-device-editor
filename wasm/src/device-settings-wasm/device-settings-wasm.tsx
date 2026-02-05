@@ -121,6 +121,7 @@ export const DeviceSettingsWasm = observer(() => {
     await store.loadContent(device.cfg);
     store.setDeviceType(device.device_signature, cfg);
     await store.updateEmbeddedSoftwareVersion(device.cfg);
+    store.schemaStore.customChannels = null;
 
     setTabstore(store);
     setIsConfigLoading(false);
