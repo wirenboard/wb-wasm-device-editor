@@ -207,6 +207,7 @@ void DeviceLoadConfig(const std::string& requestString)
                                                           helper.Device,
                                                           helper.Template,
                                                           false,
+                                                          std::string(),
                                                           parametersCache,
                                                           OnResult,
                                                           OnError);
