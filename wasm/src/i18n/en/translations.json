@@ -21,6 +21,10 @@
          "parity-never": "Never",
          "parity-even": "Even",
          "parity-odd": "Odd"
+      },
+      "sw": {
+         "offline": "Offline mode",
+         "update-available": "New version available — reload"
       }
    }
 }
