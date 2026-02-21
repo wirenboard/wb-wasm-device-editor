@@ -21,6 +21,10 @@
          "parity-never": "Никогда",
          "parity-even": "Четный",
          "parity-odd": "Нечетный"
+      },
+      "sw": {
+         "offline": "Без сети",
+         "update-available": "Доступна новая версия — перезагрузите"
       }
    }
 }

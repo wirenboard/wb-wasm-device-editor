@@ -36,6 +36,36 @@ export const DeviceSettingsWasm = observer(() => {
     items: allDevices,
   });
 
+  const [isOffline, setIsOffline] = useState(false);
+  const [hasUpdate, setHasUpdate] = useState(false);
+
+  useEffect(() => {
+    const onUpdate = () => setHasUpdate(true);
+    window.addEventListener('sw-update-available', onUpdate);
+    return () => window.removeEventListener('sw-update-available', onUpdate);
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.serviceWorker?.controller) return;
+
+    const checkOnline = () => {
+      fetch('/sw-ping')
+        .then((r) => r.text())
+        .then((text) => setIsOffline(text === 'offline'))
+        .catch(() => {});
+    };
+
+    checkOnline();
+    const interval = setInterval(checkOnline, 30000);
+    window.addEventListener('online', checkOnline);
+    window.addEventListener('offline', checkOnline);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', checkOnline);
+      window.removeEventListener('offline', checkOnline);
+    };
+  }, []);
+
   const {
     moduleInitialized,
     progress,
@@ -169,6 +199,19 @@ export const DeviceSettingsWasm = observer(() => {
       title={t('wasm.title')}
       actions={
         <>
+          {isOffline && <span className="deviceSettingsWasm-offline">{t('wasm.sw.offline')}</span>}
+          {hasUpdate && (
+            <a
+              className="deviceSettingsWasm-update"
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                window.location.reload();
+              }}
+            >
+              {t('wasm.sw.update-available')}
+            </a>
+          )}
           <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)}/>
           <Button label={t('wasm.buttons.select')} variant="secondary" onClick={selectPort} />
           <Button label={t('wasm.buttons.scan')} onClick={handleScan} />
