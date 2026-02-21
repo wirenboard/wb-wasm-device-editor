@@ -39,6 +39,21 @@ pipeline {
                 }
             }
         }
+        stage('E2E tests') {
+            agent {
+                docker {
+                    image 'node:latest'
+                    args '--entrypoint="" -u root:root'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir(path: 'wasm') {
+                    sh 'npx playwright install --with-deps chromium'
+                    sh 'npm run test:e2e'
+                }
+            }
+        }
         stage('Build and publish Docker image') {
             when { expression {
                 wb.isBranchRelease(env.BRANCH_NAME)
