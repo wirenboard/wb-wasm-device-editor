@@ -31,3 +31,20 @@ docker build --no-cache --tag wb-wasm-device-editor:latest wasm
 ```
 
 После сборки готовые файлы конфигуратора будут находиться в директории `wasm/dist-configurator`.
+
+#### E2E-тесты
+
+Для запуска E2E-тестов необходимо сначала собрать конфигуратор (шаги 1-5), затем:
+
+1. Установка Playwright и браузера Chromium:
+```
+npx playwright install --with-deps chromium
+```
+
+2. Запуск тестов:
+```
+cd wasm
+npm run test:e2e
+```
+
+Тесты проверяют работу Service Worker: офлайн-режим, обнаружение обновлений и поведение при медленном соединении.
