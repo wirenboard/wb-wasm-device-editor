@@ -56,6 +56,7 @@ SRC = \
 	$(SERIAL_DIR)/src/rpc/rpc_exception.cpp                    \
 	$(SERIAL_DIR)/src/rpc/rpc_helpers.cpp                      \
 	$(SERIAL_DIR)/src/rpc/rpc_port_scan_serial_client_task.cpp \
+	$(SERIAL_DIR)/src/rpc/rpc_port_setup_serial_client_task.cpp \
 	$(WASM_DIR)/src/wasm_port.cpp                              \
 	$(WASM_DIR)/src/wasm_module.cpp                            \
 

@@ -31,6 +31,7 @@ window.Module =
               case 'portScan': this.portScan(json); break;
               case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
               case 'deviceSet': this.deviceSet(json); break;
+              case 'portSetup': this.portSetup(json); break;
           }
 
           await new Promise(wait.bind(this));
