@@ -236,15 +236,18 @@ export const DeviceSettingsWasm = observer(() => {
     }
 
     // Save other parameters (addressing the device at its current slave_id)
+    const { slave_id, ...parameters } = tabstore.editedData;
     const data = {
       device_type: tabstore.deviceType,
       ...device.cfg,
       ...(slaveIdChanged ? { slave_id: editedSlaveId } : {}),
-      parameters: tabstore.editedData,
+      parameters,
     };
-    delete data.parameters.slave_id;
 
-    save(data);
+    const result = await save(data);
+    if (result?.error) {
+      setError(result.error.message);
+    }
   };
 
   const addDevice = (device: Device) => {
@@ -290,7 +293,12 @@ export const DeviceSettingsWasm = observer(() => {
           <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)}/>
           <Button label={t('wasm.buttons.select')} variant="secondary" onClick={selectPort} />
           <Button label={t('wasm.buttons.scan')} onClick={handleScan} />
-          <Button label={t('wasm.buttons.save')} disabled={!devices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid} variant="primary" onClick={handleSave} />
+          <Button
+            label={t('wasm.buttons.save')}
+            disabled={!allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid}
+            variant="primary"
+            onClick={handleSave}
+          />
         </>
       }
       isLoading={!configDeviceTypesStore}
@@ -379,6 +387,14 @@ export const DeviceSettingsWasm = observer(() => {
 
                 </header>
                 <FirmwareVersionPanel firmwareVersion={getDevice().fw?.version} />
+                {tabstore.slaveIdIsDuplicate && (
+                  <Alert
+                    className="deviceSettingsWasm-alert"
+                    variant="danger"
+                  >
+                    {t('device-manager.errors.duplicate-slave-id')}
+                  </Alert>
+                )}
                 <DeviceSettingsEditor
                   store={tabstore.schemaStore}
                   translator={tabstore.schemaStore?.schemaTranslator}

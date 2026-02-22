@@ -52,7 +52,7 @@ export const AddDevice = ({ isOpened, deviceTypes, onSave, onClose }: AddDeviceP
           type="number"
           min={1}
           max={247}
-          onChange={(value: number) => setCfg({ ...cfg, slave_id: value })}
+          onChange={(value) => setCfg({ ...cfg, slave_id: Number(value) })}
         />
       </label>
 
