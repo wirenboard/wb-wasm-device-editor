@@ -7,6 +7,7 @@
 #include "rpc/rpc_device_set_task.h"
 #include "rpc/rpc_helpers.h"
 #include "rpc/rpc_port_scan_serial_client_task.h"
+#include "rpc/rpc_port_setup_serial_client_task.h"
 
 #include <emscripten/bind.h>
 
@@ -236,6 +237,18 @@ void DeviceSet(const std::string& requestString)
     }
 }
 
+void PortSetup(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, std::string(), "port/Setup");
+        auto accessHandler = helper.GetAccessHandler();
+        TRPCPortSetupSerialClientTask(helper.Request, OnResult, OnError)
+            .Run(Port, accessHandler, PolledDevices);
+    } catch (const std::exception& e) {
+        LOG(Error) << "port/Setup RPC failed: " << e.what();
+    }
+}
+
 EMSCRIPTEN_BINDINGS(module)
 {
     emscripten::function("configGetDeviceTypes", &ConfigGetDeviceTypes);
@@ -243,4 +256,5 @@ EMSCRIPTEN_BINDINGS(module)
     emscripten::function("portScan", &PortScan);
     emscripten::function("deviceLoadConfig", &DeviceLoadConfig);
     emscripten::function("deviceSet", &DeviceSet);
+    emscripten::function("portSetup", &PortSetup);
 }
