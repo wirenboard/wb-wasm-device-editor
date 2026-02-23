@@ -13,19 +13,6 @@ class SerialPort {
           { usbVendorId: 0x1a86, usbProductId: 0x7523 },
       ];
 
-    chipNames = {
-        '1027:24577': 'FTDI FT232',
-        '1027:24596': 'FTDI FT232H',
-        '1027:24597': 'FTDI FT2232H',
-        '1241:46388': 'Holtek HT42B534',
-        '4292:60000': 'CP2102',
-        '4292:60001': 'CP2102N',
-        '4292:60003': 'CP2104',
-        '6790:21971': 'CH343',
-        '6790:30002': 'CH340',
-        '6790:30003': 'CH341',
-    };
-
     options = new Object();
     isOpen = false;
 
@@ -168,7 +155,9 @@ class SerialPort {
 
         try {
             await this.port.close();
-        } catch (_) {}
+        } catch (e) {
+            console.warn('Serial port close error:', e);
+        }
         this.isOpen = false;
     }
 

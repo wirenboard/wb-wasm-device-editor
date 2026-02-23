@@ -33,14 +33,20 @@ window.Module =
 
           this.finished = false;
 
-          switch (type) {
-              case 'configGetDeviceTypes': this.configGetDeviceTypes(json); break;
-              case 'configGetSchema': this.configGetSchema(json); break;
-              case 'portScan': this.portScan(json); break;
-              case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
-              case 'deviceSet': this.deviceSet(json); break;
-              case 'deviceLoad': this.deviceLoad(json); break;
-              case 'portSetup': this.portSetup(json); break;
+          try {
+              switch (type) {
+                  case 'configGetDeviceTypes': this.configGetDeviceTypes(json); break;
+                  case 'configGetSchema': this.configGetSchema(json); break;
+                  case 'portScan': this.portScan(json); break;
+                  case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
+                  case 'deviceSet': this.deviceSet(json); break;
+                  case 'deviceLoad': this.deviceLoad(json); break;
+                  case 'portSetup': this.portSetup(json); break;
+              }
+          } catch (e) {
+              var msg = (e && e.message) ? e.message : String(e);
+              this.print('WASM call failed for ' + type + ': ' + msg);
+              return { error: { code: -1, message: 'WASM call failed: ' + msg } };
           }
 
           const deadline = Date.now() + 120000;

@@ -180,6 +180,7 @@ void ConfigGetDeviceTypes(const std::string& requestString)
         OnResult(ConfigHandler->GetDeviceTypes(helper.Request));
     } catch (const std::exception& e) {
         LOG(Error) << "config/GetDeviceTypes RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -190,6 +191,7 @@ void ConfigGetSchema(const std::string& requestString)
         OnResult(ConfigHandler->GetSchema(helper.Request));
     } catch (const std::exception& e) {
         LOG(Error) << "config/GetSchema RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -201,6 +203,7 @@ void PortScan(const std::string& requestString)
         TRPCPortScanSerialClientTask(helper.Request, OnResult, OnError).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "port/Scan RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -222,6 +225,7 @@ void DeviceLoadConfig(const std::string& requestString)
         TRPCDeviceLoadConfigSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "device/LoadConfig RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -240,12 +244,15 @@ void DeviceSet(const std::string& requestString)
         TRPCDeviceSetSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "device/Set RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
 void DeviceLoad(const std::string& requestString)
 {
     try {
+        // Schema validation skipped: the schema requires "path" (serial) or "device_id"
+        // fields that are not applicable in the WASM/WebSerial context.
         THelper helper(requestString, std::string(), "device/Load", true);
         auto rpcRequest = ParseRPCDeviceLoadRequest(helper.Request,
                                                     helper.Params,
@@ -258,6 +265,7 @@ void DeviceLoad(const std::string& requestString)
         TRPCDeviceLoadSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "device/Load RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -269,6 +277,7 @@ void PortSetup(const std::string& requestString)
         TRPCPortSetupSerialClientTask(helper.Request, OnResult, OnError).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "port/Setup RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 

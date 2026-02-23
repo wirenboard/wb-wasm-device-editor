@@ -85,7 +85,7 @@ test('Runtime View tab shows channel cells', async ({ page }) => {
   await expect(cells.first()).toBeVisible({ timeout: 10_000 });
 });
 
-test('Runtime View tab has refresh and pause buttons', async ({ page }) => {
+test('Runtime View tab has refresh button and auto-refresh toggle', async ({ page }) => {
   await waitForAppReady(page);
   await addDevice(page, 1);
   await openDeviceTab(page, 1);
@@ -95,10 +95,10 @@ test('Runtime View tab has refresh and pause buttons', async ({ page }) => {
   await expect(runtimeView).toBeVisible({ timeout: 15_000 });
 
   await expect(runtimeView.getByRole('button', { name: 'Refresh' })).toBeVisible();
-  await expect(runtimeView.getByRole('button', { name: 'Pause' })).toBeVisible();
+  await expect(runtimeView.locator('.runtimeView-autoRefresh')).toBeVisible();
 });
 
-test('Runtime View pause button toggles to resume', async ({ page }) => {
+test('Runtime View auto-refresh toggle disables and enables polling', async ({ page }) => {
   await waitForAppReady(page);
   await addDevice(page, 1);
   await openDeviceTab(page, 1);
@@ -107,10 +107,16 @@ test('Runtime View pause button toggles to resume', async ({ page }) => {
   const runtimeView = page.locator('.runtimeView');
   await expect(runtimeView).toBeVisible({ timeout: 15_000 });
 
-  const pauseBtn = runtimeView.getByRole('button', { name: 'Pause' });
-  await pauseBtn.click();
+  // The auto-refresh switch should be checked (on) by default
+  const toggle = runtimeView.locator('.runtimeView-autoRefresh input[type="checkbox"]');
+  await expect(toggle).toBeChecked();
 
-  await expect(runtimeView.getByRole('button', { name: 'Resume' })).toBeVisible();
+  // Click to disable auto-refresh
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+
+  // Refresh button should become enabled when auto-refresh is off
+  await expect(runtimeView.getByRole('button', { name: 'Refresh' })).toBeEnabled();
 });
 
 test('Runtime View handles deviceLoad errors gracefully', async ({ page }) => {

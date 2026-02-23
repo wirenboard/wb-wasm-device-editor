@@ -127,21 +127,6 @@ export const RuntimeView = observer(({
     deviceCfgRef.current = deviceCfg;
   }, [deviceCfg]);
 
-  const handleWrite = useCallback(async (channelName: string, value: string) => {
-    const cfg = deviceCfgRef.current;
-    const data = {
-      device_type: cfg.device_type,
-      slave_id: cfg.slave_id,
-      baud_rate: cfg.baud_rate,
-      parity: cfg.parity,
-      data_bits: cfg.data_bits,
-      stop_bits: cfg.stop_bits,
-      channels: { [channelName]: value },
-    };
-    await save(data);
-    await pollValues();
-  }, [save]);
-
   const pollValues = useCallback(async () => {
     const names = channelNamesRef.current;
     const currentCells = cellsRef.current;
@@ -179,6 +164,21 @@ export const RuntimeView = observer(({
       setError(e.message || 'Failed to load channel values');
     }
   }, [deviceLoad]);
+
+  const handleWrite = useCallback(async (channelName: string, value: string) => {
+    const cfg = deviceCfgRef.current;
+    const data = {
+      device_type: cfg.device_type,
+      slave_id: cfg.slave_id,
+      baud_rate: cfg.baud_rate,
+      parity: cfg.parity,
+      data_bits: cfg.data_bits,
+      stop_bits: cfg.stop_bits,
+      channels: { [channelName]: value },
+    };
+    await save(data);
+    await pollValues();
+  }, [save, pollValues]);
 
   // Initialize cells from schema when deviceCfg changes
   useEffect(() => {
@@ -253,12 +253,12 @@ export const RuntimeView = observer(({
     return () => { cancelled = true; };
   }, [deviceCfg.device_type, deviceCfg.slave_id]);
 
-  // Polling timer
+  // Polling timer — pauses when page/tab is hidden
   useEffect(() => {
     if (!channelNames.length) return;
 
     pollTimerRef.current = setInterval(() => {
-      if (autoRefreshRef.current) {
+      if (autoRefreshRef.current && document.visibilityState === 'visible') {
         pollValues();
       }
     }, POLL_INTERVAL);
