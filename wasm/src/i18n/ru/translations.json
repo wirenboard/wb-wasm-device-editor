@@ -3,15 +3,20 @@
       "title": "Конфигуратор устройств Wiren Board",
       "buttons": {
          "select": "Выбрать порт",
+         "change-port": "Сменить порт",
          "scan": "Сканировать",
          "save": "Сохранить",
          "save-local": "Сохранить локально",
          "remove-local": "Удалить локально",
          "add-device": "Добавить устройство вручную",
-         "add": "Добавить"
+         "add": "Добавить",
+         "refresh": "Обновить",
+         "pause": "Пауза"
       },
       "labels": {
          "scanning": "Сканирование {{message}}…",
+         "runtime-view": "Мониторинг",
+         "auto-refresh": "Автообновление",
          "device-type": "Тип устройства",
          "slave-id": "Адрес устройства",
          "baudrate": "Скорость",

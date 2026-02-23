@@ -3,15 +3,20 @@
       "title": "Wiren Board Device Editor",
       "buttons": {
          "select": "Select port",
+         "change-port": "Change port",
          "scan": "Scan",
          "save": "Save",
          "save-local": "Save local",
          "remove-local": "Remove local",
          "add-device": "Manually add device",
-         "add": "Add"
+         "add": "Add",
+         "refresh": "Refresh",
+         "pause": "Pause"
       },
       "labels": {
          "scanning": "Scanning in progresss {{message}}…",
+         "runtime-view": "Runtime View",
+         "auto-refresh": "Auto-refresh",
          "device-type": "Device type",
          "slave-id": "Slave id of the device",
          "baudrate": "Baudrate",
