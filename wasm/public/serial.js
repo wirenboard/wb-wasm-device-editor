@@ -41,11 +41,90 @@ class SerialPort {
         this.options.stopBits = stopBits;
     }
 
+    _portKey(info) {
+        return info.usbVendorId + ':' + info.usbProductId;
+    }
+
+    _portHexId(info) {
+        const vid = info.usbVendorId?.toString(16).padStart(4, '0') ?? '????';
+        const pid = info.usbProductId?.toString(16).padStart(4, '0') ?? '????';
+        return vid + ':' + pid;
+    }
+
+    _getMatchingPorts(granted) {
+        return granted.filter(p => {
+            const info = p.getInfo();
+            return this.filters.some(f =>
+                f.usbVendorId === info.usbVendorId &&
+                f.usbProductId === info.usbProductId
+            );
+        });
+    }
+
+    async tryAutoSelect() {
+        if (this.port) return;
+        const granted = await navigator.serial.getPorts();
+        const matching = this._getMatchingPorts(granted);
+        if (matching.length === 1) {
+            this.port = matching[0];
+            localStorage.setItem('serialPort', this._portKey(this.port.getInfo()));
+        } else if (matching.length > 1) {
+            const saved = localStorage.getItem('serialPort');
+            if (saved) {
+                const found = matching.find(p => this._portKey(p.getInfo()) === saved);
+                if (found) this.port = found;
+            }
+        }
+    }
+
+    async getPortInfo() {
+        await this.tryAutoSelect();
+        const granted = await navigator.serial.getPorts();
+        const matching = this._getMatchingPorts(granted);
+        let name = null;
+        let hexId = null;
+        if (this.port) {
+            const idx = matching.indexOf(this.port);
+            name = 'Port ' + (idx >= 0 ? idx + 1 : 1);
+            hexId = this._portHexId(this.port.getInfo());
+        }
+        return { name, hexId, matchingCount: matching.length };
+    }
+
+    async forceSelect() {
+        this.port = await navigator.serial.requestPort({ filters: this.filters });
+        localStorage.setItem('serialPort', this._portKey(this.port.getInfo()));
+    }
+
     async select(force) {
         if (this.port && !force)
             return;
 
+        // Try to auto-select from already-granted ports
+        const granted = await navigator.serial.getPorts();
+        const matching = this._getMatchingPorts(granted);
+
+        if (matching.length === 1) {
+            this.port = matching[0];
+            localStorage.setItem('serialPort', this._portKey(this.port.getInfo()));
+            return;
+        }
+
+        // Multiple matches — try to use the last selected port
+        if (matching.length > 1) {
+            const saved = localStorage.getItem('serialPort');
+            if (saved) {
+                const found = matching.find(p => this._portKey(p.getInfo()) === saved);
+                if (found) {
+                    this.port = found;
+                    return;
+                }
+            }
+        }
+
+        // Fall back to chooser dialog (needs user gesture)
         this.port = await navigator.serial.requestPort({ filters: this.filters });
+        localStorage.setItem('serialPort', this._portKey(this.port.getInfo()));
     }
 
     async open() {
@@ -74,7 +153,11 @@ class SerialPort {
         if (!this.port || !this.isOpen)
             return;
 
-        await this.port.close();
+        try {
+            await this.port.close();
+        } catch (e) {
+            console.warn('Serial port close error:', e);
+        }
         this.isOpen = false;
     }
 
@@ -127,14 +210,14 @@ class SerialPort {
 
             if (read) {
                 read = false;
-                reader.cancel();
+                await reader.cancel();
             }
 
             return data;
         }
 
         let result = await Promise.race([receive(), wait(this.replyTimeout)]);
-        reader.releaseLock();
+        try { reader.releaseLock(); } catch (_) {}
         return result;
     }
 }
