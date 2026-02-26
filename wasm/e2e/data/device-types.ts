@@ -1,21 +1,14 @@
 /**
- * Canned configGetDeviceTypes response.
+ * Device type groups built from real wb-mqtt-serial templates.
  * Format matches DeviceTypeDescriptionGroup[] expected by DeviceTypesStore.setDeviceTypeGroups().
  */
+import { loadTemplate, buildDeviceTypeEntry } from './load-template';
+
+export const map3et = loadTemplate('config-map3et.json');
+
 export const deviceTypeGroups = [
   {
     name: 'WB Electricity Meters',
-    types: [
-      {
-        name: 'WB-MAP3ET',
-        type: 'WB-MAP3ET',
-        deprecated: false,
-        protocol: 'modbus',
-        'mqtt-id': 'wb-map3et',
-        hw: [
-          { signature: 'WB-MAP3ET', fw: '2.5.0' },
-        ],
-      },
-    ],
+    types: [buildDeviceTypeEntry(map3et)],
   },
 ];

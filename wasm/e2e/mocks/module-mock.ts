@@ -1,6 +1,7 @@
-import { deviceTypeGroups } from '../data/device-types';
+import { deviceTypeGroups, map3et } from '../data/device-types';
 import { scannedDevices } from '../data/scan-results';
 import { deviceSchemas } from '../data/device-schemas';
+import { buildDefaultConfig } from '../data/load-template';
 
 /**
  * Returns a JS string that replaces module.js (the WASM binary).
@@ -11,12 +12,14 @@ export function getModuleMockScript(): string {
   const deviceTypesJSON = JSON.stringify(deviceTypeGroups);
   const scannedDevicesJSON = JSON.stringify(scannedDevices);
   const deviceSchemasJSON = JSON.stringify(deviceSchemas);
+  const defaultConfigJSON = JSON.stringify(buildDefaultConfig(map3et));
 
   return `
 (() => {
   const DEVICE_TYPE_GROUPS = ${deviceTypesJSON};
   const SCANNED_DEVICES = ${scannedDevicesJSON};
   const DEVICE_SCHEMAS = ${deviceSchemasJSON};
+  const DEFAULT_CONFIG = ${defaultConfigJSON};
 
   function waitFor(condFn, cb) {
     if (condFn()) { cb(); return; }
@@ -57,13 +60,33 @@ export function getModuleMockScript(): string {
 
       M.deviceLoadConfig = function(json) {
         const req = JSON.parse(json);
+        // Check if error injection is enabled
+        if (window.__mockError) {
+          const reply = JSON.stringify({ error: { code: -1, message: 'Mock load error' } });
+          setTimeout(() => M.parseReply(reply), 1);
+          return;
+        }
         const device = SCANNED_DEVICES.find((d) => d.cfg.slave_id === req.slave_id);
-        const result = device ? { parameters: { baud_rate: device.cfg.baud_rate } } : { parameters: {} };
+        // Use default values from the real template for all parameters
+        const parameters = Object.assign({}, DEFAULT_CONFIG);
+        // Override baud_rate with the device's actual connection baud rate register value
+        // (the template uses register-level values: 96=9600, 192=19200, etc.)
+        if (device) {
+          parameters.baud_rate = DEFAULT_CONFIG.baud_rate;
+        }
+        const result = { parameters };
+        if (device && device.fw) {
+          result.fw = device.fw.version;
+          result.model = device.device_signature;
+        }
         const reply = JSON.stringify({ result });
         setTimeout(() => M.parseReply(reply), 1);
       };
 
       M.deviceSet = function(json) {
+        const req = JSON.parse(json);
+        // Store the payload for test inspection
+        window.__lastDeviceSetPayload = req;
         const reply = JSON.stringify({ result: { success: true } });
         setTimeout(() => M.parseReply(reply), 1);
       };

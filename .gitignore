@@ -1,7 +1,10 @@
 # common
 .clang-format
 .vscode
-wasm/public/module.*
+# Emscripten build artifacts (module.js placeholder is tracked for e2e tests)
+wasm/public/module.wasm
+wasm/public/module.data
+wasm/public/module.worker.js
 wblib/json
 
 # assets
