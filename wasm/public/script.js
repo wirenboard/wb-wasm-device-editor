@@ -6,34 +6,65 @@ window.Module =
           wasmReadyResolve = resolve;
       }),
 
+      _requestLock: Promise.resolve(),
+
       onRuntimeInitialized() {
           this.serial = new SerialPort();
           wasmReadyResolve();
       },
 
       async request(type, data) {
-          let json = JSON.stringify(data);
+          // Serialize all RPC requests — the serial port and shared
+          // finished/reply state cannot handle concurrent access.
+          let unlock;
+          const prev = this._requestLock;
+          this._requestLock = new Promise((resolve) => { unlock = resolve; });
+          await prev;
 
-          function wait(resolve) {
-              if (this.finished) {
-                  resolve();
-                  return;
-              }
-
-              setTimeout(wait.bind(this, resolve), 1);
+          try {
+              return await this._doRequest(type, data);
+          } finally {
+              unlock();
           }
+      },
+
+      async _doRequest(type, data) {
+          let json = JSON.stringify(data);
 
           this.finished = false;
 
-          switch (type) {
-              case 'configGetDeviceTypes': this.configGetDeviceTypes(json); break;
-              case 'configGetSchema': this.configGetSchema(json); break;
-              case 'portScan': this.portScan(json); break;
-              case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
-              case 'deviceSet': this.deviceSet(json); break;
+          try {
+              switch (type) {
+                  case 'configGetDeviceTypes': this.configGetDeviceTypes(json); break;
+                  case 'configGetSchema': this.configGetSchema(json); break;
+                  case 'portScan': this.portScan(json); break;
+                  case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
+                  case 'deviceSet': this.deviceSet(json); break;
+                  case 'deviceLoad': this.deviceLoad(json); break;
+              }
+          } catch (e) {
+              var msg = (e && e.message) ? e.message : String(e);
+              this.print('WASM call failed for ' + type + ': ' + msg);
+              return { error: { code: -1, message: 'WASM call failed: ' + msg } };
           }
 
-          await new Promise(wait.bind(this));
+          const deadline = Date.now() + 120000;
+          await new Promise((resolve) => {
+              const check = () => {
+                  if (this.finished || Date.now() > deadline) {
+                      resolve();
+                      return;
+                  }
+                  setTimeout(check, 1);
+              };
+              check();
+          });
+
+          if (!this.finished) {
+              this.print('RPC request timeout (120s) for: ' + type);
+              this.reply = { error: { code: -1, message: 'RPC request timeout' } };
+          }
+
           return this.reply;
       },
 

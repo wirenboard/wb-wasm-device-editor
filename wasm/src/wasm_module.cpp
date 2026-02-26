@@ -2,8 +2,10 @@
 #include "port/feature_port.h"
 #include "wasm_port.h"
 
+#include "config_merge_template.h"
 #include "rpc/rpc_config_handler.h"
 #include "rpc/rpc_device_load_config_task.h"
+#include "rpc/rpc_device_load_task.h"
 #include "rpc/rpc_device_set_task.h"
 #include "rpc/rpc_helpers.h"
 #include "rpc/rpc_port_scan_serial_client_task.h"
@@ -26,6 +28,7 @@ namespace
     const auto PORT_SCAN_SCHEMA_FILE = "wb-mqtt-serial-rpc-port-scan-request.schema.json";
     const auto DEVICE_LOAD_CONFIG_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-load-config-request.schema.json";
     const auto DEVICE_SET_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-set-request.schema.json";
+    const auto DEVICE_LOAD_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-load-request.schema.json";
 
     const auto PROTOCOLS_DIR = "protocols";
     const auto TEMPLATES_DIR = "templates";
@@ -106,6 +109,8 @@ namespace
             try {
                 Template = TemplateMap->GetTemplate(Request["device_type"].asString());
                 Device = Params.factory->CreateDevice(Template->GetTemplate(), config, Params.protocol);
+                Device->SetWbDevice(!Template->GetHardware().empty() ||
+                                    Template->GetTemplate()["enable_wb_continuous_read"].asBool());
             } catch (const std::out_of_range& e) {
                 LOG(Error) << "Unable to create device: " << e.what();
             }
@@ -173,6 +178,7 @@ void ConfigGetDeviceTypes(const std::string& requestString)
         OnResult(ConfigHandler->GetDeviceTypes(helper.Request));
     } catch (const std::exception& e) {
         LOG(Error) << "config/GetDeviceTypes RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -183,6 +189,7 @@ void ConfigGetSchema(const std::string& requestString)
         OnResult(ConfigHandler->GetSchema(helper.Request));
     } catch (const std::exception& e) {
         LOG(Error) << "config/GetSchema RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -194,6 +201,7 @@ void PortScan(const std::string& requestString)
         TRPCPortScanSerialClientTask(helper.Request, OnResult, OnError).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "port/Scan RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -215,6 +223,7 @@ void DeviceLoadConfig(const std::string& requestString)
         TRPCDeviceLoadConfigSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "device/LoadConfig RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -233,8 +242,31 @@ void DeviceSet(const std::string& requestString)
         TRPCDeviceSetSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "device/Set RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
+
+void DeviceLoad(const std::string& requestString)
+{
+    try {
+        // Schema validation skipped: the schema requires "path" (serial) or "device_id"
+        // fields that are not applicable in the WASM/WebSerial context.
+        THelper helper(requestString, std::string(), "device/Load", true);
+        auto rpcRequest = ParseRPCDeviceLoadRequest(helper.Request,
+                                                    helper.Params,
+                                                    helper.Device,
+                                                    helper.Template,
+                                                    false,
+                                                    OnResult,
+                                                    OnError);
+        auto accessHandler = helper.GetAccessHandler();
+        TRPCDeviceLoadSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
+    } catch (const std::exception& e) {
+        LOG(Error) << "device/Load RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
+    }
+}
+
 
 EMSCRIPTEN_BINDINGS(module)
 {
@@ -243,4 +275,5 @@ EMSCRIPTEN_BINDINGS(module)
     emscripten::function("portScan", &PortScan);
     emscripten::function("deviceLoadConfig", &DeviceLoadConfig);
     emscripten::function("deviceSet", &DeviceSet);
+    emscripten::function("deviceLoad", &DeviceLoad);
 }

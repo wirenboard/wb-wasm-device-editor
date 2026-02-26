@@ -79,6 +79,7 @@ all: templates
 	cp $(SERIAL_DIR)/wb-mqtt-serial-confed-common.schema.json $(ASSETS_DIR)
 	cp $(SERIAL_DIR)/wb-mqtt-serial-ports.schema.json $(ASSETS_DIR)
 	cp $(SERIAL_DIR)/wb-mqtt-serial-device-template.schema.json $(ASSETS_DIR)
+	cp $(SERIAL_DIR)/wb-mqtt-serial-rpc-device-load-request.schema.json $(ASSETS_DIR)
 # fix include
 	cp -r $(JSONCPP_DIR)/include/json wblib/
 # build module
