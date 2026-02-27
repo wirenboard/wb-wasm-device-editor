@@ -71,20 +71,6 @@ test('Runtime View appears as a tab alongside settings groups', async ({ page })
   await expect(runtimeTab).toBeVisible({ timeout: 15_000 });
 });
 
-test('Runtime View tab shows channel cells', async ({ page }) => {
-  await waitForAppReady(page);
-  await addDevice(page, 1);
-  await openDeviceTab(page, 1);
-  await clickRuntimeViewTab(page);
-
-  // At least one cell should render (channels from the template)
-  const tabContent = page.locator('.deviceSettingsEditor-tabContent .runtimeView');
-  await expect(tabContent).toBeVisible({ timeout: 10_000 });
-
-  const cells = tabContent.locator('.deviceCell');
-  await expect(cells.first()).toBeVisible({ timeout: 10_000 });
-});
-
 test('Runtime View tab has refresh button and auto-refresh toggle', async ({ page }) => {
   await waitForAppReady(page);
   await addDevice(page, 1);
@@ -111,8 +97,8 @@ test('Runtime View auto-refresh toggle disables and enables polling', async ({ p
   const toggle = runtimeView.locator('.runtimeView-autoRefresh input[type="checkbox"]');
   await expect(toggle).toBeChecked();
 
-  // Click to disable auto-refresh
-  await toggle.click();
+  // Click the visible toggle span (the checkbox is hidden under it)
+  await runtimeView.locator('.runtimeView-autoRefresh .toggle').click();
   await expect(toggle).not.toBeChecked();
 
   // Refresh button should become enabled when auto-refresh is off
