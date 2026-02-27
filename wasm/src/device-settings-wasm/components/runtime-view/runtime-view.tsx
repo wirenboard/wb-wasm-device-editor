@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/button';
 import { CellContent } from '@/components/cell/cell';
 import { Switch } from '@/components/switch';
-import Cell from '@/stores/device/cell';
-import type { CellType } from '@/stores/device/cell-type';
+import Cell from '@/stores/devices/cell';
+import type { CellType } from '@/stores/devices/cell-type';
 import '@/components/cell/styles.css';
 import './runtime-view.css';
 
