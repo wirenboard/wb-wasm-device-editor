@@ -10,11 +10,10 @@
          "remove-local": "Remove local",
          "add-device": "Manually add device",
          "add": "Add",
-         "refresh": "Refresh",
-         "pause": "Pause"
+         "refresh": "Refresh"
       },
       "labels": {
-         "scanning": "Scanning in progresss {{message}}…",
+         "scanning": "Scanning in progress {{message}}…",
          "runtime-view": "Runtime View",
          "auto-refresh": "Auto-refresh",
          "device-type": "Device type",

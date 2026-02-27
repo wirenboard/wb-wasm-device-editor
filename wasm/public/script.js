@@ -44,7 +44,7 @@ window.Module =
                   case 'deviceLoad': this.deviceLoad(json); break;
               }
           } catch (e) {
-              var msg = (e && e.message) ? e.message : String(e);
+              const msg = (e && e.message) ? e.message : String(e);
               this.print('WASM call failed for ' + type + ': ' + msg);
               return { error: { code: -1, message: 'WASM call failed: ' + msg } };
           }

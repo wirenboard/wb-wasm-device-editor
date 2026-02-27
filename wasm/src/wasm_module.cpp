@@ -30,8 +30,6 @@ namespace
     const auto PORT_SETUP_SCHEMA_FILE = "wb-mqtt-serial-rpc-port-setup-request.schema.json";
     const auto DEVICE_LOAD_CONFIG_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-load-config-request.schema.json";
     const auto DEVICE_SET_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-set-request.schema.json";
-    const auto DEVICE_LOAD_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-load-request.schema.json";
-
     const auto PROTOCOLS_DIR = "protocols";
     const auto TEMPLATES_DIR = "templates";
 
@@ -215,6 +213,7 @@ void PortSetup(const std::string& requestString)
         TRPCPortSetupSerialClientTask(helper.Request, OnResult, OnError).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "port/Setup RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
 
@@ -279,7 +278,6 @@ void DeviceLoad(const std::string& requestString)
         OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
-
 
 EMSCRIPTEN_BINDINGS(module)
 {

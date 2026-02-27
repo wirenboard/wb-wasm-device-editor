@@ -57,11 +57,11 @@ function applyReadonly(cells: Cell[], readonlyMap: Record<string, boolean>) {
 function cleanStringValue(value: string): string {
   // Strip from the first control character (< 0x20) or DEL (0x7F).
   // Modbus string registers often contain garbage bytes after the real data.
-  const idx = [...value].findIndex((ch) => {
-    const code = ch.charCodeAt(0);
-    return code < 0x20 || code === 0x7f;
-  });
-  return idx >= 0 ? value.slice(0, idx) : value;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return value.slice(0, i);
+  }
+  return value;
 }
 
 function createCells(
@@ -107,6 +107,7 @@ export const RuntimeView = observer(({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingRef = useRef(false);
   const cellsRef = useRef<Cell[]>([]);
   const channelNamesRef = useRef<string[]>([]);
   const autoRefreshRef = useRef(true);
@@ -168,7 +169,11 @@ export const RuntimeView = observer(({
       stop_bits: cfg.stop_bits,
       channels: { [channelName]: value },
     };
-    await save(data);
+    const result = await save(data);
+    if (result?.error) {
+      setError(result.error.message);
+      return;
+    }
     await pollValues();
   }, [save, pollValues]);
 
@@ -248,9 +253,11 @@ export const RuntimeView = observer(({
   useEffect(() => {
     if (!channelNames.length) return;
 
-    pollTimerRef.current = setInterval(() => {
+    pollTimerRef.current = setInterval(async () => {
+      if (pollingRef.current) return;
       if (autoRefreshRef.current && document.visibilityState === 'visible') {
-        pollValues();
+        pollingRef.current = true;
+        try { await pollValues(); } finally { pollingRef.current = false; }
       }
     }, POLL_INTERVAL);
 

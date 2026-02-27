@@ -28,6 +28,7 @@ import type { Device } from './types';
 import './styles.css';
 
 const RUNTIME_VIEW_TAB_ID = 'runtime-view';
+const EMPTY_GROUPS: WbDeviceParameterEditorsGroup[] = [];
 
 const SubGroupContent = observer((
   { group, translator }: { group: WbDeviceParameterEditorsGroup; translator: Translator }
@@ -88,8 +89,8 @@ export const DeviceSettingsWasm = observer(() => {
   const [configDeviceTypesStore, setConfigDeviceTypesStore] = useState(null);
   const [error, setError] = useState(null);
   const [manualDevices, updateManualDevices] = useLocalStorage('devices');
-  const allDevices = useMemo(() => [...devices, ...(devices.length ? manualDevices.filter((device) => {
-    return !devices.map((device) => device.cfg.slave_id).includes(device.cfg.slave_id);
+  const allDevices = useMemo(() => [...devices, ...(devices.length ? manualDevices.filter((manual) => {
+    return !devices.map((d) => d.cfg.slave_id).includes(manual.cfg.slave_id);
   }) : manualDevices)], [devices, manualDevices]);
   const { activeTab } = useTabs({
     defaultTab: selectedDevice,
@@ -287,6 +288,7 @@ export const DeviceSettingsWasm = observer(() => {
 
   const handleSave = async () => {
     const device = getDevice();
+    if (!device.cfg || !tabstore?.editedData) return;
     const editedSlaveId = Number(tabstore.editedData.slave_id);
     const originalSlaveId = device.cfg.slave_id;
 
@@ -363,7 +365,7 @@ export const DeviceSettingsWasm = observer(() => {
   // Build settings tabs from schemaStore groups + RuntimeView
   const schemaStore = tabstore?.schemaStore;
   const translator = schemaStore?.schemaTranslator;
-  const settingsGroups: WbDeviceParameterEditorsGroup[] = schemaStore?.topLevelGroup?.subgroups || [];
+  const settingsGroups: WbDeviceParameterEditorsGroup[] = schemaStore?.topLevelGroup?.subgroups || EMPTY_GROUPS;
 
   const settingsTabs = useMemo(() => {
     if (!settingsGroups.length) return [];

@@ -99,7 +99,6 @@ export const useModule = () => {
     [initializeModule],
   );
 
-
   return {
     moduleInitialized: moduleState.moduleInitialized,
     progress: moduleState.portScan?.progress,
