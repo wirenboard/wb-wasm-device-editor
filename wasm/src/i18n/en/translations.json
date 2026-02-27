@@ -27,6 +27,9 @@
          "parity-even": "Even",
          "parity-odd": "Odd"
       },
+      "errors": {
+         "invalid-slave-id": "Slave ID must be an integer between 1 and 247"
+      },
       "sw": {
          "offline": "Offline mode",
          "update-available": "New version available — reload"

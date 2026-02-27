@@ -91,6 +91,14 @@ export const useModule = () => {
     [initializeModule],
   );
 
+  const portSetup = useCallback(
+    async (data: any) => {
+      await initializeModule();
+      return Module.request('portSetup', data);
+    },
+    [initializeModule],
+  );
+
 
   return {
     moduleInitialized: moduleState.moduleInitialized,
@@ -105,5 +113,6 @@ export const useModule = () => {
     configGetSchema,
     save,
     deviceLoad,
+    portSetup,
   };
 };

@@ -1,4 +1,5 @@
 import classNames from 'classnames';
+import { autorun } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -137,6 +138,7 @@ export const DeviceSettingsWasm = observer(() => {
     configGetSchema,
     save,
     deviceLoad,
+    portSetup,
   } = useModule();
 
   const [portName, setPortName] = useState<string | null>(null);
@@ -189,6 +191,42 @@ export const DeviceSettingsWasm = observer(() => {
       });
     }
   }, [moduleInitialized, language]);
+
+  const [slaveIdInvalid, setSlaveIdInvalid] = useState(false);
+
+  // Slave_id validation — range check + duplicate detection
+  useEffect(() => {
+    setSlaveIdInvalid(false);
+    if (!tabstore?.schemaStore) return;
+    const slaveIdParam = tabstore.schemaStore.commonParams.getParamByKey('slave_id');
+    if (!slaveIdParam) return;
+    return autorun(() => {
+      const editedSlaveId = tabstore.editedData?.slave_id;
+      if (editedSlaveId === undefined || editedSlaveId === '') {
+        tabstore.setSlaveIdIsDuplicate(false);
+        setSlaveIdInvalid(false);
+        return;
+      }
+      const num = Number(editedSlaveId);
+      // Range validation: must be integer 1-247
+      if (Number.isInteger(num) && (num < 1 || num > 247)) {
+        tabstore.setSlaveIdIsDuplicate(false);
+        slaveIdParam.store.error = { key: 'wasm.errors.invalid-slave-id' };
+        setSlaveIdInvalid(true);
+        return;
+      }
+      // Clear range error if value is now valid
+      if (slaveIdParam.store.error?.key === 'wasm.errors.invalid-slave-id') {
+        slaveIdParam.store.error = undefined;
+      }
+      setSlaveIdInvalid(false);
+      // Duplicate detection
+      const isDuplicate = Number.isInteger(num) && allDevices.some(
+        (d) => d.cfg.slave_id === num && d.cfg.slave_id !== selectedDevice,
+      );
+      tabstore.setSlaveIdIsDuplicate(isDuplicate);
+    });
+  }, [tabstore, allDevices, selectedDevice]);
 
   const handleScan = async () => {
     reset();
@@ -248,12 +286,49 @@ export const DeviceSettingsWasm = observer(() => {
   }, [allDevices, selectedDevice]);
 
   const handleSave = async () => {
+    const device = getDevice();
+    const editedSlaveId = Number(tabstore.editedData.slave_id);
+    const originalSlaveId = device.cfg.slave_id;
+
+    // If slave_id changed on a WB device, write new address to register 0x80
+    const slaveIdChanged = Number.isInteger(editedSlaveId)
+      && editedSlaveId >= 1 && editedSlaveId <= 247
+      && editedSlaveId !== originalSlaveId;
+    if (slaveIdChanged && configDeviceTypesStore.isWbDevice(getType(device))) {
+      const setupRequest = {
+        items: [{
+          slave_id: originalSlaveId,
+          baud_rate: device.cfg.baud_rate,
+          data_bits: device.cfg.data_bits,
+          parity: device.cfg.parity,
+          stop_bits: device.cfg.stop_bits,
+          cfg: { slave_id: editedSlaveId },
+        }],
+      };
+      const result = await portSetup(setupRequest);
+      if (result.error) {
+        setError(result.error.message);
+        return;
+      }
+      // Update local device state with new slave_id
+      setDevices((prev) =>
+        prev.map((d) =>
+          d.cfg.slave_id === originalSlaveId
+            ? { ...d, cfg: { ...d.cfg, slave_id: editedSlaveId } }
+            : d,
+        ),
+      );
+      setSelectedDevice(editedSlaveId);
+    }
+
+    // Save other parameters (addressing the device at its current slave_id)
+    const { slave_id, ...parameters } = tabstore.editedData;
     const data = {
       device_type: tabstore.deviceType,
-      ...getDevice().cfg,
-      parameters: tabstore.editedData,
+      ...device.cfg,
+      ...(slaveIdChanged ? { slave_id: editedSlaveId } : {}),
+      parameters,
     };
-    delete data.parameters.slave_id;
 
     const result = await save(data);
     if (result?.error) {
@@ -355,7 +430,7 @@ export const DeviceSettingsWasm = observer(() => {
           <Button label={t('wasm.buttons.scan')} onClick={handleScan} />
           <Button
             label={t('wasm.buttons.save')}
-            disabled={!tabstore || !allDevices.length}
+            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid}
             variant="primary"
             onClick={handleSave}
           />
@@ -447,6 +522,14 @@ export const DeviceSettingsWasm = observer(() => {
 
                 </header>
                 <FirmwareVersionPanel firmwareVersion={getDevice().fw?.version} />
+                {tabstore.slaveIdIsDuplicate && (
+                  <Alert
+                    className="deviceSettingsWasm-alert"
+                    variant="danger"
+                  >
+                    {t('device-manager.errors.duplicate-slave-id')}
+                  </Alert>
+                )}
                 <div className="deviceSettingsEditor deviceSettingsEditor-desktop">
                   <JsonSchemaEditor store={schemaStore.commonParams} translator={translator} />
                   {MakeEditors(schemaStore.topLevelGroup.parameters, translator)}
