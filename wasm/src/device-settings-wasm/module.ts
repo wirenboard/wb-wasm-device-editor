@@ -13,6 +13,14 @@ export const useModule = () => {
     moduleInitialized: false,
   });
 
+  const [loadingProgress, setLoadingProgress] = useState<LoadingProgress | null>(null);
+
+  useEffect(() => {
+    return Module.onLoadingProgress((progress) => {
+      setLoadingProgress({ ...progress });
+    });
+  }, []);
+
   useEffect(() => {
     const portScan = new PortScan((options) =>
       setModuleState((prevState) => ({ ...prevState, scanMessage: options.options })),
@@ -89,6 +97,7 @@ export const useModule = () => {
   return {
     moduleInitialized: moduleState.moduleInitialized,
     progress: moduleState.portScan?.progress,
+    loadingProgress,
     initializeModule,
     selectPort,
     scan,

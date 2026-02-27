@@ -12,6 +12,7 @@ import { PageLayout } from '@/layouts/page';
 import { DeviceSettingsEditor, FirmwareVersionPanel } from '@/pages/settings/device-manager';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { setReactLocale } from '~/react-directives/locale';
+import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
 import { useModule } from './module';
@@ -70,6 +71,7 @@ export const DeviceSettingsWasm = observer(() => {
   const {
     moduleInitialized,
     progress,
+    loadingProgress,
     selectPort,
     scan,
     scanMessage,
@@ -301,7 +303,7 @@ export const DeviceSettingsWasm = observer(() => {
           />
         </>
       }
-      isLoading={!configDeviceTypesStore}
+      isLoading={!configDeviceTypesStore && !loadingProgress}
       footer={
         <div className="deviceSettingsWasm-footer">
           <a href="https://wirenboard.com" target="_blank">
@@ -323,6 +325,17 @@ export const DeviceSettingsWasm = observer(() => {
       }
       hasRights
     >
+      {!configDeviceTypesStore && loadingProgress && (
+        <div className="deviceSettingsWasm-loadingProgress">
+          <Loader />
+          {loadingProgress.total > 0 && (
+            <Progress
+              value={loadingProgress.percent}
+              caption={`${formatBytes(loadingProgress.loaded)} / ${formatBytes(loadingProgress.total)}`}
+            />
+          )}
+        </div>
+      )}
       {progress !== 0 && progress < 100 && (
         <>
           <Progress value={progress} caption={progress.toFixed() + '%'} />
