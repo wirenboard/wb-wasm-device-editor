@@ -114,27 +114,69 @@
         min-width: 0;
     }
 
+    /* Hide device title on mobile — already shown in device list tab above */
+    .deviceSettingsWasm-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .deviceSettingsWasm-title {
+        display: none;
+    }
+
     /* Stack inner settings tabs above content on mobile */
     .deviceSettingsEditor-tabs {
         flex-direction: column;
     }
 
+    /* Horizontal tab bar with pill-style buttons */
     .deviceSettingsEditor-tabs .tabs {
         width: 100%;
         max-width: 100%;
         display: flex;
         flex-wrap: wrap;
-        gap: 0;
+        gap: 4px;
+        border: none;
+        padding: 0;
+    }
+
+    .deviceSettingsEditor-tabs .tabs li {
+        flex: 0 0 auto;
+    }
+
+    .deviceSettingsEditor-tabs .tabs .tabs-button {
+        width: auto;
+        white-space: nowrap;
+        border: 1px solid var(--border-color);
+        border-radius: var(--input-border-radius);
+        padding: 4px 10px;
+        font-size: 13px;
+    }
+
+    .deviceSettingsEditor-tabs .tabs .tabs-buttonSelected {
+        border-right: 1px solid var(--primary-color);
+        border-color: var(--primary-color);
+        background: var(--primary-color);
+        color: #fff;
     }
 
     .deviceSettingsEditor-tabContent {
         margin-left: 0;
-        margin-top: 12px;
+        margin-top: 8px;
     }
 
     /* Single-column parameters on mobile */
     .deviceSettingsEditor-parameter {
         flex-basis: 100%;
+    }
+
+    /* Tighter vertical spacing */
+    .deviceSettingsEditor {
+        gap: 8px;
+    }
+
+    .deviceSettingsEditor-topGroupContent {
+        gap: 8px;
     }
 
     /* Runtime view: full-width parameters on mobile */
@@ -144,11 +186,5 @@
 
     .runtimeView .deviceSettingsEditor-topGroupContent {
         column-gap: 15px;
-    }
-
-    /* Header: wrap title and button */
-    .deviceSettingsWasm-header {
-        flex-wrap: wrap;
-        gap: 8px;
     }
 }
