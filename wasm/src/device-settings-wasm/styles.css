@@ -21,6 +21,14 @@
 
 .deviceSettingsWasm-content {
     width: 100%;
+    min-width: 0;
+}
+
+.deviceSettingsWasm-emptyState {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 24px;
 }
 
 .deviceSettingsWasm-header {
@@ -81,4 +89,28 @@
     padding: 0 6px;
     border: 0;
     box-shadow: none;
+}
+
+@media (max-width: 768px) {
+    .deviceSettingsWasm-container {
+        flex-direction: column;
+    }
+
+    .deviceSettingsWasm-aside {
+        min-width: 0;
+    }
+
+    .deviceSettingsWasm-aside .tabs {
+        max-width: 100%;
+    }
+
+    .deviceSettingsWasm-content {
+        overflow-x: auto;
+    }
+
+    .page-actions {
+        flex-wrap: wrap;
+        flex-shrink: 1;
+        min-width: 0;
+    }
 }

@@ -146,6 +146,7 @@ export const DeviceSettingsWasm = observer(() => {
   const [portHexId, setPortHexId] = useState<string | null>(null);
   const [multiplePortsAvailable, setMultiplePortsAvailable] = useState(false);
   const [saveCounter, setSaveCounter] = useState(0);
+  const [portError, setPortError] = useState<string | null>(null);
 
   const refreshPortInfo = useCallback(async () => {
     try {
@@ -161,8 +162,16 @@ export const DeviceSettingsWasm = observer(() => {
   }, [moduleInitialized, refreshPortInfo]);
 
   const handleSelectPort = useCallback(async () => {
-    await selectPort();
-    await refreshPortInfo();
+    try {
+      setPortError(null);
+      await selectPort();
+      await refreshPortInfo();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotFoundError') {
+        return; // User cancelled the port picker dialog
+      }
+      setPortError(err instanceof Error ? err.message : String(err));
+    }
   }, [selectPort, refreshPortInfo]);
 
   const reset = () => {
@@ -460,6 +469,15 @@ export const DeviceSettingsWasm = observer(() => {
       }
       hasRights
     >
+      {portError && (
+        <Alert
+          className="deviceSettingsWasm-alert"
+          variant="warn"
+          onClose={() => setPortError(null)}
+        >
+          {t('wasm.errors.select-port-failed', { error: portError })}
+        </Alert>
+      )}
       {progress !== 0 && progress < 100 && (
         <>
           <Progress value={progress} caption={progress.toFixed() + '%'} />
@@ -499,7 +517,13 @@ export const DeviceSettingsWasm = observer(() => {
               <Loader caption={t('device-manager.labels.reading-parameters')} />
             </div>
           ) : (
-            tabstore && schemaStore && translator && (
+            !allDevices.length && !progress ? (
+              <div className="deviceSettingsWasm-emptyState">
+                <Alert variant="info">
+                  {t('wasm.labels.empty-state')}
+                </Alert>
+              </div>
+            ) : tabstore && schemaStore && translator && (
               <>
                 <header className="deviceSettingsWasm-header">
                   <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>

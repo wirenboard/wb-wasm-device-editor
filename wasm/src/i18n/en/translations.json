@@ -24,10 +24,12 @@
          "parity": "Parity",
          "parity-never": "Never",
          "parity-even": "Even",
-         "parity-odd": "Odd"
+         "parity-odd": "Odd",
+         "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to configure one."
       },
       "errors": {
-         "invalid-slave-id": "Slave ID must be an integer between 1 and 247"
+         "invalid-slave-id": "Slave ID must be an integer between 1 and 247",
+         "select-port-failed": "Failed to select port: {{error}}"
       },
       "sw": {
          "offline": "Offline mode",
