@@ -118,6 +118,7 @@
     .deviceSettingsWasm-header {
         flex-wrap: wrap;
         gap: 8px;
+        margin-bottom: 8px;
     }
 
     .deviceSettingsWasm-title {
@@ -153,8 +154,20 @@
         font-size: 13px;
     }
 
+    /* Remove homeui's border-bottom between tab items */
+    .deviceSettingsEditor-tabs .tabs li:not(:last-of-type) .tabs-button:not(:focus) {
+        border-bottom-color: var(--border-color);
+    }
+
+    /* Clear li-level selected indicator (homeui puts border-right: 6px on li) */
     .deviceSettingsEditor-tabs .tabs .tabs-buttonSelected {
-        border: 1px solid var(--primary-color) !important;
+        border: none !important;
+        background: none;
+    }
+
+    /* Selected pill — style the button inside the selected li */
+    .deviceSettingsEditor-tabs .tabs .tabs-buttonSelected .tabs-button {
+        border-color: var(--primary-color);
         background: var(--primary-color);
         color: #fff;
     }
@@ -176,6 +189,12 @@
 
     .deviceSettingsEditor-topGroupContent {
         gap: 8px;
+    }
+
+    /* Remove inner content padding on mobile (homeui adds 19px via .deviceSettingsEditor-desktop) */
+    .deviceSettingsEditor-desktop .deviceSettingsEditor-topGroupContent {
+        padding-left: 0;
+        padding-right: 0;
     }
 
     /* Runtime view: full-width parameters on mobile */
