@@ -113,4 +113,42 @@
         flex-shrink: 1;
         min-width: 0;
     }
+
+    /* Stack inner settings tabs above content on mobile */
+    .deviceSettingsEditor-tabs {
+        flex-direction: column;
+    }
+
+    .deviceSettingsEditor-tabs .tabs {
+        width: 100%;
+        max-width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+    }
+
+    .deviceSettingsEditor-tabContent {
+        margin-left: 0;
+        margin-top: 12px;
+    }
+
+    /* Single-column parameters on mobile */
+    .deviceSettingsEditor-parameter {
+        flex-basis: 100%;
+    }
+
+    /* Runtime view: full-width parameters on mobile */
+    .runtimeView .deviceSettingsEditor-parameter {
+        max-width: 100%;
+    }
+
+    .runtimeView .deviceSettingsEditor-topGroupContent {
+        column-gap: 15px;
+    }
+
+    /* Header: wrap title and button */
+    .deviceSettingsWasm-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
 }
