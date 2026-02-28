@@ -154,8 +154,7 @@
     }
 
     .deviceSettingsEditor-tabs .tabs .tabs-buttonSelected {
-        border-right: 1px solid var(--primary-color);
-        border-color: var(--primary-color);
+        border: 1px solid var(--primary-color) !important;
         background: var(--primary-color);
         color: #fff;
     }

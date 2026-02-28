@@ -21,7 +21,7 @@ test.use({ viewport: { width: 375, height: 812 } });
 async function waitForAppReady(page: Page) {
   await page.goto(BASE_URL, { waitUntil: 'load' });
   await expect(page).toHaveTitle('Wiren Board Device Editor');
-  const addDeviceButton = page.getByRole('button', { name: 'Manually add device' });
+  const addDeviceButton = page.getByRole('button', { name: 'Add device' });
   try {
     await expect(addDeviceButton).toBeVisible({ timeout: 20_000 });
   } catch {
@@ -62,7 +62,7 @@ test('sidebar stacks above content in column layout on mobile', async ({ page })
   await waitForAppReady(page);
 
   // Add a device so the sidebar has content
-  await page.getByRole('button', { name: 'Manually add device' }).click();
+  await page.getByRole('button', { name: 'Add device' }).click();
   await expect(page.locator('.confirm-content')).toBeVisible();
 
   await page.locator('#device-type').click();

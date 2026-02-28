@@ -93,7 +93,7 @@ as needed rather than assuming previous element uids are still valid.
 **Empty state**: Navigate fresh (clear localStorage first via `evaluate_script`
 if needed). The empty state message should be visible.
 
-**Device list and tabs**: Use "Manually add device" to add devices. Select a
+**Device list and tabs**: Use "Add device" to add devices. Select a
 device type (e.g., WB-MR6CU) via the dropdown, click "Add". The device appears
 in the sidebar. Click the device tab to load its settings.
 
@@ -104,7 +104,7 @@ renders correctly. On mobile, tabs should wrap horizontally above the content.
 **Runtime View tab**: Click "Runtime View" tab. Shows Auto-refresh toggle and
 Refresh button. Without a serial port, it will show a port error.
 
-**Header buttons**: Verify all buttons (Manually add device, Select port, Scan,
+**Header buttons**: Verify all buttons (Add device, Select port, Scan,
 Save) are visible and not clipped at all viewport sizes.
 
 ### Checking computed styles via JavaScript

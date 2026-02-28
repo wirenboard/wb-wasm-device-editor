@@ -8,7 +8,7 @@
          "save": "Save",
          "save-local": "Save local",
          "remove-local": "Remove local",
-         "add-device": "Manually add device",
+         "add-device": "Add device",
          "add": "Add",
          "refresh": "Refresh"
       },
@@ -25,7 +25,7 @@
          "parity-never": "Never",
          "parity-even": "Even",
          "parity-odd": "Odd",
-         "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to configure one."
+         "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Add device\" to configure one."
       },
       "errors": {
          "invalid-slave-id": "Slave ID must be an integer between 1 and 247",

@@ -19,7 +19,7 @@ test.afterAll(async () => {
 async function waitForAppReady(page: Page) {
   await page.goto(BASE_URL, { waitUntil: 'load' });
   await expect(page).toHaveTitle('Wiren Board Device Editor');
-  const addDeviceButton = page.getByRole('button', { name: 'Manually add device' });
+  const addDeviceButton = page.getByRole('button', { name: 'Add device' });
   try {
     await expect(addDeviceButton).toBeVisible({ timeout: 20_000 });
   } catch {
@@ -45,7 +45,7 @@ test('empty state disappears after adding a device manually', async ({ page }) =
   await expect(page.locator('.deviceSettingsWasm-emptyState')).toBeVisible();
 
   // Add a device via the modal
-  await page.getByRole('button', { name: 'Manually add device' }).click();
+  await page.getByRole('button', { name: 'Add device' }).click();
   await expect(page.locator('.confirm-content')).toBeVisible();
 
   await page.locator('#device-type').click();
