@@ -517,13 +517,7 @@ export const DeviceSettingsWasm = observer(() => {
               <Loader caption={t('device-manager.labels.reading-parameters')} />
             </div>
           ) : (
-            !allDevices.length && !progress ? (
-              <div className="deviceSettingsWasm-emptyState">
-                <Alert variant="info">
-                  {t('wasm.labels.empty-state')}
-                </Alert>
-              </div>
-            ) : tabstore && schemaStore && translator && (
+            tabstore && schemaStore && translator && (
               <>
                 <header className="deviceSettingsWasm-header">
                   <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>

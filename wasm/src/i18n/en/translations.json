@@ -24,8 +24,7 @@
          "parity": "Parity",
          "parity-never": "Never",
          "parity-even": "Even",
-         "parity-odd": "Odd",
-         "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Add device\" to specify device type and address manually."
+         "parity-odd": "Odd"
       },
       "errors": {
          "invalid-slave-id": "Slave ID must be an integer between 1 and 247",
