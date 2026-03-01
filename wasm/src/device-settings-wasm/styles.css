@@ -108,10 +108,31 @@
         overflow-x: auto;
     }
 
+    /* Hide page title on mobile — saves header space */
+    .page-title {
+        display: none;
+    }
+
+    .page-headerContainer {
+        justify-content: flex-start;
+    }
+
     .page-actions {
         flex-wrap: wrap;
         flex-shrink: 1;
         min-width: 0;
+        gap: 6px;
+        font-size: 13px;
+    }
+
+    .page-actions .button {
+        font-size: 13px;
+        padding: 4px 8px;
+    }
+
+    /* Hide port name on mobile — saves header space */
+    .deviceSettingsWasm-portName {
+        display: none;
     }
 
     /* Hide device title on mobile — already shown in device list tab above */
@@ -122,6 +143,11 @@
     }
 
     .deviceSettingsWasm-title {
+        display: none;
+    }
+
+    /* Hide footer on mobile to prevent overlap with content */
+    .page-footer {
         display: none;
     }
 

@@ -445,18 +445,10 @@ export const DeviceSettingsWasm = observer(() => {
             variant="primary"
             onClick={handleSave}
           />
-        </>
-      }
-      isLoading={!configDeviceTypesStore}
-      footer={
-        <div className="deviceSettingsWasm-footer">
-          <a href="https://wirenboard.com" target="_blank">
-            <img src="./img/logo-wide.svg" className="deviceSettingsWasm-logo" loading="eager" alt="Wiren Board" />
-          </a>
           <Dropdown
             options={[
-              { label: 'English', value: 'en' },
-              { label: 'Русский', value: 'ru' },
+              { label: 'EN', value: 'en' },
+              { label: 'RU', value: 'ru' },
             ]}
             value={language}
             onChange={(option: Option<string>) => {
@@ -465,6 +457,14 @@ export const DeviceSettingsWasm = observer(() => {
               setReactLocale();
             }}
           />
+        </>
+      }
+      isLoading={!configDeviceTypesStore}
+      footer={
+        <div className="deviceSettingsWasm-footer">
+          <a href="https://wirenboard.com" target="_blank">
+            <img src="./img/logo-wide.svg" className="deviceSettingsWasm-logo" loading="eager" alt="Wiren Board" />
+          </a>
         </div>
       }
       hasRights

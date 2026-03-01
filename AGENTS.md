@@ -7,6 +7,21 @@ See also [AGENT-TESTING.md](AGENT-TESTING.md) for the full agent testing guide:
 MCP chrome-devtools usage, CDP scripts, screenshot workflows, mobile layout
 testing, and screenshot quality requirements for PRs.
 
+**Important**: Always test your changes yourself before asking the user.
+Take screenshots via CDP at multiple viewports (desktop, tablet, mobile),
+inspect the results visually, and check logs for errors. Never tell the
+user "refresh and check" without having verified the change looks correct
+in your own screenshots first.
+
+**Important**: After you're done testing via CDP, always navigate the host
+Chrome back to `about:blank` to release the serial port. The user cannot
+test manually while your CDP session holds the port open. Do this at the
+end of every CDP script or testing session:
+
+```python
+await send(ws, 'Page.navigate', {'params': {'url': 'about:blank'}})
+```
+
 ## Architecture
 
 The development environment runs inside a Lima VM. USB serial devices
