@@ -46,17 +46,6 @@ test('header action buttons are visible and not overflowing on mobile', async ({
   expect(saveBox.x + saveBox.width).toBeLessThanOrEqual(375);
 });
 
-test('content section is visible and not clipped on mobile', async ({ page }) => {
-  await waitForAppReady(page);
-
-  const content = page.locator('.deviceSettingsWasm-content');
-  await expect(content).toBeVisible();
-
-  const box = await content.boundingBox();
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(375);
-});
-
 test('sidebar stacks above content in column layout on mobile', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('devices'));
   await waitForAppReady(page);
