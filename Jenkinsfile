@@ -54,6 +54,18 @@ pipeline {
                 }
             }
         }
+        stage('Upload to CDN') {
+            when { expression {
+                wb.isBranchRelease(env.BRANCH_NAME)
+            }}
+            steps {
+                dir(path: 'wasm/dist-configurator') {
+                    withCredentials([file(credentialsId: 's3cmd-deveditor-config', variable: 'S3CMD_CONFIG')]) {
+                        sh 'wbdev user s3cmd -c $S3CMD_CONFIG sync --delete-removed ./ s3://wb-deveditor-02/'
+                    }
+                }
+            }
+        }
         stage('Build and publish Docker image') {
             when { expression {
                 wb.isBranchRelease(env.BRANCH_NAME)
