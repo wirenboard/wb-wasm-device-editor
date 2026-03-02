@@ -70,6 +70,7 @@ jobs:
           submodules: recursive
 
       - name: Build WASM
+        shell: bash
         run: |
           source /emsdk/emsdk_env.sh
           emmake make -f wasm.mk
@@ -79,8 +80,9 @@ jobs:
         with:
           name: wasm-build
           path: |
-            wasm/public/module.*
-            wasm/assets/
+            wasm/public/module.js
+            wasm/public/module.wasm
+            wasm/public/module.data
           retention-days: 1
 
   # ----------------------------------------------------------------
@@ -105,7 +107,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: wasm-build
-          path: wasm/
 
       - name: Install homeui dependencies
         working-directory: submodule/homeui/frontend
@@ -142,28 +143,23 @@ jobs:
   # ----------------------------------------------------------------
   e2e-tests:
     name: E2E tests
-    needs: build-wasm
+    needs: build-configurator
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout with submodules
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          sparse-checkout: wasm
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
 
-      - name: Download WASM artifacts
+      - name: Download dist-configurator
         uses: actions/download-artifact@v4
         with:
-          name: wasm-build
-          path: wasm/
-
-      - name: Install homeui dependencies
-        working-directory: submodule/homeui/frontend
-        run: npm install
+          name: dist-configurator-dir
+          path: wasm/dist-configurator/
 
       - name: Install wasm dependencies
         working-directory: wasm
@@ -182,7 +178,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: wasm/e2e/test-results/
+          path: wasm/test-results/
           retention-days: 5
 
   # ----------------------------------------------------------------
