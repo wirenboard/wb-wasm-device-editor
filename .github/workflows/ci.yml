@@ -1,0 +1,250 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main, master, 'release*']
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EMSDK_IMAGE: ghcr.io/${{ github.repository }}/emsdk:latest
+  DOCKER_IMAGE: contactless/wasm-device-editor:latest
+
+jobs:
+  # ----------------------------------------------------------------
+  # 1. Build and cache the custom emsdk Docker image on GHCR
+  # ----------------------------------------------------------------
+  build-emsdk-image:
+    name: Build emsdk image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Checkout (only emsdk/ directory)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: emsdk
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push emsdk image
+        uses: docker/build-push-action@v6
+        with:
+          context: emsdk
+          push: true
+          tags: ${{ env.EMSDK_IMAGE }}
+          cache-from: type=registry,ref=${{ env.EMSDK_IMAGE }}
+          cache-to: type=inline
+
+  # ----------------------------------------------------------------
+  # 2. Build WASM module (C++ -> WebAssembly via Emscripten)
+  # ----------------------------------------------------------------
+  build-wasm:
+    name: Build WASM module
+    needs: build-emsdk-image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/${{ github.repository }}/emsdk:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build WASM
+        run: |
+          source /emsdk/emsdk_env.sh
+          emmake make -f wasm.mk
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-build
+          path: |
+            wasm/public/module.*
+            wasm/assets/
+          retention-days: 1
+
+  # ----------------------------------------------------------------
+  # 3. Build configurator (npm install + vite build)
+  # ----------------------------------------------------------------
+  build-configurator:
+    name: Build configurator
+    needs: build-wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-build
+          path: wasm/
+
+      - name: Install homeui dependencies
+        working-directory: submodule/homeui/frontend
+        run: npm install
+
+      - name: Install wasm dependencies
+        working-directory: wasm
+        run: npm install
+
+      - name: Build
+        working-directory: wasm
+        run: npm run build
+
+      - name: Create tarball
+        working-directory: wasm
+        run: tar czf dist-configurator.tar.gz dist-configurator
+
+      - name: Upload configurator artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-configurator
+          path: wasm/dist-configurator.tar.gz
+          retention-days: 5
+
+      - name: Upload dist directory (for deploy jobs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-configurator-dir
+          path: wasm/dist-configurator/
+          retention-days: 1
+
+  # ----------------------------------------------------------------
+  # 4. E2E tests (Playwright + Chromium)
+  # ----------------------------------------------------------------
+  e2e-tests:
+    name: E2E tests
+    needs: build-wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-build
+          path: wasm/
+
+      - name: Install homeui dependencies
+        working-directory: submodule/homeui/frontend
+        run: npm install
+
+      - name: Install wasm dependencies
+        working-directory: wasm
+        run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: wasm
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: wasm
+        run: npm run test:e2e
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: wasm/e2e/test-results/
+          retention-days: 5
+
+  # ----------------------------------------------------------------
+  # 5. Upload to CDN (release branches only)
+  # ----------------------------------------------------------------
+  upload-to-cdn:
+    name: Upload to CDN
+    needs: [build-configurator, e2e-tests]
+    if: github.ref_name == 'main' || github.ref_name == 'master' || startsWith(github.ref_name, 'release')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download dist directory
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-configurator-dir
+          path: dist-configurator/
+
+      - name: Install s3cmd
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y s3cmd
+
+      - name: Write s3cmd config
+        run: echo "${{ secrets.S3CMD_CONFIG }}" > /tmp/s3cmd.cfg
+
+      - name: Sync to S3
+        run: s3cmd -c /tmp/s3cmd.cfg sync --delete-removed ./dist-configurator/ s3://wb-deveditor-02/
+
+      - name: Cleanup config
+        if: always()
+        run: rm -f /tmp/s3cmd.cfg
+
+  # ----------------------------------------------------------------
+  # 6. Build and publish Docker image (release branches only)
+  # ----------------------------------------------------------------
+  publish-docker:
+    name: Publish Docker image
+    needs: [build-configurator, e2e-tests]
+    if: github.ref_name == 'main' || github.ref_name == 'master' || startsWith(github.ref_name, 'release')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (only wasm/Dockerfile)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: wasm/Dockerfile
+
+      - name: Download dist directory
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-configurator-dir
+          path: wasm/dist-configurator/
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: wasm
+          push: true
+          tags: ${{ env.DOCKER_IMAGE }}
+          no-cache: true
