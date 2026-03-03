@@ -66,6 +66,10 @@ window.Module =
           this.finished = true;
       },
 
+      // Emscripten calls Module.setStatus(text) with a formatted string during
+      // data file download, e.g. "Downloading data... (3145728/6291456)".
+      // This format is hardcoded in the Emscripten-generated loader (emscripten.py
+      // DataRequest), so we have to parse the string to extract loaded/total bytes.
       setStatus(text) {
           this.print(text);
           const match = text.match(/\((\d+)\/(\d+)\)/);
