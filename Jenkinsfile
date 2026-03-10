@@ -25,10 +25,10 @@ pipeline {
             }
             steps {
                 dir(path: 'submodule/homeui/frontend') {
-                    sh 'npm install'
+                    sh 'npm install --no-package-lock'
                 }
                 dir(path: 'wasm') {
-                    sh 'npm install'
+                    sh 'npm install --no-package-lock'
                     sh 'npm run build'
                     sh 'tar czf dist-configurator.tar.gz dist-configurator'
                 }
