@@ -151,8 +151,6 @@ namespace
 
     void OnResult(const Json::Value& result)
     {
-        LOG(Warn) << "OnResult: " << result;
-
         Json::Value reply;
         reply["error"] = Json::nullValue;
         reply["result"] = result;
