@@ -23,6 +23,13 @@
     width: 100%;
 }
 
+.deviceSettingsWasm-emptyState {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 24px;
+}
+
 .deviceSettingsWasm-header {
     display: flex;
     justify-content: space-between;
@@ -30,6 +37,10 @@
 
 .deviceSettingsWasm-title {
     margin-top: 6px;
+}
+
+.deviceSettingsWasm-headerButton {
+    white-space: nowrap;
 }
 
 .deviceSettingsWasm-alert {

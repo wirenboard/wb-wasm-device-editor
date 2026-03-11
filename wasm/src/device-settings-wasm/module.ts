@@ -1,6 +1,6 @@
 import { makeObservable, observable } from 'mobx';
 import { useCallback, useEffect, useState } from 'react';
-import type { Device } from './types';
+import type { Device, LoadingProgress } from './types';
 
 export const useModule = () => {
   const [moduleState, setModuleState] = useState<{
@@ -12,6 +12,14 @@ export const useModule = () => {
     portScan: null,
     moduleInitialized: false,
   });
+
+  const [loadingProgress, setLoadingProgress] = useState<LoadingProgress | null>({ loaded: 0, total: 0, percent: 0 });
+
+  useEffect(() => {
+    return Module.onLoadingProgress((progress) => {
+      setLoadingProgress({ ...progress });
+    });
+  }, []);
 
   useEffect(() => {
     const portScan = new PortScan((options) =>
@@ -89,6 +97,7 @@ export const useModule = () => {
   return {
     moduleInitialized: moduleState.moduleInitialized,
     progress: moduleState.portScan?.progress,
+    loadingProgress,
     initializeModule,
     selectPort,
     scan,

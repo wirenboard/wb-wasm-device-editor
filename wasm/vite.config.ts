@@ -44,6 +44,43 @@ function swCachePlugin(): Plugin {
   };
 }
 
+function throttleModuleData(): Plugin {
+  const RATE = 500 * 1024; // 500 KB/s — ~12s for a 6 MB file
+  const CHUNK_INTERVAL = 100; // send a chunk every 100ms
+  const CHUNK_SIZE = Math.round(RATE * CHUNK_INTERVAL / 1000);
+
+  return {
+    name: 'throttle-module-data',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/module.data', (req, res, next) => {
+        const filePath = path.resolve(__dirname, 'public', 'module.data');
+        if (!fs.existsSync(filePath)) return next();
+
+        const stat = fs.statSync(filePath);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Length', stat.size);
+
+        const stream = fs.createReadStream(filePath, { highWaterMark: CHUNK_SIZE });
+        let paused = false;
+
+        req.on('close', () => stream.destroy());
+
+        stream.on('data', (chunk) => {
+          res.write(chunk);
+          if (!paused) {
+            paused = true;
+            stream.pause();
+            setTimeout(() => { paused = false; stream.resume(); }, CHUNK_INTERVAL);
+          }
+        });
+        stream.on('end', () => res.end());
+        stream.on('error', () => next());
+      });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
     plugins: [
@@ -51,6 +88,7 @@ export default defineConfig(() => {
       commonjs(),
       svgr({ include: '**/*.svg' }),
       swCachePlugin(),
+      throttleModuleData(),
       {
         name: 'inject-scripts',
         transformIndexHtml() {

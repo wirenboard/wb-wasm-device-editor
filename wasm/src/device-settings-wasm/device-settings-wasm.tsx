@@ -12,6 +12,7 @@ import { PageLayout } from '@/layouts/page';
 import { DeviceSettingsEditor, FirmwareVersionPanel } from '@/pages/settings/device-manager';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { setReactLocale } from '~/react-directives/locale';
+import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
 import { useModule } from './module';
@@ -70,6 +71,7 @@ export const DeviceSettingsWasm = observer(() => {
   const {
     moduleInitialized,
     progress,
+    loadingProgress,
     selectPort,
     scan,
     scanMessage,
@@ -301,7 +303,14 @@ export const DeviceSettingsWasm = observer(() => {
           />
         </>
       }
-      isLoading={!configDeviceTypesStore}
+      isLoading={!configDeviceTypesStore && loadingProgress}
+      loadingOptions={{
+        loader: loadingProgress?.percent !== 100 ? 'progress' : 'spinner',
+        progress: loadingProgress?.percent,
+        label: loadingProgress?.percent !== 100
+          ? `${formatBytes(loadingProgress?.loaded)} / ${formatBytes(loadingProgress?.total)}`
+          : null,
+      }}
       footer={
         <div className="deviceSettingsWasm-footer">
           <a href="https://wirenboard.com" target="_blank">
@@ -362,13 +371,20 @@ export const DeviceSettingsWasm = observer(() => {
               <Loader caption={t('device-manager.labels.reading-parameters')} />
             </div>
           ) : (
-            tabstore && (
+            !allDevices.length && !progress ? (
+              <div className="deviceSettingsWasm-emptyState">
+                <Alert variant="info">
+                  {t('wasm.labels.empty-state')}
+                </Alert>
+              </div>
+            ) : tabstore && (
               <>
                 <header className="deviceSettingsWasm-header">
                   <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
                   {manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)
                     ? (
                       <Button
+                        className="deviceSettingsWasm-headerButton"
                         label={t('wasm.buttons.remove-local')}
                         variant="secondary"
                         size="small"
@@ -377,6 +393,7 @@ export const DeviceSettingsWasm = observer(() => {
                     )
                     : (
                       <Button
+                        className="deviceSettingsWasm-headerButton"
                         label={t('wasm.buttons.save-local')}
                         variant="secondary"
                         size="small"

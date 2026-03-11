@@ -6,8 +6,27 @@ window.Module =
           wasmReadyResolve = resolve;
       }),
 
+      loadingProgress: null,
+      _loadingCallbacks: [],
+
+      onLoadingProgress(callback) {
+          this._loadingCallbacks.push(callback);
+          if (this.loadingProgress) {
+              callback(this.loadingProgress);
+          }
+          return () => {
+              this._loadingCallbacks = this._loadingCallbacks.filter(cb => cb !== callback);
+          };
+      },
+
+      _notifyLoading() {
+          this._loadingCallbacks.forEach(cb => cb(this.loadingProgress));
+      },
+
       onRuntimeInitialized() {
           this.serial = new SerialPort();
+          this.loadingProgress = { loaded: this.loadingProgress?.total || 0, total: this.loadingProgress?.total || 0, percent: 100 };
+          this._notifyLoading();
           wasmReadyResolve();
       },
 
@@ -47,8 +66,22 @@ window.Module =
           this.finished = true;
       },
 
+      // Emscripten calls Module.setStatus(text) with a formatted string during
+      // data file download, e.g. "Downloading data... (3145728/6291456)".
+      // This format is hardcoded in the Emscripten-generated loader (emscripten.py
+      // DataRequest), so we have to parse the string to extract loaded/total bytes.
       setStatus(text) {
           this.print(text);
+          const match = text.match(/\((\d+)\/(\d+)\)/);
+          if (match) {
+              const loaded = parseInt(match[1], 10);
+              const total = parseInt(match[2], 10);
+              this.loadingProgress = { loaded, total, percent: total ? Math.round(loaded / total * 100) : 0 };
+              this._notifyLoading();
+          } else if (text.includes('Downloading')) {
+              this.loadingProgress = { loaded: 0, total: 0, percent: 0 };
+              this._notifyLoading();
+          }
       },
 
       print(text) {
