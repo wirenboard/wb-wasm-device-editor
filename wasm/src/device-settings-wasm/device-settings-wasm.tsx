@@ -384,6 +384,7 @@ export const DeviceSettingsWasm = observer(() => {
                   {manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)
                     ? (
                       <Button
+                        className="deviceSettingsWasm-headerButton"
                         label={t('wasm.buttons.remove-local')}
                         variant="secondary"
                         size="small"
@@ -392,6 +393,7 @@ export const DeviceSettingsWasm = observer(() => {
                     )
                     : (
                       <Button
+                        className="deviceSettingsWasm-headerButton"
                         label={t('wasm.buttons.save-local')}
                         variant="secondary"
                         size="small"

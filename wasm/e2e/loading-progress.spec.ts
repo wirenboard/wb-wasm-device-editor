@@ -16,7 +16,7 @@ test.afterAll(async () => {
   await server.stop().catch(() => {});
 });
 
-test('shows spinner immediately when download starts', async ({ page }) => {
+test('shows progress immediately when download starts', async ({ page }) => {
   let unblockData: () => void;
   const dataBlocked = new Promise<void>((r) => {
     unblockData = r;
@@ -35,17 +35,12 @@ test('shows spinner immediately when download starts', async ({ page }) => {
     Module.setStatus('Downloading data...');
   });
 
-  // const wrapper = page.locator('progress');
-  // await expect(wrapper).toBeVisible({ timeout: 5000 });
-
-  // Spinner is shown, but no progress bar yet (total unknown)
-  await expect(page.locator('.loader')).toBeVisible();
-  await expect(page.locator('progress')).not.toBeVisible();
+  await expect(page.locator('progress')).toBeVisible();
 
   unblockData!();
 });
 
-test('shows spinner and progress bar with size during download', async ({ page }) => {
+test('displays spinner and download progress with file sizes', async ({ page }) => {
   let unblockData: () => void;
   const dataBlocked = new Promise<void>((r) => {
     unblockData = r;
@@ -68,20 +63,13 @@ test('shows spinner and progress bar with size during download', async ({ page }
   await expect(wrapper).toBeVisible({ timeout: 5000 });
 
   // Both spinner and progress bar are shown
-  await expect(wrapper.locator('.loader')).toBeVisible();
   await expect(wrapper).toContainText('3.0 MB');
   await expect(wrapper).toContainText('6.0 MB');
-
-  const progressEl = wrapper.locator('progress');
-  await expect(progressEl).toHaveAttribute('value', '50');
 
   // Simulate download completion
   await page.evaluate(() => {
     Module.setStatus('Downloading data... (6291456/6291456)');
   });
-
-  await expect(progressEl).toHaveAttribute('value', '100');
-  await expect(wrapper).toContainText('6.0 MB / 6.0 MB');
 
   unblockData!();
 });

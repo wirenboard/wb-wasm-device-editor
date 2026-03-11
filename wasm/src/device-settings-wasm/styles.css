@@ -39,6 +39,10 @@
     margin-top: 6px;
 }
 
+.deviceSettingsWasm-headerButton {
+    white-space: nowrap;
+}
+
 .deviceSettingsWasm-alert {
     margin-bottom: 12px;
 }
