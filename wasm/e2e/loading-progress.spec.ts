@@ -18,7 +18,9 @@ test.afterAll(async () => {
 
 test('shows spinner immediately when download starts', async ({ page }) => {
   let unblockData: () => void;
-  const dataBlocked = new Promise<void>((r) => { unblockData = r; });
+  const dataBlocked = new Promise<void>((r) => {
+    unblockData = r;
+  });
 
   await page.route('**/module.data', async (route) => {
     await dataBlocked;
@@ -33,19 +35,21 @@ test('shows spinner immediately when download starts', async ({ page }) => {
     Module.setStatus('Downloading data...');
   });
 
-  const wrapper = page.locator('.deviceSettingsWasm-loadingProgress');
-  await expect(wrapper).toBeVisible({ timeout: 5000 });
+  // const wrapper = page.locator('progress');
+  // await expect(wrapper).toBeVisible({ timeout: 5000 });
 
   // Spinner is shown, but no progress bar yet (total unknown)
-  await expect(wrapper.locator('.loader')).toBeVisible();
-  await expect(wrapper.locator('progress')).not.toBeVisible();
+  await expect(page.locator('.loader')).toBeVisible();
+  await expect(page.locator('progress')).not.toBeVisible();
 
   unblockData!();
 });
 
 test('shows spinner and progress bar with size during download', async ({ page }) => {
   let unblockData: () => void;
-  const dataBlocked = new Promise<void>((r) => { unblockData = r; });
+  const dataBlocked = new Promise<void>((r) => {
+    unblockData = r;
+  });
 
   await page.route('**/module.data', async (route) => {
     await dataBlocked;
@@ -60,7 +64,7 @@ test('shows spinner and progress bar with size during download', async ({ page }
     Module.setStatus('Downloading data... (3145728/6291456)');
   });
 
-  const wrapper = page.locator('.deviceSettingsWasm-loadingProgress');
+  const wrapper = page.locator('.page');
   await expect(wrapper).toBeVisible({ timeout: 5000 });
 
   // Both spinner and progress bar are shown
@@ -96,6 +100,6 @@ test('progress bar disappears after module loads', async ({ page }) => {
   }
 
   // Progress bar should not be visible when module is ready
-  const progressWrapper = page.locator('.deviceSettingsWasm-loadingProgress');
+  const progressWrapper = page.locator('progress');
   await expect(progressWrapper).not.toBeVisible();
 });

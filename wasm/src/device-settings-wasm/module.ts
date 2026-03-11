@@ -1,6 +1,6 @@
 import { makeObservable, observable } from 'mobx';
 import { useCallback, useEffect, useState } from 'react';
-import type { Device } from './types';
+import type { Device, LoadingProgress } from './types';
 
 export const useModule = () => {
   const [moduleState, setModuleState] = useState<{
@@ -13,7 +13,7 @@ export const useModule = () => {
     moduleInitialized: false,
   });
 
-  const [loadingProgress, setLoadingProgress] = useState<LoadingProgress | null>(null);
+  const [loadingProgress, setLoadingProgress] = useState<LoadingProgress | null>({ loaded: 0, total: 0, percent: 0 });
 
   useEffect(() => {
     return Module.onLoadingProgress((progress) => {

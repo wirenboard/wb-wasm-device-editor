@@ -303,7 +303,14 @@ export const DeviceSettingsWasm = observer(() => {
           />
         </>
       }
-      isLoading={!configDeviceTypesStore && !loadingProgress}
+      isLoading={!configDeviceTypesStore && loadingProgress}
+      loadingOptions={{
+        loader: loadingProgress?.percent !== 100 ? 'progress' : 'spinner',
+        progress: loadingProgress?.percent,
+        label: loadingProgress?.percent !== 100
+          ? `${formatBytes(loadingProgress?.loaded)} / ${formatBytes(loadingProgress?.total)}`
+          : null,
+      }}
       footer={
         <div className="deviceSettingsWasm-footer">
           <a href="https://wirenboard.com" target="_blank">
@@ -325,17 +332,6 @@ export const DeviceSettingsWasm = observer(() => {
       }
       hasRights
     >
-      {!configDeviceTypesStore && loadingProgress && (
-        <div className="deviceSettingsWasm-loadingProgress">
-          <Loader />
-          {loadingProgress.total > 0 && (
-            <Progress
-              value={loadingProgress.percent}
-              caption={`${formatBytes(loadingProgress.loaded)} / ${formatBytes(loadingProgress.total)}`}
-            />
-          )}
-        </div>
-      )}
       {progress !== 0 && progress < 100 && (
         <>
           <Progress value={progress} caption={progress.toFixed() + '%'} />
