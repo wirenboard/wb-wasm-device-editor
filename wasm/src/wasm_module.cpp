@@ -108,6 +108,8 @@ namespace
             try {
                 Template = TemplateMap->GetTemplate(Request["device_type"].asString());
                 Device = Params.factory->CreateDevice(Template->GetTemplate(), config, Params.protocol);
+                Device->SetWbDevice(!Template->GetHardware().empty() ||
+                                    Template->GetTemplate()["enable_wb_continuous_read"].asBool());
             } catch (const std::out_of_range& e) {
                 LOG(Error) << "Unable to create device: " << e.what();
             }
