@@ -1,3 +1,5 @@
+import type { LoadingProgress } from './device-settings-wasm/types';
+
 declare class PortScan {
   constructor(callback: (options: any) => void);
   exec(): Promise<{ devices: any[] }>;
@@ -10,4 +12,6 @@ declare const Module: {
     select: (auto: boolean) => Promise<any>;
   };
   isReady: Promise<void>;
+  loadingProgress: LoadingProgress | null;
+  onLoadingProgress: (callback: (progress: LoadingProgress) => void) => () => void;
 };

@@ -20,6 +20,7 @@ import {
 } from '@/stores/device-manager';
 import type { Translator } from '@/stores/json-schema-editor';
 import { setReactLocale } from '~/react-directives/locale';
+import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
 import { RuntimeView } from './components/runtime-view';
@@ -130,6 +131,7 @@ export const DeviceSettingsWasm = observer(() => {
   const {
     moduleInitialized,
     progress,
+    loadingProgress,
     selectPort,
     getPortInfo,
     scan,
@@ -445,21 +447,16 @@ export const DeviceSettingsWasm = observer(() => {
             variant="primary"
             onClick={handleSave}
           />
-          <Dropdown
-            options={[
-              { label: 'EN', value: 'en' },
-              { label: 'RU', value: 'ru' },
-            ]}
-            value={language}
-            onChange={(option: Option<string>) => {
-              localStorage.setItem('language', option.value);
-              setLanguage(option.value);
-              setReactLocale();
-            }}
-          />
         </>
       }
-      isLoading={!configDeviceTypesStore}
+      isLoading={!configDeviceTypesStore && loadingProgress}
+      loadingOptions={{
+        loader: loadingProgress?.percent !== 100 ? 'progress' : 'spinner',
+        progress: loadingProgress?.percent,
+        label: loadingProgress?.percent !== 100
+          ? `${formatBytes(loadingProgress?.loaded)} / ${formatBytes(loadingProgress?.total)}`
+          : null,
+      }}
       footer={
         <div className="deviceSettingsWasm-footer">
           <a href="https://wirenboard.com" target="_blank">
@@ -518,12 +515,20 @@ export const DeviceSettingsWasm = observer(() => {
             </div>
           ) : (
             tabstore && schemaStore && translator && (
+            !allDevices.length && !progress ? (
+              <div className="deviceSettingsWasm-emptyState">
+                <Alert variant="info">
+                  {t('wasm.labels.empty-state')}
+                </Alert>
+              </div>
+            ) : tabstore && (
               <>
                 <header className="deviceSettingsWasm-header">
                   <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
                   {manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)
                     ? (
                       <Button
+                        className="deviceSettingsWasm-headerButton"
                         label={t('wasm.buttons.remove-local')}
                         variant="secondary"
                         size="small"
@@ -532,6 +537,7 @@ export const DeviceSettingsWasm = observer(() => {
                     )
                     : (
                       <Button
+                        className="deviceSettingsWasm-headerButton"
                         label={t('wasm.buttons.save-local')}
                         variant="secondary"
                         size="small"

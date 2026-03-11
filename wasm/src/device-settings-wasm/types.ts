@@ -13,3 +13,9 @@ export interface Device {
   fw_signature: string;
   sn: string;
 }
+
+export interface LoadingProgress {
+  loaded: number;
+  total: number;
+  percent: number;
+}
