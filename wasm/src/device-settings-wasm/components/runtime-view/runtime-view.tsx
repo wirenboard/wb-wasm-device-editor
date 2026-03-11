@@ -2,43 +2,12 @@ import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/button';
-import { CellContent } from '@/components/cell/cell';
+import { Cell as CellContent } from '@/components/cell';
 import { Switch } from '@/components/switch';
 import Cell from '@/stores/devices/cell';
 import type { CellType } from '@/stores/devices/cell-type';
-import '@/components/cell/styles.css';
-import './runtime-view.css';
-
-interface TemplateChannel {
-  name: string;
-  type?: string;
-  readonly?: boolean;
-  units?: string;
-  min?: number;
-  max?: number;
-  scale?: number;
-  enum?: Record<string, string>;
-  enum_titles?: Record<string, string>;
-  address?: number;
-  reg_type?: string;
-  enabled?: boolean;
-  condition?: string;
-  fw?: string;
-}
-
-interface RuntimeViewProps {
-  deviceCfg: {
-    slave_id: number;
-    device_type: string;
-    baud_rate: number;
-    parity: string;
-    data_bits: number;
-    stop_bits: number;
-  };
-  deviceLoad: (data: any) => Promise<any>;
-  save: (data: any) => Promise<any>;
-  configGetSchema: (deviceType: string) => Promise<any>;
-}
+import type { RuntimeViewProps, TemplateChannel } from './types';
+import './styles.css';
 
 const POLL_INTERVAL = 2000;
 
@@ -46,9 +15,9 @@ function translateName(name: string, translations: Record<string, Record<string,
   return translations?.[lang]?.[name] || translations?.en?.[name] || name;
 }
 
-function applyReadonly(cells: Cell[], readonlyMap: Record<string, boolean>) {
+function applyReadonly(cells: Cell[], readonlyArray: string[]) {
   cells.forEach((cell) => {
-    if (readonlyMap[cell.controlId]) {
+    if (readonlyArray.includes(cell.controlId)) {
       cell.setReadOnly(true);
     }
   });
@@ -145,8 +114,8 @@ export const RuntimeView = observer(({
 
       setError(null);
       const channelValues = result.result?.channels || {};
-      const readonlyMap = result.result?.readonly || {};
-      applyReadonly(currentCells, readonlyMap);
+      const readonlyArray = result.result?.readonly || [];
+      applyReadonly(currentCells, readonlyArray);
       currentCells.forEach((cell) => {
         const name = cell.controlId;
         if (name in channelValues && channelValues[name] !== 'unsupported') {
@@ -214,7 +183,7 @@ export const RuntimeView = observer(({
           }
 
           const channelValues = result.result?.channels || {};
-          const readonlyMap = result.result?.readonly || {};
+          const readonlyArray = result.result?.readonly || {};
 
           // Build channel list from C++ response + schema metadata
           const returnedChannels = Object.keys(channelValues)
@@ -223,7 +192,7 @@ export const RuntimeView = observer(({
 
           const names = returnedChannels.map((ch) => ch.name);
           const newCells = createCells(returnedChannels, translations, i18n.language, handleWrite);
-          applyReadonly(newCells, readonlyMap);
+          applyReadonly(newCells, readonlyArray);
           newCells.forEach((cell) => {
             const name = cell.controlId;
             if (channelValues[name] !== 'unsupported') {
@@ -246,7 +215,9 @@ export const RuntimeView = observer(({
     };
 
     init();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [deviceCfg.device_type, deviceCfg.slave_id]);
 
   // Polling timer — pauses when page/tab is hidden
@@ -257,7 +228,11 @@ export const RuntimeView = observer(({
       if (pollingRef.current) return;
       if (autoRefreshRef.current && document.visibilityState === 'visible') {
         pollingRef.current = true;
-        try { await pollValues(); } finally { pollingRef.current = false; }
+        try {
+          await pollValues();
+        } finally {
+          pollingRef.current = false;
+        }
       }
     }, POLL_INTERVAL);
 
@@ -278,10 +253,10 @@ export const RuntimeView = observer(({
   return (
     <div className="runtimeView">
       <div className="runtimeView-controls">
-        <div className="runtimeView-autoRefresh">
+        <label className="runtimeView-autoRefresh">
           <Switch value={autoRefresh} onChange={setAutoRefresh} />
           <span>{t('wasm.labels.auto-refresh')}</span>
-        </div>
+        </label>
         <Button
           label={t('wasm.buttons.refresh')}
           variant="secondary"

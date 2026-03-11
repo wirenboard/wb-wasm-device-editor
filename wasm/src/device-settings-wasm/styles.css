@@ -89,12 +89,6 @@
     color: var(--primary-color);
 }
 
-.deviceSettingsWasm-footer .dropdown__control {
-    padding: 0 6px;
-    border: 0;
-    box-shadow: none;
-}
-
 @media (max-width: 768px) {
     .deviceSettingsWasm-container {
         flex-direction: column;
@@ -147,11 +141,6 @@
     }
 
     .deviceSettingsWasm-title {
-        display: none;
-    }
-
-    /* Hide footer on mobile to prevent overlap with content */
-    .page-footer {
         display: none;
     }
 

@@ -12,72 +12,26 @@ import { Progress } from '@/components/progress';
 import { Tabs, TabContent, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { FirmwareVersionPanel } from '@/pages/settings/device-manager';
-import { MakeEditors } from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
+import {
+  MakeEditors,
+} from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
 import {
   DeviceTabStore,
   DeviceTypesStore,
   type WbDeviceParameterEditorsGroup,
 } from '@/stores/device-manager';
-import type { Translator } from '@/stores/json-schema-editor';
 import { setReactLocale } from '~/react-directives/locale';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
 import { RuntimeView } from './components/runtime-view';
+import { SettingsTabContent } from './components/tab-content';
 import { useModule } from './module';
 import type { Device } from './types';
 import './styles.css';
 
 const RUNTIME_VIEW_TAB_ID = 'runtime-view';
 const EMPTY_GROUPS: WbDeviceParameterEditorsGroup[] = [];
-
-const SubGroupContent = observer((
-  { group, translator }: { group: WbDeviceParameterEditorsGroup; translator: Translator }
-) => {
-  const { i18n } = useTranslation();
-  const currentLanguage = i18n.language;
-  return (
-    <div className="deviceSettingsEditor-subGroup">
-      {!group.properties.ui_options?.wb?.disable_title && (
-        <label>{translator.find(group.properties.title, currentLanguage)}</label>
-      )}
-      <div className={classNames({
-        'deviceSettingsEditor-subGroupContent': true,
-        'deviceSettingsEditor-subGroupContentWithBorder': !group.properties.ui_options?.wb?.disable_title,
-      })}>
-        {MakeEditors(group.parameters, translator)}
-        {group.subgroups.map((sub) => (
-          sub.isEnabledByCondition
-            ? <SubGroupContent key={sub.properties.id} group={sub} translator={translator} />
-            : null
-        ))}
-      </div>
-    </div>
-  );
-});
-
-const SettingsTabContent = observer((
-  { group, translator }: { group: WbDeviceParameterEditorsGroup; translator: Translator }
-) => {
-  const { i18n } = useTranslation();
-  const currentLanguage = i18n.language;
-  const showDescription = !!group.properties.description;
-  return (
-    <div className="deviceSettingsEditor-topGroupContent">
-      {showDescription && (
-        <p className="wb-jsonEditor-propertyDescription">
-          {translator.find(group.properties.description, currentLanguage)}
-        </p>
-      )}
-      {MakeEditors(group.parameters, translator)}
-      {group.subgroups.map((sub) => (
-        sub.isEnabledByCondition
-          ? <SubGroupContent key={sub.properties.id} group={sub} translator={translator} />
-          : null
-      ))}
-    </div>
-  );
-});
 
 export const DeviceSettingsWasm = observer(() => {
   const { t, i18n } = useTranslation();
@@ -385,10 +339,12 @@ export const DeviceSettingsWasm = observer(() => {
       .map((group) => ({
         id: group.properties.id,
         label: (
-          <span className={classNames({
-            'deviceSettingsEditor-tabWithError': group.hasErrors,
-            'deviceSettingsEditor-tabWithWarning': group.hasBadValuesFromRegisters && !group.hasErrors,
-          })}>
+          <span
+            className={classNames({
+              'deviceSettingsEditor-tabWithError': group.hasErrors,
+              'deviceSettingsEditor-tabWithWarning': group.hasBadValuesFromRegisters && !group.hasErrors,
+            })}
+          >
             {translator?.find(group.properties.title, i18n.language) ?? group.properties.title}
           </span>
         ),
@@ -446,6 +402,18 @@ export const DeviceSettingsWasm = observer(() => {
             disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid}
             variant="primary"
             onClick={handleSave}
+          />
+          <Dropdown
+            options={[
+              { label: 'EN', value: 'en' },
+              { label: 'RU', value: 'ru' },
+            ]}
+            value={language}
+            onChange={(option: Option<string>) => {
+              localStorage.setItem('language', option.value);
+              setLanguage(option.value);
+              setReactLocale();
+            }}
           />
         </>
       }
@@ -515,89 +483,87 @@ export const DeviceSettingsWasm = observer(() => {
             </div>
           ) : (
             tabstore && schemaStore && translator && (
-            !allDevices.length && !progress ? (
-              <div className="deviceSettingsWasm-emptyState">
-                <Alert variant="info">
-                  {t('wasm.labels.empty-state')}
-                </Alert>
-              </div>
-            ) : tabstore && (
-              <>
-                <header className="deviceSettingsWasm-header">
-                  <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
-                  {manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)
-                    ? (
-                      <Button
-                        className="deviceSettingsWasm-headerButton"
-                        label={t('wasm.buttons.remove-local')}
-                        variant="secondary"
-                        size="small"
-                        onClick={() => removeLocal()}
-                      />
-                    )
-                    : (
-                      <Button
-                        className="deviceSettingsWasm-headerButton"
-                        label={t('wasm.buttons.save-local')}
-                        variant="secondary"
-                        size="small"
-                        onClick={() => saveLocal()}
-                      />
-                    )
-                  }
-
-                </header>
-                <FirmwareVersionPanel firmwareVersion={getDevice().fw?.version} />
-                {tabstore.slaveIdIsDuplicate && (
-                  <Alert
-                    className="deviceSettingsWasm-alert"
-                    variant="danger"
-                  >
-                    {t('device-manager.errors.duplicate-slave-id')}
+              !allDevices.length && !progress ? (
+                <div className="deviceSettingsWasm-emptyState">
+                  <Alert variant="info">
+                    {t('wasm.labels.empty-state')}
                   </Alert>
-                )}
-                <div className="deviceSettingsEditor deviceSettingsEditor-desktop">
-                  <JsonSchemaEditor store={schemaStore.commonParams} translator={translator} />
-                  {MakeEditors(schemaStore.topLevelGroup.parameters, translator)}
-                  {allTabs.length > 0 && (
-                    <div className="deviceSettingsEditor-tabs">
-                      <Tabs
-                        activeTab={activeSettingsTab}
-                        items={allTabs}
-                        onTabChange={onSettingsTabChange}
-                      />
-                      {settingsGroups
-                        .filter((group) => !!(group.parameters.length + group.subgroups.length))
-                        .map((group) => (
-                          <TabContent
-                            key={group.properties.id}
-                            activeTab={activeSettingsTab}
-                            tabId={group.properties.id}
-                            className="deviceSettingsEditor-tabContent"
-                          >
-                            <SettingsTabContent group={group} translator={translator} />
-                          </TabContent>
-                        ))
-                      }
-                      <TabContent
-                        activeTab={activeSettingsTab}
-                        tabId={RUNTIME_VIEW_TAB_ID}
-                        className="deviceSettingsEditor-tabContent"
-                      >
-                        <RuntimeView
-                          key={saveCounter}
-                          deviceCfg={{ ...getDevice().cfg, device_type: tabstore.deviceType }}
-                          deviceLoad={deviceLoad}
-                          save={save}
-                          configGetSchema={configGetSchema}
-                        />
-                      </TabContent>
-                    </div>
-                  )}
                 </div>
-              </>
-            )
-          )}
+              ) : tabstore && (
+                <>
+                  <header className="deviceSettingsWasm-header">
+                    <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
+                    {manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)
+                      ? (
+                        <Button
+                          label={t('wasm.buttons.remove-local')}
+                          variant="secondary"
+                          size="small"
+                          onClick={() => removeLocal()}
+                        />
+                      )
+                      : (
+                        <Button
+                          label={t('wasm.buttons.save-local')}
+                          variant="secondary"
+                          size="small"
+                          onClick={() => saveLocal()}
+                        />
+                      )
+                    }
+
+                  </header>
+                  <FirmwareVersionPanel firmwareVersion={getDevice().fw?.version} />
+                  {tabstore.slaveIdIsDuplicate && (
+                    <Alert
+                      className="deviceSettingsWasm-alert"
+                      variant="danger"
+                    >
+                      {t('device-manager.errors.duplicate-slave-id')}
+                    </Alert>
+                  )}
+                  <div className="deviceSettingsEditor deviceSettingsEditor-desktop">
+                    <JsonSchemaEditor store={schemaStore.commonParams} translator={translator} />
+                    {MakeEditors(schemaStore.topLevelGroup.parameters, translator)}
+                    {allTabs.length > 0 && (
+                      <div className="deviceSettingsEditor-tabs">
+                        <Tabs
+                          activeTab={activeSettingsTab}
+                          items={allTabs}
+                          onTabChange={onSettingsTabChange}
+                        />
+                        {settingsGroups
+                          .filter((group) => !!(group.parameters.length + group.subgroups.length))
+                          .map((group) => (
+                            <TabContent
+                              key={group.properties.id}
+                              activeTab={activeSettingsTab}
+                              tabId={group.properties.id}
+                              className="deviceSettingsEditor-tabContent"
+                            >
+                              <SettingsTabContent group={group} translator={translator} />
+                            </TabContent>
+                          ))
+                        }
+                        <TabContent
+                          activeTab={activeSettingsTab}
+                          tabId={RUNTIME_VIEW_TAB_ID}
+                          className="deviceSettingsEditor-tabContent"
+                        >
+                          <RuntimeView
+                            key={saveCounter}
+                            deviceCfg={{ ...getDevice().cfg, device_type: tabstore.deviceType }}
+                            deviceLoad={deviceLoad}
+                            save={save}
+                            configGetSchema={configGetSchema}
+                          />
+                        </TabContent>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )
+            ))}
         </section>
       </main>
 
