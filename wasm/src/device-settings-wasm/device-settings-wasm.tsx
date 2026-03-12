@@ -417,7 +417,7 @@ export const DeviceSettingsWasm = observer(() => {
           />
         </>
       }
-      isLoading={!configDeviceTypesStore && loadingProgress}
+      isLoading={(!configDeviceTypesStore && loadingProgress?.percent !== 100) || !moduleInitialized}
       loadingOptions={{
         loader: loadingProgress?.percent !== 100 ? 'progress' : 'spinner',
         progress: loadingProgress?.percent,
@@ -482,14 +482,14 @@ export const DeviceSettingsWasm = observer(() => {
               <Loader caption={t('device-manager.labels.reading-parameters')} />
             </div>
           ) : (
-            tabstore && schemaStore && translator && (
-              !allDevices.length && !progress ? (
-                <div className="deviceSettingsWasm-emptyState">
-                  <Alert variant="info">
-                    {t('wasm.labels.empty-state')}
-                  </Alert>
-                </div>
-              ) : tabstore && (
+            !allDevices.length && !progress && moduleInitialized ? (
+              <div className="deviceSettingsWasm-emptyState">
+                <Alert variant="info">
+                  {t('wasm.labels.empty-state')}
+                </Alert>
+              </div>
+            ) : (
+              tabstore && schemaStore && translator && (
                 <>
                   <header className="deviceSettingsWasm-header">
                     <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
@@ -563,7 +563,8 @@ export const DeviceSettingsWasm = observer(() => {
                   </div>
                 </>
               )
-            ))}
+            )
+          )}
         </section>
       </main>
 

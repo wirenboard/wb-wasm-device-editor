@@ -19,13 +19,10 @@ test.afterAll(async () => {
 async function waitForAppReady(page: Page) {
   await page.goto(BASE_URL, { waitUntil: 'load' });
   await expect(page).toHaveTitle('Wiren Board Device Editor');
-  const addDeviceButton = page.getByRole('button', { name: 'Manually add device' });
-  try {
-    await expect(addDeviceButton).toBeVisible({ timeout: 20_000 });
-  } catch {
-    await page.reload({ waitUntil: 'load' });
-    await expect(addDeviceButton).toBeVisible({ timeout: 30_000 });
-  }
+  // Wait for module initialization by checking if the loader disappears and buttons become active
+  await expect(page.locator('.page-loader')).not.toBeVisible({ timeout: 60_000 });
+  const addDeviceButton = page.getByRole('button', { name: 'Add device' });
+  await expect(addDeviceButton).toBeVisible({ timeout: 10_000 });
 }
 
 test('empty state is visible on fresh load', async ({ page }) => {
@@ -45,10 +42,12 @@ test('empty state disappears after adding a device manually', async ({ page }) =
   await expect(page.locator('.deviceSettingsWasm-emptyState')).toBeVisible();
 
   // Add a device via the modal
-  await page.getByRole('button', { name: 'Manually add device' }).click();
+  await page.getByRole('button', { name: 'Add device' }).click();
   await expect(page.locator('.confirm-content')).toBeVisible();
 
   await page.locator('#device-type').click();
+  // Wait for dropdown options to appear
+  await expect(page.locator('.dropdown__option').first()).toBeVisible();
   await page.locator('.dropdown__option').first().click();
 
   const modalSlaveIdInput = page.locator('.confirm-content input[type="number"]');
