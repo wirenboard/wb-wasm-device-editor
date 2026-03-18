@@ -93,16 +93,16 @@ test('Runtime View auto-refresh toggle disables and enables polling', async ({ p
   const runtimeView = page.locator('.runtimeView');
   await expect(runtimeView).toBeVisible({ timeout: 15_000 });
 
-  // The auto-refresh switch should be checked (on) by default
+  // The auto-refresh switch should be unchecked (off) by default
   const toggle = runtimeView.locator('.runtimeView-autoRefresh input[type="checkbox"]');
-  await expect(toggle).toBeChecked();
-
-  // Click the visible toggle span (the checkbox is hidden under it)
-  await runtimeView.locator('.runtimeView-autoRefresh .toggle').click();
   await expect(toggle).not.toBeChecked();
 
-  // Refresh button should become enabled when auto-refresh is off
+  // Refresh button should be enabled when auto-refresh is off
   await expect(runtimeView.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+
+  // Click the visible toggle span to enable auto-refresh
+  await runtimeView.locator('.runtimeView-autoRefresh .toggle').click();
+  await expect(toggle).toBeChecked();
 });
 
 test('Runtime View handles deviceLoad errors gracefully', async ({ page }) => {
