@@ -383,19 +383,7 @@ export const DeviceSettingsWasm = observer(() => {
             </a>
           )}
           <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)}/>
-          {portName ? (
-            <>
-              <span className="deviceSettingsWasm-portName">
-                <span>{portName}</span>
-                <span>{portHexId}</span>
-              </span>
-              {multiplePortsAvailable && (
-                <Button label={t('wasm.buttons.change-port')} variant="secondary" onClick={handleSelectPort} />
-              )}
-            </>
-          ) : (
-            <Button label={t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} />
-          )}
+          <Button label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} />
           <Button label={t('wasm.buttons.scan')} onClick={handleScan} />
           <Button
             label={t('wasm.buttons.save')}

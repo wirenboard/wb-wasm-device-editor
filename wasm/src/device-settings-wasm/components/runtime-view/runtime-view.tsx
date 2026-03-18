@@ -15,11 +15,11 @@ function translateName(name: string, translations: Record<string, Record<string,
   return translations?.[lang]?.[name] || translations?.en?.[name] || name;
 }
 
-function applyReadonly(cells: Cell[], readonlyArray: string[]) {
+function applyReadonly(cells: Cell[], readonlyList: string[]) {
+  if (!Array.isArray(readonlyList) || readonlyList.length === 0) return;
+  const readonlySet = new Set(readonlyList);
   cells.forEach((cell) => {
-    if (readonlyArray.includes(cell.controlId)) {
-      cell.setReadOnly(true);
-    }
+    cell.setReadOnly(readonlySet.has(cell.controlId));
   });
 }
 
@@ -72,18 +72,20 @@ export const RuntimeView = observer(({
   const { t, i18n } = useTranslation();
   const [cells, setCells] = useState<Cell[]>([]);
   const [channelNames, setChannelNames] = useState<string[]>([]);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(() => localStorage.getItem('runtimeViewAutoRefresh') === 'true');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingRef = useRef(false);
   const cellsRef = useRef<Cell[]>([]);
   const channelNamesRef = useRef<string[]>([]);
-  const autoRefreshRef = useRef(true);
+  const autoRefreshRef = useRef(autoRefresh);
+  const writingRef = useRef(false);
   const deviceCfgRef = useRef(deviceCfg);
 
   useEffect(() => {
     autoRefreshRef.current = autoRefresh;
+    localStorage.setItem('runtimeViewAutoRefresh', String(autoRefresh));
   }, [autoRefresh]);
 
   useEffect(() => {
@@ -107,6 +109,8 @@ export const RuntimeView = observer(({
         channels: names,
       });
 
+      if (writingRef.current) return;
+
       if (result.error) {
         setError(result.error.message);
         return;
@@ -114,8 +118,8 @@ export const RuntimeView = observer(({
 
       setError(null);
       const channelValues = result.result?.channels || {};
-      const readonlyArray = result.result?.readonly || [];
-      applyReadonly(currentCells, readonlyArray);
+      const readonlyList: string[] = result.result?.readonly || [];
+      applyReadonly(currentCells, readonlyList);
       currentCells.forEach((cell) => {
         const name = cell.controlId;
         if (name in channelValues && channelValues[name] !== 'unsupported') {
@@ -128,20 +132,25 @@ export const RuntimeView = observer(({
   }, [deviceLoad]);
 
   const handleWrite = useCallback(async (channelName: string, value: string) => {
-    const cfg = deviceCfgRef.current;
-    const data = {
-      device_type: cfg.device_type,
-      slave_id: cfg.slave_id,
-      baud_rate: cfg.baud_rate,
-      parity: cfg.parity,
-      data_bits: cfg.data_bits,
-      stop_bits: cfg.stop_bits,
-      channels: { [channelName]: value },
-    };
-    const result = await save(data);
-    if (result?.error) {
-      setError(result.error.message);
-      return;
+    writingRef.current = true;
+    try {
+      const cfg = deviceCfgRef.current;
+      const data = {
+        device_type: cfg.device_type,
+        slave_id: cfg.slave_id,
+        baud_rate: cfg.baud_rate,
+        parity: cfg.parity,
+        data_bits: cfg.data_bits,
+        stop_bits: cfg.stop_bits,
+        channels: { [channelName]: value },
+      };
+      const result = await save(data);
+      if (result?.error) {
+        setError(result.error.message);
+        return;
+      }
+    } finally {
+      writingRef.current = false;
     }
     await pollValues();
   }, [save, pollValues]);
@@ -183,21 +192,19 @@ export const RuntimeView = observer(({
           }
 
           const channelValues = result.result?.channels || {};
-          const readonlyArray = result.result?.readonly || {};
+          const readonlyList: string[] = result.result?.readonly || [];
 
-          // Build channel list from C++ response + schema metadata
+          // Build channel list from C++ response + schema metadata, excluding unsupported
           const returnedChannels = Object.keys(channelValues)
+            .filter((name) => channelValues[name] !== 'unsupported')
             .map((name) => channelsByName.get(name))
             .filter((ch): ch is TemplateChannel => !!ch);
 
           const names = returnedChannels.map((ch) => ch.name);
           const newCells = createCells(returnedChannels, translations, i18n.language, handleWrite);
-          applyReadonly(newCells, readonlyArray);
+          applyReadonly(newCells, readonlyList);
           newCells.forEach((cell) => {
-            const name = cell.controlId;
-            if (channelValues[name] !== 'unsupported') {
-              cell.receiveValue(cleanStringValue(String(channelValues[name])));
-            }
+            cell.receiveValue(cleanStringValue(String(channelValues[cell.controlId])));
           });
 
           cellsRef.current = newCells;
