@@ -1,0 +1,33 @@
+.runtimeView-controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.runtimeView-autoRefresh {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    height: 34px;
+    font-weight: normal;
+}
+
+.runtimeView-error {
+    color: var(--danger-color);
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.runtimeView .deviceCell-historyLink {
+    display: none;
+}
+
+.runtimeView .deviceSettingsEditor-topGroupContent {
+    column-gap: 40px;
+}
+
+.runtimeView .deviceSettingsEditor-parameter {
+    max-width: calc(50% - 20px);
+}

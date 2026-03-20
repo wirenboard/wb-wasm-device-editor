@@ -23,9 +23,9 @@ test.afterAll(async () => {
 async function waitForAppReady(page: Page) {
   await page.goto(BASE_URL, { waitUntil: 'load' });
   await expect(page).toHaveTitle('Wiren Board Device Editor');
-  // The "Manually add device" button appears after configDeviceTypesStore is set.
+  // The "Add device" button appears after configDeviceTypesStore is set.
   // WASM module initialization may intermittently stall — retry with a reload.
-  const addDeviceButton = page.getByRole('button', { name: 'Manually add device' });
+  const addDeviceButton = page.getByRole('button', { name: 'Add device' });
   try {
     await expect(addDeviceButton).toBeVisible({ timeout: 20_000 });
   } catch {
@@ -35,10 +35,10 @@ async function waitForAppReady(page: Page) {
 }
 
 /**
- * Add a device via the "Manually add device" modal.
+ * Add a device via the "Add device" modal.
  */
 async function addDevice(page: Page, slaveId: number) {
-  await page.getByRole('button', { name: 'Manually add device' }).click();
+  await page.getByRole('button', { name: 'Add device' }).click();
   await expect(page.locator('.confirm-content')).toBeVisible();
 
   // Select first available device type (react-select with isSearchable)

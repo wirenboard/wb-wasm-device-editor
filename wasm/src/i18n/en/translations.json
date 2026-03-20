@@ -3,15 +3,19 @@
       "title": "Wiren Board Device Editor",
       "buttons": {
          "select": "Select port",
+         "change-port": "Change port",
          "scan": "Scan",
          "save": "Save",
          "save-local": "Save local",
          "remove-local": "Remove local",
-         "add-device": "Manually add device",
-         "add": "Add"
+         "add-device": "Add device",
+         "add": "Add",
+         "refresh": "Refresh"
       },
       "labels": {
-         "scanning": "Scanning in progresss {{message}}…",
+         "scanning": "Scanning in progress {{message}}…",
+         "runtime-view": "Runtime View",
+         "auto-refresh": "Auto-refresh",
          "device-type": "Device type",
          "slave-id": "Slave id of the device",
          "baudrate": "Baudrate",
@@ -24,7 +28,8 @@
          "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to specify device type and address manually."
       },
       "errors": {
-         "invalid-slave-id": "Slave ID must be an integer between 1 and 247"
+         "invalid-slave-id": "Slave ID must be an integer between 1 and 247",
+         "select-port-failed": "Failed to select port: {{error}}"
       },
       "sw": {
          "offline": "Offline mode",

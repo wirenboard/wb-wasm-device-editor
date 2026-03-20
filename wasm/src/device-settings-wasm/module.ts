@@ -46,7 +46,12 @@ export const useModule = () => {
 
   const selectPort = useCallback(async () => {
     await initializeModule();
-    return Module.serial.select(true);
+    await Module.serial.forceSelect();
+  }, [initializeModule]);
+
+  const getPortInfo = useCallback(async (): Promise<{ name: string | null; hexId: string | null; matchingCount: number }> => {
+    await initializeModule();
+    return Module.serial.getPortInfo();
   }, [initializeModule]);
 
   const scan = useCallback(async (): Promise<Device[]> => {
@@ -86,6 +91,14 @@ export const useModule = () => {
     [initializeModule],
   );
 
+  const deviceLoad = useCallback(
+    async (data: any) => {
+      await initializeModule();
+      return Module.request('deviceLoad', data);
+    },
+    [initializeModule],
+  );
+
   const portSetup = useCallback(
     async (data: any) => {
       await initializeModule();
@@ -100,12 +113,14 @@ export const useModule = () => {
     loadingProgress,
     initializeModule,
     selectPort,
+    getPortInfo,
     scan,
     scanMessage: moduleState.scanMessage,
     loadConfig,
     configGetDeviceTypes,
     configGetSchema,
     save,
+    deviceLoad,
     portSetup,
   };
 };

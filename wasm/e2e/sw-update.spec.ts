@@ -41,7 +41,7 @@ test('shows update notification when SW detects new version', async ({
   // 2. Wait for WASM module to initialize — the update banner lives inside
   //    PageLayout's actions prop, which only renders when isLoading is false.
   //    WASM init may intermittently stall under resource pressure, so retry.
-  const addDeviceButton = page.getByRole('button', { name: 'Manually add device' });
+  const addDeviceButton = page.getByRole('button', { name: 'Add device' });
   try {
     await expect(addDeviceButton).toBeVisible({ timeout: 20_000 });
   } catch {

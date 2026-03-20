@@ -32,7 +32,7 @@ test('shows progress immediately when download starts', async ({ page }) => {
 
   // Simulate initial Emscripten status (before any bytes arrive)
   await page.evaluate(() => {
-    Module.setStatus('Downloading data...');
+    Module.setStatus('Downloading data... (0/1000)');
   });
 
   await expect(page.locator('progress')).toBeVisible();
@@ -78,14 +78,10 @@ test('progress bar disappears after module loads', async ({ page }) => {
   // Don't block anything — let module load normally
   await page.goto(BASE_URL, { waitUntil: 'load' });
 
-  // Wait for the module to fully initialize (buttons appear)
-  const addDeviceButton = page.getByRole('button', { name: 'Manually add device' });
-  try {
-    await expect(addDeviceButton).toBeVisible({ timeout: 20_000 });
-  } catch {
-    await page.reload({ waitUntil: 'load' });
-    await expect(addDeviceButton).toBeVisible({ timeout: 30_000 });
-  }
+  // Wait for the module to fully initialize (buttons appear and loader disappears)
+  await expect(page.locator('.page-loader')).not.toBeVisible({ timeout: 60_000 });
+  const addDeviceButton = page.getByRole('button', { name: 'Add device' });
+  await expect(addDeviceButton).toBeVisible({ timeout: 10_000 });
 
   // Progress bar should not be visible when module is ready
   const progressWrapper = page.locator('progress');

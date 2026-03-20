@@ -12,3 +12,4 @@ wasm/assets/*
 dist-configurator*
 node_modules
 package-lock.json
+emsdk-docker-image.tar.gz
