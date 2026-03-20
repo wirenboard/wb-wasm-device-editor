@@ -1,6 +1,7 @@
 {
   "name": "wb-wasm-device-editor",
   "version": "1.0.0",
+  "description": "Wirenboard WASM-based device editor",
   "scripts": {
     "dev": "vite dev --host",
     "build": "vite build",
