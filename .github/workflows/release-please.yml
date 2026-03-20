@@ -29,7 +29,7 @@ jobs:
     if: ${{ needs.release-please.outputs.pr != '' }}
     steps:
       - name: Merge release-please PR
-        run: gh pr merge --squash --repo "$GITHUB_REPOSITORY" "$PR_NUMBER"
+        run: gh pr merge --squash --admin --repo "$GITHUB_REPOSITORY" "$PR_NUMBER"
         env:
           PR_NUMBER: ${{ fromJSON(needs.release-please.outputs.pr).number }}
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_PAT }}
