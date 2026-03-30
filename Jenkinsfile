@@ -60,7 +60,7 @@ pipeline {
             }}
             steps {
                 withCredentials([file(credentialsId: 's3cmd-deveditor-config', variable: 'S3CMD_CONFIG')]) {
-                    sh 'wbdev user s3cmd -c $S3CMD_CONFIG sync --delete-removed wasm/dist-configurator/ s3://wb-deveditor-02/'
+                    sh 'wbdev user s3cmd -c $S3CMD_CONFIG sync --delete-removed --guess-mime-type --no-mime-magic wasm/dist-configurator/ s3://wb-deveditor-02/'
                 }
             }
         }
