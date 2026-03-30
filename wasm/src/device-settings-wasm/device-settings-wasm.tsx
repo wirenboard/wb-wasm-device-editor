@@ -96,7 +96,8 @@ export const DeviceSettingsWasm = observer(() => {
     save,
     deviceLoad,
     portSetup,
-  } = useModule();
+    fwUpdateProxy,
+  } = useModule(isOffline);
 
   const [portName, setPortName] = useState<string | null>(null);
   const [portHexId, setPortHexId] = useState<string | null>(null);
@@ -225,7 +226,7 @@ export const DeviceSettingsWasm = observer(() => {
       initialData,
       deviceType,
       deviceTypesStore,
-      { GetFirmwareInfo: () => ({ fw: device.fw?.version }), hasMethod: () => true },
+      fwUpdateProxy,
       {
         LoadConfig: () => loadConfig(cfg).then((res) => {
           if (res.error) {
@@ -239,7 +240,17 @@ export const DeviceSettingsWasm = observer(() => {
     );
     await store.loadContent(device.cfg);
     store.setDeviceType(device.device_signature, cfg);
-    await store.updateEmbeddedSoftwareVersion(device.cfg);
+    try {
+      await store.updateEmbeddedSoftwareVersion({
+        path: 'wasm',
+        baudRate: device.cfg.baud_rate || 9600,
+        stopBits: device.cfg.stop_bits || 2,
+        parity: device.cfg.parity || 'N',
+        dataBits: device.cfg.data_bits || 8,
+      });
+    } catch (err) {
+      console.warn('Failed to get firmware info:', err);
+    }
     store.schemaStore.customChannels = null;
 
     setTabstore(store);

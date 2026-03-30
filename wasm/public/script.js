@@ -93,35 +93,41 @@ window.Module =
       },
 
       async httpGetText(url) {
-          const response = await fetch(url);
+          try {
+              const response = await fetch(url);
 
-          if (!response.ok)
-            throw new Error(`HTTP ${response.status} downloading ${url}`);
+              if (!response.ok)
+                throw new Error(`http ${response.status} downloading ${url}`);
 
-          const text = await response.text();
-          const bytes = new TextEncoder().encode(text);
-          const ptr = Module._malloc(bytes.length + 1);
-
-          Module.HEAPU8.set(bytes, ptr);
-          Module.HEAPU8[ptr + bytes.length] = 0;
-
-          return ptr;
+              const text = await response.text();
+              const bytes = new TextEncoder().encode(text);
+              const ptr = Module._malloc(bytes.length + 1);
+              Module.HEAPU8.set(bytes, ptr);
+              Module.HEAPU8[ptr + bytes.length] = 0;
+              return ptr;
+          } catch (e) {
+              this.print('http request failed for ' + url + ': ' + e);
+              return 0;
+          }
       },
 
       async httpGetBinary(url) {
-          const response = await fetch(url);
+          try {
+              const response = await fetch(url);
 
-          if (!response.ok)
-            throw new Error(`HTTP ${response.status} downloading ${url}`);
+              if (!response.ok)
+                throw new Error(`http ${response.status} downloading ${url}`);
 
-          const buffer = await response.arrayBuffer();
-          const data = new Uint8Array(buffer);
-          const ptr = Module._malloc(4 + data.length);
-
-          Module.HEAP32[ptr >> 2] = data.length;
-          Module.HEAPU8.set(data, ptr + 4);
-
-          return ptr;
+              const buffer = await response.arrayBuffer();
+              const data = new Uint8Array(buffer);
+              const ptr = Module._malloc(4 + data.length);
+              Module.HEAP32[ptr >> 2] = data.length;
+              Module.HEAPU8.set(data, ptr + 4);
+              return ptr;
+          } catch (e) {
+              this.print('http request failed for ' + url + ': ' + e);
+              return 0;
+          }
       },
 
       _fwUpdateStateCallbacks: [],
