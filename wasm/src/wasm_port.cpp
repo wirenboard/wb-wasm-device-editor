@@ -1,10 +1,11 @@
-#include "wasm_port.h"
-#include "log.h"
-
-#include <wblib/utils.h>
 
 #include <emscripten/emscripten.h>
 #include <emscripten/val.h>
+
+#include <wblib/utils.h>
+
+#include "log.h"
+#include "wasm_port.h"
 
 #define LOG(logger) logger.Log() << "[wasm port] "
 

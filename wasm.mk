@@ -54,9 +54,17 @@ SRC = \
 	$(SERIAL_DIR)/src/rpc/rpc_device_set_task.cpp               \
 	$(SERIAL_DIR)/src/rpc/rpc_device_probe_task.cpp             \
 	$(SERIAL_DIR)/src/rpc/rpc_exception.cpp                     \
+	$(SERIAL_DIR)/src/rpc/rpc_fw_downloader.cpp                 \
+	$(SERIAL_DIR)/src/rpc/rpc_fw_get_firmware_info_task.cpp     \
+	$(SERIAL_DIR)/src/rpc/rpc_fw_restore_task.cpp               \
+	$(SERIAL_DIR)/src/rpc/rpc_fw_update_handler.cpp             \
+	$(SERIAL_DIR)/src/rpc/rpc_fw_update_serial_client_task.cpp  \
+	$(SERIAL_DIR)/src/rpc/rpc_fw_update_state.cpp               \
+	$(SERIAL_DIR)/src/rpc/rpc_fw_update_task.cpp                \
 	$(SERIAL_DIR)/src/rpc/rpc_helpers.cpp                       \
 	$(SERIAL_DIR)/src/rpc/rpc_port_scan_serial_client_task.cpp  \
 	$(SERIAL_DIR)/src/rpc/rpc_port_setup_serial_client_task.cpp \
+	$(WASM_DIR)/src/wasm_http_client.cpp                        \
 	$(WASM_DIR)/src/wasm_port.cpp                               \
 	$(WASM_DIR)/src/wasm_module.cpp                             \
 
@@ -65,10 +73,10 @@ JINJA_TEMPLATES = \
 	$(wildcard $(SERIAL_DIR)/templates/config-wb-*.json.jinja) \
 
 OPT = \
-	-fexceptions                                    \
-	-lembind                                        \
-	-sASYNCIFY                                      \
-	-sASYNCIFY_IMPORTS=["emscripten_asm_const_int"] \
+	-fexceptions                                                       \
+	-lembind                                                           \
+	-sASYNCIFY                                                         \
+	-sASYNCIFY_IMPORTS=["emscripten_asm_const_int","emscripten_sleep"] \
 
 TEMPLATES = $(JINJA_TEMPLATES:.json.jinja=.json)
 

@@ -49,7 +49,6 @@ window.Module =
 
       async _doRequest(type, data) {
           let json = JSON.stringify(data);
-
           this.finished = false;
 
           try {
@@ -61,6 +60,10 @@ window.Module =
                   case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
                   case 'deviceSet': this.deviceSet(json); break;
                   case 'deviceLoad': this.deviceLoad(json); break;
+                  case 'fwGetInfo': this.fwGetInfo(json); break;
+                  case 'fwUpdate': this.fwUpdate(json); break;
+                  case 'fwRestore': this.fwRestore(json); break;
+                  case 'fwClearError': this.fwClearError(json); break;
               }
           } catch (e) {
               const msg = (e && e.message) ? e.message : String(e);
@@ -68,7 +71,8 @@ window.Module =
               return { error: { code: -1, message: 'WASM call failed: ' + msg } };
           }
 
-          const deadline = Date.now() + 120000;
+          const timeout = ['fwUpdate', 'fwRestore'].includes(type) ? 600000 : 120000;
+          const deadline = Date.now() + timeout;
           await new Promise((resolve) => {
               const check = () => {
                   if (this.finished || Date.now() > deadline) {
@@ -81,20 +85,72 @@ window.Module =
           });
 
           if (!this.finished) {
-              this.print('RPC request timeout (120s) for: ' + type);
+              this.print('RPC request timeout (' + (timeout / 1000) + 's) for: ' + type);
               this.reply = { error: { code: -1, message: 'RPC request timeout' } };
           }
 
           return this.reply;
       },
 
-      parseReply(reply) {
-          this.reply = JSON.parse(reply);
+      async httpGetText(url) {
+          const response = await fetch(url);
+
+          if (!response.ok)
+            throw new Error(`HTTP ${response.status} downloading ${url}`);
+
+          const text = await response.text();
+          const bytes = new TextEncoder().encode(text);
+          const ptr = Module._malloc(bytes.length + 1);
+
+          Module.HEAPU8.set(bytes, ptr);
+          Module.HEAPU8[ptr + bytes.length] = 0;
+
+          return ptr;
+      },
+
+      async httpGetBinary(url) {
+          const response = await fetch(url);
+
+          if (!response.ok)
+            throw new Error(`HTTP ${response.status} downloading ${url}`);
+
+          const buffer = await response.arrayBuffer();
+          const data = new Uint8Array(buffer);
+          const ptr = Module._malloc(4 + data.length);
+
+          Module.HEAP32[ptr >> 2] = data.length;
+          Module.HEAPU8.set(data, ptr + 4);
+
+          return ptr;
+      },
+
+      _fwUpdateStateCallbacks: [],
+
+      parseString(string, fwUpdateState) {
+          const json = JSON.parse(string);
+
+          if (fwUpdateState) {
+              try {
+                  this._fwUpdateStateCallbacks.forEach(cb => cb(json));
+              } catch (e) {
+                  this.print('Failed to parse FW update state: ' + e);
+              }
+              return;
+          }
+
+          this.reply = json;
 
           if (this.reply.error)
               this.print('request error ' + this.reply.error.code + ': ' + this.reply.error.message);
 
           this.finished = true;
+      },
+
+      subscribeFwUpdateState(callback) {
+          this._fwUpdateStateCallbacks.push(callback);
+          return () => {
+              this._fwUpdateStateCallbacks = this._fwUpdateStateCallbacks.filter(cb => cb !== callback);
+          };
       },
 
       // Emscripten calls Module.setStatus(text) with a formatted string during

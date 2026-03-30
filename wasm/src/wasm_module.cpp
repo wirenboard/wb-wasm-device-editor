@@ -1,17 +1,22 @@
-#include "log.h"
-#include "port/feature_port.h"
-#include "wasm_port.h"
+#include <emscripten/bind.h>
 
 #include "config_merge_template.h"
+#include "log.h"
+#include "port/feature_port.h"
+
+#include "wasm_http_client.h"
+#include "wasm_port.h"
+
 #include "rpc/rpc_config_handler.h"
 #include "rpc/rpc_device_load_config_task.h"
 #include "rpc/rpc_device_load_task.h"
 #include "rpc/rpc_device_set_task.h"
+#include "rpc/rpc_fw_get_firmware_info_task.h"
+#include "rpc/rpc_fw_restore_task.h"
+#include "rpc/rpc_fw_update_serial_client_task.h"
 #include "rpc/rpc_helpers.h"
 #include "rpc/rpc_port_scan_serial_client_task.h"
 #include "rpc/rpc_port_setup_serial_client_task.h"
-
-#include <emscripten/bind.h>
 
 #define LOG(logger) logger.Log() << "[wasm] "
 
@@ -21,6 +26,7 @@ using namespace std::chrono;
 namespace
 {
     const auto GROUP_NAMES_FILE = "groups.json";
+    const auto RELEASE_SUITE = "stable";
 
     const auto COMMON_SCHEMA_FILE = "wb-mqtt-serial-confed-common.schema.json";
     const auto PORTS_SCHEMA_FILE = "wb-mqtt-serial-ports.schema.json";
@@ -46,9 +52,41 @@ namespace
     std::shared_ptr<TDevicesConfedSchemasMap> DevicesSchemasMap;
     std::shared_ptr<TProtocolConfedSchemasMap> ProtocolSchemasMap;
 
+    std::shared_ptr<TFwUpdateLock> FwUpdateLock = std::make_shared<TFwUpdateLock>();
+    std::shared_ptr<TFwUpdateState> FwState;
+    std::shared_ptr<TFwDownloader> FwDownloader;
+
+    void SendString(const std::string& string, bool fwUpdateState = false)
+    {
+        // clang-format off
+        EM_ASM(
+        {
+            let data = new String();
+
+            for (let i = 0; i < $1; ++i) {
+                data += String.fromCharCode(getValue($0 + i, 'i8'));
+            }
+
+            Module.parseString(data, $2);
+        },
+        string.c_str(), string.length(), fwUpdateState);
+        // clang-format on
+    }
+
+    void SendReply(const Json::Value& reply)
+    {
+        std::stringstream stream;
+        WBMQTT::JSON::MakeWriter()->write(reply, &stream);
+        SendString(stream.str());
+    }
+
+    void SendFwUpdateState(const std::string&, const std::string& payload, bool)
+    {
+        SendString(payload, true);
+    }
+
     class THelper
     {
-
         void ParseRequest(const std::string& requestString)
         {
             std::stringstream stream(requestString);
@@ -86,6 +124,12 @@ namespace
                                                         *ProtocolSchemasMap,
                                                         WBMQTT::JSON::Parse(GROUP_NAMES_FILE));
                 TemplateMap->AddTemplatesDir(TEMPLATES_DIR);
+
+                auto httpClient = std::make_shared<TWASMHttpClient>();
+                FwDownloader = std::make_shared<TFwDownloader>(httpClient);
+                FwState = std::make_shared<TFwUpdateState>(SendFwUpdateState, std::string());
+                // FwState->Reset();
+
                 Prepare = false;
             }
 
@@ -129,25 +173,8 @@ namespace
         }
     };
 
-    void SendReply(const Json::Value& reply)
-    {
-        std::stringstream stream;
-        WBMQTT::JSON::MakeWriter()->write(reply, &stream);
-
-        // clang-format off
-        EM_ASM(
-        {
-            let data = new String();
-
-            for (let i = 0; i < $1; ++i) {
-                data += String.fromCharCode(getValue($0 + i, 'i8'));
-            }
-
-            Module.parseReply(data);
-        },
-        stream.str().c_str(), stream.str().length());
-        // clang-format on
-    }
+    void DummyResult(const Json::Value&)
+    {}
 
     void OnResult(const Json::Value& result)
     {
@@ -261,8 +288,6 @@ void DeviceSet(const std::string& requestString)
 void DeviceLoad(const std::string& requestString)
 {
     try {
-        // Schema validation skipped: the schema requires "path" (serial) or "device_id"
-        // fields that are not applicable in the WASM/WebSerial context.
         THelper helper(requestString, std::string(), "device/Load", true);
         auto rpcRequest = ParseRPCDeviceLoadRequest(helper.Request,
                                                     helper.Params,
@@ -279,6 +304,86 @@ void DeviceLoad(const std::string& requestString)
     }
 }
 
+void FwGetInfo(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, std::string(), "fw-update/GetFirmwareInfo");
+        TFwGetFirmwareInfoTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
+                                    "modbus",
+                                    RELEASE_SUITE,
+                                    {},
+                                    FwDownloader,
+                                    OnResult,
+                                    OnError);
+        auto accessHandler = helper.GetAccessHandler();
+        task.Run(Port, accessHandler, PolledDevices);
+    } catch (const std::exception& e) {
+        LOG(Error) << "fw-update/GetFirmwareInfo RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
+    }
+}
+
+void FwUpdate(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, std::string(), "fw-update/Update");
+        TFwUpdateSerialClientTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
+                                       "modbus",
+                                       helper.Request.get("type", "firmware").asString(),
+                                       "wasm",
+                                       RELEASE_SUITE,
+                                       {},
+                                       FwDownloader,
+                                       FwState,
+                                       FwUpdateLock,
+                                       DummyResult,
+                                       OnError);
+        auto accessHandler = helper.GetAccessHandler();
+        task.Run(Port, accessHandler, PolledDevices);
+        OnResult(Json::Value("Ok"));
+    } catch (const std::exception& e) {
+        LOG(Error) << "fw-update/Update RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
+    }
+}
+
+void FwRestore(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, std::string(), "fw-update/Restore");
+        TFwRestoreTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
+                            "modbus",
+                            "wasm",
+                            RELEASE_SUITE,
+                            {},
+                            FwDownloader,
+                            FwState,
+                            FwUpdateLock,
+                            DummyResult,
+                            OnError);
+        auto accessHandler = helper.GetAccessHandler();
+        task.Run(Port, accessHandler, PolledDevices);
+        OnResult(Json::Value("Ok"));
+    } catch (const std::exception& e) {
+        LOG(Error) << "fw-update/Restore RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
+    }
+}
+
+void FwClearError(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, std::string(), "fw-update/ClearError");
+        FwState->ClearError(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
+                            "wasm",
+                            helper.Request.get("type", "firmware").asString());
+        OnResult(Json::Value("Ok"));
+    } catch (const std::exception& e) {
+        LOG(Error) << "fw-update/ClearError RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
+    }
+}
+
 EMSCRIPTEN_BINDINGS(module)
 {
     emscripten::function("configGetDeviceTypes", &ConfigGetDeviceTypes);
@@ -288,4 +393,8 @@ EMSCRIPTEN_BINDINGS(module)
     emscripten::function("deviceLoadConfig", &DeviceLoadConfig);
     emscripten::function("deviceSet", &DeviceSet);
     emscripten::function("deviceLoad", &DeviceLoad);
+    emscripten::function("fwGetInfo", &FwGetInfo);
+    emscripten::function("fwUpdate", &FwUpdate);
+    emscripten::function("fwRestore", &FwRestore);
+    emscripten::function("fwClearError", &FwClearError);
 }
