@@ -246,7 +246,7 @@ export const DeviceSettingsWasm = observer(() => {
       stopBits: device.cfg.stop_bits || 2,
       parity: device.cfg.parity || 'N',
       dataBits: device.cfg.data_bits || 8,
-    }).catch((err) => {
+    })?.catch((err) => {
       console.warn('Failed to get firmware info:', err);
     });
     store.schemaStore.customChannels = null;
