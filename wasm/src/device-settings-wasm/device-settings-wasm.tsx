@@ -240,17 +240,15 @@ export const DeviceSettingsWasm = observer(() => {
     );
     await store.loadContent(device.cfg);
     store.setDeviceType(device.device_signature, cfg);
-    try {
-      await store.updateEmbeddedSoftwareVersion({
-        path: 'wasm',
-        baudRate: device.cfg.baud_rate || 9600,
-        stopBits: device.cfg.stop_bits || 2,
-        parity: device.cfg.parity || 'N',
-        dataBits: device.cfg.data_bits || 8,
-      });
-    } catch (err) {
+    store.updateEmbeddedSoftwareVersion({
+      path: 'wasm',
+      baudRate: device.cfg.baud_rate || 9600,
+      stopBits: device.cfg.stop_bits || 2,
+      parity: device.cfg.parity || 'N',
+      dataBits: device.cfg.data_bits || 8,
+    }).catch((err) => {
       console.warn('Failed to get firmware info:', err);
-    }
+    });
     store.schemaStore.customChannels = null;
 
     setTabstore(store);
