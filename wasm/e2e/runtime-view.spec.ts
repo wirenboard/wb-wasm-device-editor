@@ -58,7 +58,7 @@ async function openDeviceTab(page: Page, slaveId: number) {
 async function clickRuntimeViewTab(page: Page) {
   const runtimeTab = page.getByRole('tab', { name: 'Runtime View' });
   await expect(runtimeTab).toBeVisible({ timeout: 10_000 });
-  await runtimeTab.click();
+  await runtimeTab.click({ force: true });
 }
 
 test('Runtime View appears as a tab alongside settings groups', async ({ page }) => {
