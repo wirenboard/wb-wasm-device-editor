@@ -100,6 +100,7 @@ export const DeviceSettingsWasm = observer(() => {
     subscribeFwUpdateState,
   } = useModule(isOffline);
 
+  const [deviceFwVersion, setDeviceFwVersion] = useState<string | null>(null);
   const [portName, setPortName] = useState<string | null>(null);
   const [portHexId, setPortHexId] = useState<string | null>(null);
   const [multiplePortsAvailable, setMultiplePortsAvailable] = useState(false);
@@ -258,6 +259,9 @@ export const DeviceSettingsWasm = observer(() => {
           if (res.error) {
             return Promise.reject(res.error);
           }
+          if (res.result?.fw) {
+            setDeviceFwVersion(res.result.fw);
+          }
           return res.result;
         }).catch((err) => {
           setError(err.message);
@@ -266,9 +270,7 @@ export const DeviceSettingsWasm = observer(() => {
     );
     await store.loadContent(device.cfg);
     store.setDeviceType(device.device_signature, cfg);
-    store.updateEmbeddedSoftwareVersion(getPortConfig(device.cfg))?.catch((err) => {
-      console.warn('Failed to get firmware info:', err);
-    });
+    store.updateEmbeddedSoftwareVersion(getPortConfig(device.cfg));
     store.schemaStore.customChannels = null;
 
     setTabstore(store);
@@ -547,6 +549,11 @@ export const DeviceSettingsWasm = observer(() => {
                     onUpdateBootloader={() => tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
                     onUpdateComponents={() => tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
                   />
+                  {!tabstore.embeddedSoftware.firmware.current && deviceFwVersion && (
+                    <div className="firmwareVersionPanel">
+                      <b>{t('device-manager.labels.current-firmware', { firmware: deviceFwVersion })}</b>
+                    </div>
+                  )}
                   {tabstore.slaveIdIsDuplicate && (
                     <Alert
                       className="deviceSettingsWasm-alert"
