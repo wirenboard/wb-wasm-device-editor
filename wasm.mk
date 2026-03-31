@@ -77,6 +77,8 @@ OPT = \
 	-lembind                                                           \
 	-sASYNCIFY                                                         \
 	-sASYNCIFY_IMPORTS=["emscripten_asm_const_int","emscripten_sleep"] \
+	-sEXPORTED_FUNCTIONS=["_malloc","_free"]                           \
+	-sEXPORTED_RUNTIME_METHODS=["HEAPU8","HEAP32"]                     \
 
 TEMPLATES = $(JINJA_TEMPLATES:.json.jinja=.json)
 
