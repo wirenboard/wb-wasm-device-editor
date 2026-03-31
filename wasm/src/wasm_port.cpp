@@ -31,12 +31,7 @@ void TWASMPort::WriteBytes(const uint8_t* buffer, int count)
     // clang-format off
     EM_ASM(
     {
-        let data = new Uint8Array($1);
-
-        for (let i = 0; i < $1; ++i) {
-            data[i] = getValue($0 + i, 'i8');
-        }
-
+        let data = Module.HEAPU8.slice($0, $0 + $1);
         Asyncify.handleAsync(async() => { await Module.serial.write(data); });
     },
     buffer, count);
@@ -65,10 +60,7 @@ TReadFrameResult TWASMPort::ReadFrame(uint8_t* buffer,
             return 0;
         }
 
-        for (let i = 0; i < result.length; ++i) {
-            setValue($0 + i, result[i], 'i8');
-        }
-
+        Module.HEAPU8.set(result, $0);
         return result.length;
     },
     buffer, count);

@@ -61,12 +61,7 @@ namespace
         // clang-format off
         EM_ASM(
         {
-            let data = new String();
-
-            for (let i = 0; i < $1; ++i) {
-                data += String.fromCharCode(getValue($0 + i, 'i8'));
-            }
-
+            let data = new TextDecoder().decode(Module.HEAPU8.subarray($0, $0 + $1));
             Module.parseString(data, $2);
         },
         string.c_str(), string.length(), fwUpdateState);
