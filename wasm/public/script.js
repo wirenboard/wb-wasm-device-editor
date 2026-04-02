@@ -186,12 +186,11 @@ window.Module =
 class ScanBase {
     baudRate = [9600, 115200, 57600, 38400, 19200, 4800, 2400, 1200];
     parity = ['N', 'E', 'O'];
-    step = 100 / this.baudRate.length / this.parity.length;
-
     baudRateIndex = 0;
     parityIndex = 0;
     progress = 0;
     count = 0;
+    stopped = false;
 
     constructor(callback) {
         this.callback = callback;
@@ -211,11 +210,13 @@ class ScanBase {
 
         this.callback(status);
     }
+
+    stop() {
+        this.stopped = true;
+    }
 }
 
 class BootScan extends ScanBase {
-    maxSlaveId = 247;
-
     async request(slaveId, address, count) {
         const request = {
             protocol: 'modbus',
@@ -247,19 +248,23 @@ class BootScan extends ScanBase {
     }
 
     async exec() {
-        const devices = [];
+        let maxSlaveId = 247;
+        let step = 100 / this.baudRate.length / this.parity.length / maxSlaveId;
+        let devices = new Array();
 
         this.baudRateIndex = 0;
         this.progress = 0;
         this.count = 0;
+        this.stopped = false;
 
-        while (this.baudRateIndex < this.baudRate.length) {
+        while (this.baudRateIndex < this.baudRate.length && !this.stopped) {
             this.parityIndex = 0;
 
-            while (this.parityIndex < this.parity.length) {
-                this.updateStatus();
+            while (this.parityIndex < this.parity.length && !this.stopped) {
+                for (let slaveId = 1; slaveId <= maxSlaveId && !this.stopped; slaveId++) {
+                    this.updateStatus();
+                    this.progress += step;
 
-                for (let slaveId = 1; slaveId <= this.maxSlaveId; slaveId++) {
                     if (!(await this.bootMode(slaveId)))
                         continue;
 
@@ -280,7 +285,6 @@ class BootScan extends ScanBase {
                 }
 
                 this.parityIndex++;
-                this.progress += this.step;
             }
 
             this.baudRateIndex++;
@@ -293,31 +297,31 @@ class BootScan extends ScanBase {
 
 class PortScan extends ScanBase {
     async request(start) {
-        let request =
-          {
-              command: 96,
-              mode: start ? 'start' : 'next',
-              baud_rate: this.baudRate[this.baudRateIndex],
-              data_bits: 8,
-              parity: this.parity[this.parityIndex],
-              stop_bits: 2,
-          };
-
+        let request = {
+            command: 96,
+            mode: start ? 'start' : 'next',
+            baud_rate: this.baudRate[this.baudRateIndex],
+            data_bits: 8,
+            parity: this.parity[this.parityIndex],
+            stop_bits: 2,
+        };
         return await Module.request('portScan', request);
     }
 
     async exec() {
+        let step = 100 / this.baudRate.length / this.parity.length;
         let devices = new Array();
         let start = true;
 
         this.baudRateIndex = 0;
         this.progress = 0;
         this.count = 0;
+        this.stopped = false;
 
-        while (this.baudRateIndex < this.baudRate.length) {
+        while (this.baudRateIndex < this.baudRate.length && !this.stopped) {
             this.parityIndex = 0;
 
-            while (this.parityIndex < this.parity.length) {
+            while (this.parityIndex < this.parity.length && !this.stopped) {
                 this.updateStatus();
                 let reply = await this.request(start);
 
@@ -328,7 +332,7 @@ class PortScan extends ScanBase {
                 }
 
                 this.parityIndex++;
-                this.progress += this.step;
+                this.progress += step;
                 this.count = devices.length;
                 start = true;
             }

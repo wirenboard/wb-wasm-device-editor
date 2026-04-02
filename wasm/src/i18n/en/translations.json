@@ -10,10 +10,13 @@
          "remove-local": "Remove local",
          "add-device": "Add device",
          "add": "Add",
-         "refresh": "Refresh"
+         "refresh": "Refresh",
+         "stop": "Stop"
       },
       "labels": {
          "scanning": "Scanning in progress {{message}}…",
+         "boot-scan": "Find devices in bootloader mode",
+         "boot-scanning": "Searching for devices in bootloader mode {{message}}…",
          "runtime-view": "Runtime View",
          "auto-refresh": "Auto-refresh",
          "device-type": "Device type",

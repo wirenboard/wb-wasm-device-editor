@@ -1,4 +1,5 @@
 export interface Device {
+  bootloader_mode?: boolean;
   cfg: {
     baud_rate: number;
     data_bits: number;

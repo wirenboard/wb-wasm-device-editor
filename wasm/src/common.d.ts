@@ -3,6 +3,14 @@ import type { LoadingProgress } from './device-settings-wasm/types';
 declare class PortScan {
   constructor(callback: (options: any) => void);
   exec(): Promise<{ devices: any[] }>;
+  stop(): void;
+  progress: number;
+}
+
+declare class BootScan {
+  constructor(callback: (options: any) => void);
+  exec(): Promise<{ devices: any[] }>;
+  stop(): void;
   progress: number;
 }
 

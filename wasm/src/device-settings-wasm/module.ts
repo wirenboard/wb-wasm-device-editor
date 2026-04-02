@@ -6,11 +6,15 @@ import { WasmFwUpdateProxy } from './fw-update-proxy';
 export const useModule = (isOffline: boolean = false) => {
   const [moduleState, setModuleState] = useState<{
     scanMessage: string;
+    bootScanMessage: string;
     portScan: PortScan;
+    bootScan: any;
     moduleInitialized: boolean;
   }>({
     scanMessage: '',
+    bootScanMessage: '',
     portScan: null,
+    bootScan: null,
     moduleInitialized: false,
   });
 
@@ -30,13 +34,24 @@ export const useModule = (isOffline: boolean = false) => {
       })),
     );
 
+    const bootScan = new BootScan((status) =>
+      setModuleState((prevState) => ({
+        ...prevState,
+        bootScanMessage: (status.options ?? '') + (status.count ? ` [${status.count}]` : ''),
+      })),
+    );
+
     makeObservable(portScan, {
+      progress: observable,
+    });
+
+    makeObservable(bootScan, {
       progress: observable,
     });
 
     (async () => {
       await Module.isReady;
-      setModuleState((prevState) => ({ ...prevState, moduleInitialized: true, portScan }));
+      setModuleState((prevState) => ({ ...prevState, moduleInitialized: true, portScan, bootScan }));
     })();
   }, []);
 
@@ -62,6 +77,19 @@ export const useModule = (isOffline: boolean = false) => {
     await initializeModule();
     return moduleState.portScan.exec().then(({ devices }) => devices);
   }, [initializeModule, moduleState.portScan]);
+
+  const bootScan = useCallback(async (): Promise<any[]> => {
+    await initializeModule();
+    return moduleState.bootScan.exec().then(({ devices }) => devices);
+  }, [initializeModule, moduleState.bootScan]);
+
+  const stopScan = useCallback(() => {
+    moduleState.portScan?.stop();
+  }, [moduleState.portScan]);
+
+  const stopBootScan = useCallback(() => {
+    moduleState.bootScan?.stop();
+  }, [moduleState.bootScan]);
 
   const loadConfig = useCallback(
     async (cfg) => {
@@ -127,7 +155,12 @@ export const useModule = (isOffline: boolean = false) => {
     selectPort,
     getPortInfo,
     scan,
+    bootScan,
+    stopScan,
+    stopBootScan,
     scanMessage: moduleState.scanMessage,
+    bootScanMessage: moduleState.bootScanMessage,
+    bootScanProgress: moduleState.bootScan?.progress,
     loadConfig,
     configGetDeviceTypes,
     configGetSchema,

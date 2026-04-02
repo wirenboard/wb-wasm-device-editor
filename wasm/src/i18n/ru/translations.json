@@ -10,10 +10,13 @@
          "remove-local": "Удалить локально",
          "add-device": "Добавить",
          "add": "Добавить",
-         "refresh": "Обновить"
+         "refresh": "Обновить",
+         "stop": "Стоп"
       },
       "labels": {
          "scanning": "Сканирование {{message}}…",
+         "boot-scan": "Найти устройства в режиме загрузчика",
+         "boot-scanning": "Поиск устройств в режиме загрузчика {{message}}…",
          "runtime-view": "Мониторинг",
          "auto-refresh": "Автообновление",
          "device-type": "Тип устройства",

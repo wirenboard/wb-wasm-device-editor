@@ -1,7 +1,7 @@
 import classNames from 'classnames';
 import { autorun } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert } from '@/components/alert';
 import { Button } from '@/components/button';
@@ -89,7 +89,12 @@ export const DeviceSettingsWasm = observer(() => {
     selectPort,
     getPortInfo,
     scan,
+    bootScan,
+    stopScan,
+    stopBootScan,
     scanMessage,
+    bootScanMessage,
+    bootScanProgress,
     loadConfig,
     configGetDeviceTypes,
     configGetSchema,
@@ -106,7 +111,9 @@ export const DeviceSettingsWasm = observer(() => {
   const [multiplePortsAvailable, setMultiplePortsAvailable] = useState(false);
   const [saveCounter, setSaveCounter] = useState(0);
   const [portError, setPortError] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
+  const [isPortScanning, setIsPortScanning] = useState(false);
+  const [isBootScanning, setIsBootScanning] = useState(false);
+  const bootScanRequestedRef = useRef(false);
 
   const refreshPortInfo = useCallback(async () => {
     try {
@@ -223,18 +230,34 @@ export const DeviceSettingsWasm = observer(() => {
     });
   }, [tabstore, allDevices, selectedDevice]);
 
+  const showScanResults = (allDevices: Device[]) => {
+    refreshPortInfo();
+    const firstDevice = allDevices.at(0);
+    setSelectedDevice(firstDevice?.cfg.slave_id);
+    setDevices(allDevices);
+    loadDeviceSettings(firstDevice, configDeviceTypesStore);
+  };
+
   const handleScan = async () => {
     reset();
-    setIsScanning(true);
+    setIsPortScanning(true);
     const res = await scan();
-    setIsScanning(false);
-    refreshPortInfo();
-    const firstDevice = res.at(0);
-    setSelectedDevice(firstDevice?.cfg.slave_id);
 
-    setDevices(res);
+    if (bootScanRequestedRef.current) {
+      setIsBootScanning(true);
+      const bootDevices = await bootScan();
+      console.log('Boot scan results:', bootDevices);
+      setIsBootScanning(false);
+      setIsPortScanning(false);
+      showScanResults([...res, ...bootDevices]);
+    } else {
+      setIsPortScanning(false);
+      showScanResults(res);
+    }
+  };
 
-    loadDeviceSettings(firstDevice, configDeviceTypesStore);
+  const handleStopBootScan = () => {
+    stopBootScan();
   };
 
   const getType = (device: Device) => {
@@ -473,10 +496,24 @@ export const DeviceSettingsWasm = observer(() => {
           {t('wasm.errors.select-port-failed', { error: portError })}
         </Alert>
       )}
-      {isScanning && (
+      {isPortScanning && !isBootScanning && (
         <>
           <Progress value={progress} caption={progress.toFixed() + '%'} />
           <div className="deviceSettingsWasm-scanning">{t('wasm.labels.scanning', { message: scanMessage })}</div>
+          <label>
+            <input
+              type="checkbox"
+              onChange={(e) => { bootScanRequestedRef.current = e.target.checked; }}
+            />
+            {' '}{t('wasm.labels.boot-scan')}
+          </label>
+        </>
+      )}
+      {isBootScanning && (
+        <>
+          <Progress value={bootScanProgress ?? 0} caption={(bootScanProgress ?? 0).toFixed() + '%'} />
+          <div className="deviceSettingsWasm-scanning">{t('wasm.labels.boot-scanning', { message: bootScanMessage })}</div>
+          <Button label={t('wasm.buttons.stop')} onClick={handleStopBootScan} />
         </>
       )}
       <main className="deviceSettingsWasm-container">
@@ -486,7 +523,7 @@ export const DeviceSettingsWasm = observer(() => {
               items={allDevices
                 .map((device) => ({
                   id: device.cfg.slave_id,
-                  label: `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
+                  label: `${device.cfg.slave_id} ${device.bootloader_mode ? '⚠ BL' : configDeviceTypesStore?.getName(getType(device))}`,
                 }))}
               activeTab={activeTab}
               onTabChange={(id: number) => {
@@ -513,7 +550,7 @@ export const DeviceSettingsWasm = observer(() => {
               <Loader caption={t('device-manager.labels.reading-parameters')} />
             </div>
           ) : (
-            !allDevices.length && !isScanning && moduleInitialized ? (
+            !allDevices.length && !isPortScanning && moduleInitialized ? (
               <div className="deviceSettingsWasm-emptyState">
                 <Alert variant="info">
                   {t('wasm.labels.empty-state')}
