@@ -15,6 +15,7 @@
 #include "rpc/rpc_fw_restore_task.h"
 #include "rpc/rpc_fw_update_serial_client_task.h"
 #include "rpc/rpc_helpers.h"
+#include "rpc/rpc_port_load_modbus_serial_client_task.h"
 #include "rpc/rpc_port_scan_serial_client_task.h"
 #include "rpc/rpc_port_setup_serial_client_task.h"
 
@@ -32,10 +33,14 @@ namespace
     const auto PORTS_SCHEMA_FILE = "wb-mqtt-serial-ports.schema.json";
     const auto TEMPLATES_SCHEMA_FILE = "wb-mqtt-serial-device-template.schema.json";
 
+    const auto PORT_LOAD_SCHEMA_FILE = "wb-mqtt-serial-rpc-port-load-request.schema.json";
     const auto PORT_SCAN_SCHEMA_FILE = "wb-mqtt-serial-rpc-port-scan-request.schema.json";
     const auto PORT_SETUP_SCHEMA_FILE = "wb-mqtt-serial-rpc-port-setup-request.schema.json";
+
     const auto DEVICE_LOAD_CONFIG_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-load-config-request.schema.json";
+    const auto DEVICE_LOAD_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-load-request.schema.json";
     const auto DEVICE_SET_SCHEMA_FILE = "wb-mqtt-serial-rpc-device-set-request.schema.json";
+
     const auto PROTOCOLS_DIR = "protocols";
     const auto TEMPLATES_DIR = "templates";
 
@@ -215,12 +220,27 @@ void ConfigGetSchema(const std::string& requestString)
     }
 }
 
+void PortLoad(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, PORT_LOAD_SCHEMA_FILE, "port/Load");
+        TRPCDeviceParametersCache parametersCache;
+        TRPCPortLoadModbusSerialClientTask task(helper.Request, OnResult, OnError, parametersCache);
+        auto accessHandler = helper.GetAccessHandler();
+        task.Run(Port, accessHandler, PolledDevices);
+    } catch (const std::exception& e) {
+        LOG(Error) << "port/Load RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
+    }
+}
+
 void PortScan(const std::string& requestString)
 {
     try {
         THelper helper(requestString, PORT_SCAN_SCHEMA_FILE, "port/Scan");
+        TRPCPortScanSerialClientTask task(helper.Request, OnResult, OnError);
         auto accessHandler = helper.GetAccessHandler();
-        TRPCPortScanSerialClientTask(helper.Request, OnResult, OnError).Run(Port, accessHandler, PolledDevices);
+        task.Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "port/Scan RPC failed: " << e.what();
         OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
@@ -231,8 +251,9 @@ void PortSetup(const std::string& requestString)
 {
     try {
         THelper helper(requestString, PORT_SETUP_SCHEMA_FILE, "port/Setup");
+        TRPCPortSetupSerialClientTask task(helper.Request, OnResult, OnError);
         auto accessHandler = helper.GetAccessHandler();
-        TRPCPortSetupSerialClientTask(helper.Request, OnResult, OnError).Run(Port, accessHandler, PolledDevices);
+        task.Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "port/Setup RPC failed: " << e.what();
         OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
@@ -261,6 +282,25 @@ void DeviceLoadConfig(const std::string& requestString)
     }
 }
 
+void DeviceLoad(const std::string& requestString)
+{
+    try {
+        THelper helper(requestString, DEVICE_LOAD_SCHEMA_FILE, "device/Load", true);
+        auto rpcRequest = ParseRPCDeviceLoadRequest(helper.Request,
+                                                    helper.Params,
+                                                    helper.Device,
+                                                    helper.Template,
+                                                    false,
+                                                    OnResult,
+                                                    OnError);
+        auto accessHandler = helper.GetAccessHandler();
+        TRPCDeviceLoadSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
+    } catch (const std::exception& e) {
+        LOG(Error) << "device/Load RPC failed: " << e.what();
+        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
+    }
+}
+
 void DeviceSet(const std::string& requestString)
 {
     try {
@@ -276,25 +316,6 @@ void DeviceSet(const std::string& requestString)
         TRPCDeviceSetSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
         LOG(Error) << "device/Set RPC failed: " << e.what();
-        OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
-    }
-}
-
-void DeviceLoad(const std::string& requestString)
-{
-    try {
-        THelper helper(requestString, std::string(), "device/Load", true);
-        auto rpcRequest = ParseRPCDeviceLoadRequest(helper.Request,
-                                                    helper.Params,
-                                                    helper.Device,
-                                                    helper.Template,
-                                                    false,
-                                                    OnResult,
-                                                    OnError);
-        auto accessHandler = helper.GetAccessHandler();
-        TRPCDeviceLoadSerialClientTask(rpcRequest).Run(Port, accessHandler, PolledDevices);
-    } catch (const std::exception& e) {
-        LOG(Error) << "device/Load RPC failed: " << e.what();
         OnError(WBMQTT::E_RPC_SERVER_ERROR, e.what());
     }
 }
@@ -383,11 +404,12 @@ EMSCRIPTEN_BINDINGS(module)
 {
     emscripten::function("configGetDeviceTypes", &ConfigGetDeviceTypes);
     emscripten::function("configGetSchema", &ConfigGetSchema);
+    emscripten::function("portLoad", &PortLoad);
     emscripten::function("portScan", &PortScan);
     emscripten::function("portSetup", &PortSetup);
     emscripten::function("deviceLoadConfig", &DeviceLoadConfig);
-    emscripten::function("deviceSet", &DeviceSet);
     emscripten::function("deviceLoad", &DeviceLoad);
+    emscripten::function("deviceSet", &DeviceSet);
     emscripten::function("fwGetInfo", &FwGetInfo);
     emscripten::function("fwUpdate", &FwUpdate);
     emscripten::function("fwRestore", &FwRestore);

@@ -55,6 +55,7 @@ window.Module =
               switch (type) {
                   case 'configGetDeviceTypes': this.configGetDeviceTypes(json); break;
                   case 'configGetSchema': this.configGetSchema(json); break;
+                  case 'portLoad': this.portLoad(json); break;
                   case 'portScan': this.portScan(json); break;
                   case 'portSetup': this.portSetup(json); break;
                   case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
