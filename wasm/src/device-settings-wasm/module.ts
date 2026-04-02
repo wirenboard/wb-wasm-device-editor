@@ -23,8 +23,11 @@ export const useModule = (isOffline: boolean = false) => {
   }, []);
 
   useEffect(() => {
-    const portScan = new PortScan((options) =>
-      setModuleState((prevState) => ({ ...prevState, scanMessage: options.options })),
+    const portScan = new PortScan((status) =>
+      setModuleState((prevState) => ({
+        ...prevState,
+        scanMessage: (status.options ?? '') + (status.count ? ` [${status.count}]` : ''),
+      })),
     );
 
     makeObservable(portScan, {

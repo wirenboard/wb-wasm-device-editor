@@ -106,6 +106,7 @@ export const DeviceSettingsWasm = observer(() => {
   const [multiplePortsAvailable, setMultiplePortsAvailable] = useState(false);
   const [saveCounter, setSaveCounter] = useState(0);
   const [portError, setPortError] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   const refreshPortInfo = useCallback(async () => {
     try {
@@ -224,7 +225,9 @@ export const DeviceSettingsWasm = observer(() => {
 
   const handleScan = async () => {
     reset();
+    setIsScanning(true);
     const res = await scan();
+    setIsScanning(false);
     refreshPortInfo();
     const firstDevice = res.at(0);
     setSelectedDevice(firstDevice?.cfg.slave_id);
@@ -470,7 +473,7 @@ export const DeviceSettingsWasm = observer(() => {
           {t('wasm.errors.select-port-failed', { error: portError })}
         </Alert>
       )}
-      {progress !== 0 && progress < 100 && (
+      {isScanning && (
         <>
           <Progress value={progress} caption={progress.toFixed() + '%'} />
           <div className="deviceSettingsWasm-scanning">{t('wasm.labels.scanning', { message: scanMessage })}</div>
@@ -510,7 +513,7 @@ export const DeviceSettingsWasm = observer(() => {
               <Loader caption={t('device-manager.labels.reading-parameters')} />
             </div>
           ) : (
-            !allDevices.length && !progress && moduleInitialized ? (
+            !allDevices.length && !isScanning && moduleInitialized ? (
               <div className="deviceSettingsWasm-emptyState">
                 <Alert variant="info">
                   {t('wasm.labels.empty-state')}
