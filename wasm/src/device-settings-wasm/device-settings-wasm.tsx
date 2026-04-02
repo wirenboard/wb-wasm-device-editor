@@ -142,6 +142,7 @@ export const DeviceSettingsWasm = observer(() => {
   }, [subscribeFwUpdateState, tabstore, allDevices, selectedDevice]);
 
   const isUpdating = tabstore?.embeddedSoftware?.isUpdating ?? false;
+  const isBusy = isUpdating || isConfigLoading;
 
   useEffect(() => {
     if (!isUpdating) return;
@@ -447,12 +448,12 @@ export const DeviceSettingsWasm = observer(() => {
               {t('wasm.sw.update-available')}
             </a>
           )}
-          <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)} disabled={isUpdating}/>
-          <Button label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} disabled={isUpdating} />
-          <Button label={t('wasm.buttons.scan')} onClick={handleScan} disabled={isUpdating} />
+          <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)} disabled={isBusy} />
+          <Button label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} disabled={isBusy} />
+          <Button label={t('wasm.buttons.scan')} onClick={handleScan} disabled={isBusy} />
           <Button
             label={t('wasm.buttons.save')}
-            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid || isUpdating}
+            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid || isBusy}
             variant="primary"
             onClick={handleSave}
           />
@@ -500,9 +501,10 @@ export const DeviceSettingsWasm = observer(() => {
         <>
           <Progress value={progress} caption={progress.toFixed() + '%'} />
           <div className="deviceSettingsWasm-scanning">{t('wasm.labels.scanning', { message: scanMessage })}</div>
-          <label>
+          <label style={{ display: 'block', textAlign: 'center', cursor: 'pointer' }}>
             <input
               type="checkbox"
+              style={{ cursor: 'pointer' }}
               onChange={(e) => { bootScanRequestedRef.current = e.target.checked; }}
             />
             {' '}{t('wasm.labels.boot-scan')}
@@ -513,24 +515,37 @@ export const DeviceSettingsWasm = observer(() => {
         <>
           <Progress value={bootScanProgress ?? 0} caption={(bootScanProgress ?? 0).toFixed() + '%'} />
           <div className="deviceSettingsWasm-scanning">{t('wasm.labels.boot-scanning', { message: bootScanMessage })}</div>
-          <Button label={t('wasm.buttons.stop')} onClick={handleStopBootScan} />
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Button label={t('wasm.buttons.stop')} size="small" variant="secondary" onClick={handleStopBootScan} />
+          </div>
         </>
       )}
       <main className="deviceSettingsWasm-container">
-        <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isUpdating })}>
+        <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
           {!!(devices.length || manualDevices.length) && (
             <Tabs
               items={allDevices
                 .map((device) => ({
                   id: device.cfg.slave_id,
-                  label: `${device.cfg.slave_id} ${device.bootloader_mode ? '⚠ BL' : configDeviceTypesStore?.getName(getType(device))}`,
+                  label: `${device.cfg.slave_id} ${device.bootloader_mode ? device.fw_signature + ' ⚠' : configDeviceTypesStore?.getName(getType(device))}`,
                 }))}
               activeTab={activeTab}
               onTabChange={(id: number) => {
-                if (isUpdating) return;
+                if (isBusy) return;
                 const device = getDevice(id);
                 setSelectedDevice(id);
-                loadDeviceSettings(device, configDeviceTypesStore);
+                if (!device.bootloader_mode) {
+                  loadDeviceSettings(device, configDeviceTypesStore);
+                } else {
+                  const store = new DeviceTabStore(
+                    { slave_id: String(device.cfg.slave_id) },
+                    '',
+                    configDeviceTypesStore,
+                    fwUpdateProxy,
+                    { LoadConfig: () => Promise.resolve({}) },
+                  );
+                  setTabstore(store);
+                }
               }}
             />
           )}
@@ -545,6 +560,43 @@ export const DeviceSettingsWasm = observer(() => {
               {t('device-manager.errors.load-registers', { error })}
             </Alert>
           )}
+          {(() => {
+            const selectedDev = getDevice(selectedDevice);
+            if (selectedDev?.bootloader_mode && tabstore) {
+              return (
+                <>
+                  <header className="deviceSettingsWasm-header">
+                    <h3 className="deviceSettingsWasm-title">{selectedDevice} {selectedDev.fw_signature}</h3>
+                  </header>
+                  <EmbeddedSoftwarePanel
+                    embeddedSoftware={tabstore.embeddedSoftware}
+                    onUpdateFirmware={() => { }}
+                    onUpdateBootloader={() => { }}
+                    onUpdateComponents={() => { }}
+                  />
+                  {!tabstore.embeddedSoftware.isUpdating && (
+                    <Alert variant="warn" className="hasUpdateAlert">
+                      <div>
+                        {t('wasm.labels.bootloader-device')}
+                      </div>
+                      <Button
+                        label={t('wasm.buttons.restore')}
+                        variant="warn"
+                        onClick={async () => {
+                          try {
+                            await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus' });
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : String(err));
+                          }
+                        }}
+                      />
+                    </Alert>
+                  )}
+                </>
+              );
+            }
+            return null;
+          })()}
           {isConfigLoading ? (
             <div className="deviceSettingsWasm-loaderWrapper">
               <Loader caption={t('device-manager.labels.reading-parameters')} />
@@ -567,7 +619,7 @@ export const DeviceSettingsWasm = observer(() => {
                           label={t('wasm.buttons.remove-local')}
                           variant="secondary"
                           size="small"
-                          disabled={isUpdating}
+                          disabled={isBusy}
                           onClick={() => removeLocal()}
                         />
                       )
@@ -576,7 +628,7 @@ export const DeviceSettingsWasm = observer(() => {
                           label={t('wasm.buttons.save-local')}
                           variant="secondary"
                           size="small"
-                          disabled={isUpdating}
+                          disabled={isBusy}
                           onClick={() => saveLocal()}
                         />
                       )
@@ -602,7 +654,7 @@ export const DeviceSettingsWasm = observer(() => {
                       {t('device-manager.errors.duplicate-slave-id')}
                     </Alert>
                   )}
-                  <div className={classNames('deviceSettingsEditor', 'deviceSettingsEditor-desktop', { 'deviceSettingsWasm-aside--disabled': isUpdating })}>
+                  <div className={classNames('deviceSettingsEditor', 'deviceSettingsEditor-desktop', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
                     <JsonSchemaEditor store={schemaStore.commonParams} translator={translator} />
                     {MakeEditors(schemaStore.topLevelGroup.parameters, translator)}
                     {allTabs.length > 0 && (

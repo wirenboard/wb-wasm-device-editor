@@ -11,7 +11,8 @@
          "add-device": "Add device",
          "add": "Add",
          "refresh": "Refresh",
-         "stop": "Stop"
+         "stop": "Stop",
+         "restore": "Restore"
       },
       "labels": {
          "scanning": "Scanning in progress {{message}}…",
@@ -28,6 +29,7 @@
          "parity-never": "Never",
          "parity-even": "Even",
          "parity-odd": "Odd",
+         "bootloader-device": "Device is in bootloader mode. Firmware restore is required.",
          "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to specify device type and address manually."
       },
       "errors": {

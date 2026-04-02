@@ -188,6 +188,7 @@ class ScanBase {
     parity = ['N', 'E', 'O'];
     baudRateIndex = 0;
     parityIndex = 0;
+    slaveId = 0;
     progress = 0;
     count = 0;
     stopped = false;
@@ -203,6 +204,7 @@ class ScanBase {
         let status = {
             progress: Math.round(this.progress),
             count: this.count,
+            slaveId: this.slaveId,
         };
 
         if (this.progress < 100)
@@ -217,10 +219,10 @@ class ScanBase {
 }
 
 class BootScan extends ScanBase {
-    async request(slaveId, address, count) {
+    async request(address, count) {
         const request = {
             protocol: 'modbus',
-            slave_id: slaveId,
+            slave_id: this.slaveId,
             function: 3,
             address: address,
             count: count,
@@ -232,18 +234,18 @@ class BootScan extends ScanBase {
         return await Module.request('portLoad', request);
     }
 
-    async bootMode(slaveId) {
-        let request = await this.request(slaveId, 330, 8);
+    async bootMode() {
+        let request = await this.request(330, 8);
 
         if (request.error)
             return false;
 
-        request = await this.request(slaveId, 330, 7);
+        request = await this.request(330, 7);
         return request.error ? true : false;
     }
 
-    async readSignature(slaveId) {
-        const request = await this.request(slaveId, 290, 12);
+    async readSignature() {
+        const request = await this.request(290, 12);
         return request.result?.response ?? null;
     }
 
@@ -261,24 +263,24 @@ class BootScan extends ScanBase {
             this.parityIndex = 0;
 
             while (this.parityIndex < this.parity.length && !this.stopped) {
-                for (let slaveId = 1; slaveId <= maxSlaveId && !this.stopped; slaveId++) {
+                for (this.slaveId = 1; this.slaveId <= maxSlaveId && !this.stopped; this.slaveId++) {
                     this.updateStatus();
                     this.progress += step;
 
-                    if (!(await this.bootMode(slaveId)))
+                    if (!(await this.bootMode()))
                         continue;
 
                     devices.push({
-                        slave_id: slaveId,
+                        slave_id: this.slaveId,
                         bootloader_mode: true,
                         cfg: {
-                            slave_id: slaveId,
+                            slave_id: this.slaveId,
                             baud_rate: this.baudRate[this.baudRateIndex],
                             parity: this.parity[this.parityIndex],
                             data_bits: 8,
                             stop_bits: 2
                         },
-                        fw_signature: await this.readSignature(slaveId)
+                        fw_signature: await this.readSignature()
                     });
 
                     this.count = devices.length;

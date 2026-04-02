@@ -37,7 +37,7 @@ export const useModule = (isOffline: boolean = false) => {
     const bootScan = new BootScan((status) =>
       setModuleState((prevState) => ({
         ...prevState,
-        bootScanMessage: (status.options ?? '') + (status.count ? ` [${status.count}]` : ''),
+        bootScanMessage: (status.options ?? '') + ` #${status.slaveId}` + (status.count ? ` [${status.count}]` : ''),
       })),
     );
 
