@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.1.0...wb-wasm-device-editor-v1.2.0) (2026-04-03)
+
+
+### Features
+
+* add firmware update support ([#42](https://github.com/wirenboard/wb-wasm-device-editor/issues/42)) ([80d5ab9](https://github.com/wirenboard/wb-wasm-device-editor/commit/80d5ab9151a0c16cbbdb8c1123c08d9690fdd8b1))
+
 ## [1.1.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.0.1...wb-wasm-device-editor-v1.1.0) (2026-03-20)
 
 
