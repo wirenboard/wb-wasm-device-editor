@@ -1,6 +1,6 @@
 {
   "name": "wb-wasm-device-editor",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Wiren Board team",
   "description": "Wirenboard WASM-based device editor",
   "scripts": {
