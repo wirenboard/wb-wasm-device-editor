@@ -4,6 +4,7 @@ import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert } from '@/components/alert';
+import WarnIcon from '@/assets/icons/warn.svg';
 import { Button } from '@/components/button';
 import { Dropdown, type Option } from '@/components/dropdown';
 import { JsonSchemaEditor } from '@/components/json-schema-editor';
@@ -94,7 +95,9 @@ export const DeviceSettingsWasm = observer(() => {
     stopBootScan,
     readDeviceInfo,
     scanMessage,
+    scanCount,
     bootScanMessage,
+    bootScanCount,
     bootScanProgress,
     loadConfig,
     configGetDeviceTypes,
@@ -502,6 +505,7 @@ export const DeviceSettingsWasm = observer(() => {
         <>
           <Progress value={progress} caption={progress.toFixed() + '%'} />
           <div className="deviceSettingsWasm-scanning">{t('wasm.labels.scanning', { message: scanMessage })}</div>
+          {!!scanCount && <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: scanCount })}…</div>}
           <label style={{ display: 'block', textAlign: 'center', cursor: 'pointer' }}>
             <input
               type="checkbox"
@@ -516,6 +520,7 @@ export const DeviceSettingsWasm = observer(() => {
         <>
           <Progress value={bootScanProgress ?? 0} caption={(bootScanProgress ?? 0).toFixed() + '%'} />
           <div className="deviceSettingsWasm-scanning">{t('wasm.labels.boot-scanning', { message: bootScanMessage })}</div>
+          {!!bootScanCount && <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: bootScanCount })}…</div>}
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <Button label={t('wasm.buttons.stop')} size="small" variant="secondary" onClick={handleStopBootScan} />
           </div>
@@ -528,7 +533,9 @@ export const DeviceSettingsWasm = observer(() => {
               items={allDevices
                 .map((device) => ({
                   id: device.cfg.slave_id,
-                  label: `${device.cfg.slave_id} ${device.bootloader_mode ? device.fw_signature + ' ⚠' : configDeviceTypesStore?.getName(getType(device))}`,
+                  label: device.bootloader_mode
+                    ? <span>{device.cfg.slave_id} {device.fw_signature} <WarnIcon style={{ width: 16, height: 16, verticalAlign: 'text-bottom', color: '#d9534f' }} /></span>
+                    : `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
                 }))}
               activeTab={activeTab}
               onTabChange={(id: number) => {

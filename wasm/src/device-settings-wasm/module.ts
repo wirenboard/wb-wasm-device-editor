@@ -6,13 +6,17 @@ import { WasmFwUpdateProxy } from './fw-update-proxy';
 export const useModule = (isOffline: boolean = false) => {
   const [moduleState, setModuleState] = useState<{
     scanMessage: string;
+    scanCount: number;
     bootScanMessage: string;
+    bootScanCount: number;
     portScan: PortScan;
     bootScan: any;
     moduleInitialized: boolean;
   }>({
     scanMessage: '',
+    scanCount: 0,
     bootScanMessage: '',
+    bootScanCount: 0,
     portScan: null,
     bootScan: null,
     moduleInitialized: false,
@@ -30,14 +34,16 @@ export const useModule = (isOffline: boolean = false) => {
     const portScan = new PortScan((status) =>
       setModuleState((prevState) => ({
         ...prevState,
-        scanMessage: (status.options ?? '') + (status.count ? ` [${status.count}]` : ''),
+        scanMessage: status.options ? `(${status.options})` : '',
+        scanCount: status.count,
       })),
     );
 
     const bootScan = new BootScan((status) =>
       setModuleState((prevState) => ({
         ...prevState,
-        bootScanMessage: (status.options ?? '') + ` #${status.slaveId}` + (status.count ? ` [${status.count}]` : ''),
+        bootScanMessage: status.options ? `(${status.options} #${status.slaveId})` : '',
+        bootScanCount: status.count,
       })),
     );
 
@@ -165,7 +171,9 @@ export const useModule = (isOffline: boolean = false) => {
     stopBootScan,
     readDeviceInfo,
     scanMessage: moduleState.scanMessage,
+    scanCount: moduleState.scanCount,
     bootScanMessage: moduleState.bootScanMessage,
+    bootScanCount: moduleState.bootScanCount,
     bootScanProgress: moduleState.bootScan?.progress,
     loadConfig,
     configGetDeviceTypes,

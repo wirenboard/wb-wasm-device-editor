@@ -95,17 +95,17 @@ export default defineConfig(() => {
           return [
             {
               tag: 'script',
-              attrs: { src: '/serial.js', async: true },
+              attrs: { src: '/serial.js', defer: true },
               injectTo: 'head',
             },
             {
               tag: 'script',
-              attrs: { src: '/script.js', async: true },
+              attrs: { src: '/script.js', defer: true },
               injectTo: 'head',
             },
             {
               tag: 'script',
-              attrs: { src: '/module.js', async: true },
+              attrs: { src: '/module.js', defer: true },
               injectTo: 'head',
             },
           ];

@@ -18,6 +18,8 @@
          "scanning": "Scanning in progress {{message}}…",
          "boot-scan": "Find devices in bootloader mode",
          "boot-scanning": "Searching for devices in bootloader mode {{message}}…",
+         "found-devices_one": "Found {{count}} device",
+         "found-devices_other": "Found {{count}} devices",
          "runtime-view": "Runtime View",
          "auto-refresh": "Auto-refresh",
          "device-type": "Device type",
