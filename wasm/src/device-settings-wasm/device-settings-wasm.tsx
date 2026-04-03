@@ -11,7 +11,7 @@ import { Loader } from '@/components/loader';
 import { Progress } from '@/components/progress';
 import { Tabs, TabContent, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
-import { FirmwareVersionPanel } from '@/pages/settings/device-manager';
+import { EmbeddedSoftwarePanel } from '@/pages/settings/device-manager';
 import {
   MakeEditors,
 } from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
@@ -96,8 +96,11 @@ export const DeviceSettingsWasm = observer(() => {
     save,
     deviceLoad,
     portSetup,
-  } = useModule();
+    fwUpdateProxy,
+    subscribeFwUpdateState,
+  } = useModule(isOffline);
 
+  const [deviceFwVersion, setDeviceFwVersion] = useState<string | null>(null);
   const [portName, setPortName] = useState<string | null>(null);
   const [portHexId, setPortHexId] = useState<string | null>(null);
   const [multiplePortsAvailable, setMultiplePortsAvailable] = useState(false);
@@ -116,6 +119,31 @@ export const DeviceSettingsWasm = observer(() => {
   useEffect(() => {
     if (moduleInitialized) refreshPortInfo();
   }, [moduleInitialized, refreshPortInfo]);
+
+  useEffect(() => {
+    return subscribeFwUpdateState((state: any) => {
+      if (!tabstore) return;
+      const deviceState = state.devices?.find(
+        (d: any) => d.slave_id === selectedDevice,
+      );
+      if (!deviceState) return;
+      const device = allDevices.find((d) => d.cfg.slave_id === selectedDevice);
+      if (!device) return;
+      tabstore.setEmbeddedSoftwareUpdateProgress(deviceState, getPortConfig(device.cfg));
+    });
+  }, [subscribeFwUpdateState, tabstore, allDevices, selectedDevice]);
+
+  const isUpdating = tabstore?.embeddedSoftware?.isUpdating ?? false;
+
+  useEffect(() => {
+    if (!isUpdating) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isUpdating]);
 
   const handleSelectPort = useCallback(async () => {
     try {
@@ -225,11 +253,14 @@ export const DeviceSettingsWasm = observer(() => {
       initialData,
       deviceType,
       deviceTypesStore,
-      { GetFirmwareInfo: () => ({ fw: device.fw?.version }), hasMethod: () => true },
+      fwUpdateProxy,
       {
         LoadConfig: () => loadConfig(cfg).then((res) => {
           if (res.error) {
             return Promise.reject(res.error);
+          }
+          if (res.result?.fw) {
+            setDeviceFwVersion(res.result.fw);
           }
           return res.result;
         }).catch((err) => {
@@ -239,7 +270,7 @@ export const DeviceSettingsWasm = observer(() => {
     );
     await store.loadContent(device.cfg);
     store.setDeviceType(device.device_signature, cfg);
-    await store.updateEmbeddedSoftwareVersion(device.cfg);
+    store.updateEmbeddedSoftwareVersion(getPortConfig(device.cfg));
     store.schemaStore.customChannels = null;
 
     setTabstore(store);
@@ -250,6 +281,14 @@ export const DeviceSettingsWasm = observer(() => {
   const getDevice = useCallback((slaveId: number = selectedDevice) => {
     return allDevices.find((device) => device.cfg.slave_id === slaveId) || {};
   }, [allDevices, selectedDevice]);
+
+  const getPortConfig = useCallback((deviceCfg: any) => ({
+    path: 'wasm',
+    baudRate: deviceCfg?.baud_rate || 9600,
+    stopBits: deviceCfg?.stop_bits || 2,
+    parity: deviceCfg?.parity || 'N',
+    dataBits: deviceCfg?.data_bits || 8,
+  }), []);
 
   const handleSave = async () => {
     const device = getDevice();
@@ -382,12 +421,12 @@ export const DeviceSettingsWasm = observer(() => {
               {t('wasm.sw.update-available')}
             </a>
           )}
-          <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)}/>
-          <Button label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} />
-          <Button label={t('wasm.buttons.scan')} onClick={handleScan} />
+          <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)} disabled={isUpdating}/>
+          <Button label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} disabled={isUpdating} />
+          <Button label={t('wasm.buttons.scan')} onClick={handleScan} disabled={isUpdating} />
           <Button
             label={t('wasm.buttons.save')}
-            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid}
+            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid || isUpdating}
             variant="primary"
             onClick={handleSave}
           />
@@ -438,7 +477,7 @@ export const DeviceSettingsWasm = observer(() => {
         </>
       )}
       <main className="deviceSettingsWasm-container">
-        <aside className="deviceSettingsWasm-aside">
+        <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isUpdating })}>
           {!!(devices.length || manualDevices.length) && (
             <Tabs
               items={allDevices
@@ -448,6 +487,7 @@ export const DeviceSettingsWasm = observer(() => {
                 }))}
               activeTab={activeTab}
               onTabChange={(id: number) => {
+                if (isUpdating) return;
                 const device = getDevice(id);
                 setSelectedDevice(id);
                 loadDeviceSettings(device, configDeviceTypesStore);
@@ -487,6 +527,7 @@ export const DeviceSettingsWasm = observer(() => {
                           label={t('wasm.buttons.remove-local')}
                           variant="secondary"
                           size="small"
+                          disabled={isUpdating}
                           onClick={() => removeLocal()}
                         />
                       )
@@ -495,13 +536,24 @@ export const DeviceSettingsWasm = observer(() => {
                           label={t('wasm.buttons.save-local')}
                           variant="secondary"
                           size="small"
+                          disabled={isUpdating}
                           onClick={() => saveLocal()}
                         />
                       )
                     }
 
                   </header>
-                  <FirmwareVersionPanel firmwareVersion={getDevice().fw?.version} />
+                  <EmbeddedSoftwarePanel
+                    embeddedSoftware={tabstore.embeddedSoftware}
+                    onUpdateFirmware={() => tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                    onUpdateBootloader={() => tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                    onUpdateComponents={() => tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                  />
+                  {!tabstore.embeddedSoftware.firmware.current && deviceFwVersion && (
+                    <div className="firmwareVersionPanel">
+                      <b>{t('device-manager.labels.current-firmware', { firmware: deviceFwVersion })}</b>
+                    </div>
+                  )}
                   {tabstore.slaveIdIsDuplicate && (
                     <Alert
                       className="deviceSettingsWasm-alert"
@@ -510,7 +562,7 @@ export const DeviceSettingsWasm = observer(() => {
                       {t('device-manager.errors.duplicate-slave-id')}
                     </Alert>
                   )}
-                  <div className="deviceSettingsEditor deviceSettingsEditor-desktop">
+                  <div className={classNames('deviceSettingsEditor', 'deviceSettingsEditor-desktop', { 'deviceSettingsWasm-aside--disabled': isUpdating })}>
                     <JsonSchemaEditor store={schemaStore.commonParams} translator={translator} />
                     {MakeEditors(schemaStore.topLevelGroup.parameters, translator)}
                     {allTabs.length > 0 && (

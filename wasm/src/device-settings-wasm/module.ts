@@ -1,8 +1,9 @@
 import { makeObservable, observable } from 'mobx';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Device, LoadingProgress } from './types';
+import { WasmFwUpdateProxy } from './fw-update-proxy';
 
-export const useModule = () => {
+export const useModule = (isOffline: boolean = false) => {
   const [moduleState, setModuleState] = useState<{
     scanMessage: string;
     portScan: PortScan;
@@ -107,6 +108,14 @@ export const useModule = () => {
     [initializeModule],
   );
 
+  const isOfflineRef = useRef(isOffline);
+  isOfflineRef.current = isOffline;
+  const fwUpdateProxy = useMemo(() => new WasmFwUpdateProxy(() => isOfflineRef.current), []);
+
+  const subscribeFwUpdateState = useCallback((callback: (state: unknown) => void) => {
+    return Module.subscribeFwUpdateState(callback);
+  }, []);
+
   return {
     moduleInitialized: moduleState.moduleInitialized,
     progress: moduleState.portScan?.progress,
@@ -122,5 +131,7 @@ export const useModule = () => {
     save,
     deviceLoad,
     portSetup,
+    fwUpdateProxy,
+    subscribeFwUpdateState,
   };
 };

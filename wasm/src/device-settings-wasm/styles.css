@@ -8,6 +8,11 @@
     min-width: 220px;
 }
 
+.deviceSettingsWasm-aside--disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 .deviceSettingsWasm-scanning {
     width: 100%;
     text-align: center;
