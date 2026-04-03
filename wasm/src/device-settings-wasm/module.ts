@@ -91,6 +91,11 @@ export const useModule = (isOffline: boolean = false) => {
     moduleState.bootScan?.stop();
   }, [moduleState.bootScan]);
 
+  const readDeviceInfo = useCallback(async (cfg: any) => {
+    await initializeModule();
+    return moduleState.bootScan.readDeviceInfo(cfg);
+  }, [initializeModule, moduleState.bootScan]);
+
   const loadConfig = useCallback(
     async (cfg) => {
       await initializeModule();
@@ -158,6 +163,7 @@ export const useModule = (isOffline: boolean = false) => {
     bootScan,
     stopScan,
     stopBootScan,
+    readDeviceInfo,
     scanMessage: moduleState.scanMessage,
     bootScanMessage: moduleState.bootScanMessage,
     bootScanProgress: moduleState.bootScan?.progress,

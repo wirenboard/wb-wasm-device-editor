@@ -219,17 +219,18 @@ class ScanBase {
 }
 
 class BootScan extends ScanBase {
-    async request(address, count) {
+    async request(address, count, cfg) {
         const request = {
             protocol: 'modbus',
-            slave_id: this.slaveId,
+            baud_rate: cfg?.baud_rate ?? this.baudRate[this.baudRateIndex],
+            data_bits: cfg?.data_bits ?? 8,
+            parity: cfg?.parity ?? this.parity[this.parityIndex],
+            stop_bits: cfg?.stop_bits ?? 2,
+            slave_id: cfg?.slave_id ?? this.slaveId,
             function: 3,
             address: address,
             count: count,
-            baud_rate: this.baudRate[this.baudRateIndex],
-            data_bits: 8,
-            parity: this.parity[this.parityIndex],
-            stop_bits: 2,
+            format: 'HEX'
         };
         return await Module.request('portLoad', request);
     }
@@ -246,7 +247,16 @@ class BootScan extends ScanBase {
 
     async readSignature() {
         const request = await this.request(290, 12);
-        return request.result?.response ?? null;
+        return this.parseString(request.result?.response);
+    }
+
+    async readDeviceInfo(cfg) {
+        const signature = await this.request(200, 20, cfg);
+        const version = await this.request(250, 16, cfg);
+        return {
+            device_signature: this.parseString(signature.result?.response),
+            fw: {version: this.parseString(version.result?.response)},
+        };
     }
 
     async exec() {
@@ -294,6 +304,21 @@ class BootScan extends ScanBase {
 
         this.updateStatus();
         return { devices: devices };
+    }
+
+    parseString(hex) {
+        let result = '';
+
+        for (let i = 0; i < hex.length; i += 4) {
+            const reg = parseInt(hex.substring(i, i + 4), 16);
+
+            if (!reg)
+                break;
+
+            result += String.fromCharCode(reg);
+        }
+
+        return result;
     }
 }
 

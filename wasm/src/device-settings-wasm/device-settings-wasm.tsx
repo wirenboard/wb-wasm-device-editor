@@ -92,6 +92,7 @@ export const DeviceSettingsWasm = observer(() => {
     bootScan,
     stopScan,
     stopBootScan,
+    readDeviceInfo,
     scanMessage,
     bootScanMessage,
     bootScanProgress,
@@ -585,6 +586,14 @@ export const DeviceSettingsWasm = observer(() => {
                         onClick={async () => {
                           try {
                             await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus' });
+                            tabstore.embeddedSoftware.firmware.updateProgress = 100;
+                            await new Promise((r) => setTimeout(r, 2500));
+                            const info = await readDeviceInfo(selectedDev.cfg);
+                            const updatedDevice = { ...selectedDev, ...info, bootloader_mode: false };
+                            setDevices((prev) => prev.map((d) =>
+                              d.cfg.slave_id === selectedDevice ? updatedDevice : d
+                            ));
+                            loadDeviceSettings(updatedDevice, configDeviceTypesStore);
                           } catch (err) {
                             setError(err instanceof Error ? err.message : String(err));
                           }
