@@ -117,6 +117,7 @@ export const DeviceSettingsWasm = observer(() => {
   const [portError, setPortError] = useState<string | null>(null);
   const [isPortScanning, setIsPortScanning] = useState(false);
   const [isBootScanning, setIsBootScanning] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const bootScanRequestedRef = useRef(false);
 
   const refreshPortInfo = useCallback(async () => {
@@ -526,7 +527,7 @@ export const DeviceSettingsWasm = observer(() => {
           </div>
         </>
       )}
-      <main className="deviceSettingsWasm-container">
+      {!isPortScanning && !isBootScanning && <main className="deviceSettingsWasm-container">
         <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
           {!!(devices.length || manualDevices.length) && (
             <Tabs
@@ -590,7 +591,10 @@ export const DeviceSettingsWasm = observer(() => {
                       <Button
                         label={t('wasm.buttons.restore')}
                         variant="warn"
+                        isLoading={isRestoring}
+                        disabled={isRestoring}
                         onClick={async () => {
+                          setIsRestoring(true);
                           try {
                             await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus' });
                             tabstore.embeddedSoftware.firmware.updateProgress = 100;
@@ -603,6 +607,8 @@ export const DeviceSettingsWasm = observer(() => {
                             loadDeviceSettings(updatedDevice, configDeviceTypesStore);
                           } catch (err) {
                             setError(err instanceof Error ? err.message : String(err));
+                          } finally {
+                            setIsRestoring(false);
                           }
                         }}
                       />
@@ -714,7 +720,7 @@ export const DeviceSettingsWasm = observer(() => {
             )
           )}
         </section>
-      </main>
+      </main>}
 
       {isModalOpened && (
         <AddDevice
