@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.2.0...wb-wasm-device-editor-v1.2.1) (2026-04-04)
+
+
+### Bug Fixes
+
+* exclude device_type from parameters in deviceSet RPC request ([#45](https://github.com/wirenboard/wb-wasm-device-editor/issues/45)) ([84b8527](https://github.com/wirenboard/wb-wasm-device-editor/commit/84b8527e1aa9d9c17c39de45ba7c5df86f28fb14))
+
 ## [1.2.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.1.0...wb-wasm-device-editor-v1.2.0) (2026-04-03)
 
 
