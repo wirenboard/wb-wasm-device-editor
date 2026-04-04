@@ -328,7 +328,7 @@ export const DeviceSettingsWasm = observer(() => {
     }
 
     // Save other parameters (addressing the device at its current slave_id)
-    const { slave_id, ...parameters } = tabstore.editedData;
+    const { slave_id, device_type, ...parameters } = tabstore.editedData;
     const data = {
       device_type: tabstore.deviceType,
       ...device.cfg,
