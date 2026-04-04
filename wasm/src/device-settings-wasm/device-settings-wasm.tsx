@@ -44,6 +44,7 @@ export const DeviceSettingsWasm = observer(() => {
   const [isModalOpened, setIsModalOpened] = useState(false);
   const [configDeviceTypesStore, setConfigDeviceTypesStore] = useState(null);
   const [error, setError] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [manualDevices, updateManualDevices] = useLocalStorage('devices');
   const allDevices = useMemo(() => [...devices, ...(devices.length ? manualDevices.filter((manual) => {
     return !devices.map((d) => d.cfg.slave_id).includes(manual.cfg.slave_id);
@@ -325,54 +326,60 @@ export const DeviceSettingsWasm = observer(() => {
   const handleSave = async () => {
     const device = getDevice();
     if (!device.cfg || !tabstore?.editedData) return;
-    const editedSlaveId = Number(tabstore.editedData.slave_id);
-    const originalSlaveId = device.cfg.slave_id;
+    setIsSaving(true);
+    setError(null);
+    try {
+      const editedSlaveId = Number(tabstore.editedData.slave_id);
+      const originalSlaveId = device.cfg.slave_id;
 
-    // If slave_id changed on a WB device, write new address to register 0x80
-    const slaveIdChanged = Number.isInteger(editedSlaveId)
-      && editedSlaveId >= 1 && editedSlaveId <= 247
-      && editedSlaveId !== originalSlaveId;
-    if (slaveIdChanged && configDeviceTypesStore.isWbDevice(getType(device))) {
-      const setupRequest = {
-        items: [{
-          slave_id: originalSlaveId,
-          baud_rate: device.cfg.baud_rate,
-          data_bits: device.cfg.data_bits,
-          parity: device.cfg.parity,
-          stop_bits: device.cfg.stop_bits,
-          cfg: { slave_id: editedSlaveId },
-        }],
-      };
-      const result = await portSetup(setupRequest);
-      if (result.error) {
-        setError(result.error.message);
-        return;
+      // If slave_id changed on a WB device, write new address to register 0x80
+      const slaveIdChanged = Number.isInteger(editedSlaveId)
+        && editedSlaveId >= 1 && editedSlaveId <= 247
+        && editedSlaveId !== originalSlaveId;
+      if (slaveIdChanged && configDeviceTypesStore.isWbDevice(getType(device))) {
+        const setupRequest = {
+          items: [{
+            slave_id: originalSlaveId,
+            baud_rate: device.cfg.baud_rate,
+            data_bits: device.cfg.data_bits,
+            parity: device.cfg.parity,
+            stop_bits: device.cfg.stop_bits,
+            cfg: { slave_id: editedSlaveId },
+          }],
+        };
+        const result = await portSetup(setupRequest);
+        if (result.error) {
+          setError(result.error.message);
+          return;
+        }
+        // Update local device state with new slave_id
+        setDevices((prev) =>
+          prev.map((d) =>
+            d.cfg.slave_id === originalSlaveId
+              ? { ...d, cfg: { ...d.cfg, slave_id: editedSlaveId } }
+              : d,
+          ),
+        );
+        setSelectedDevice(editedSlaveId);
       }
-      // Update local device state with new slave_id
-      setDevices((prev) =>
-        prev.map((d) =>
-          d.cfg.slave_id === originalSlaveId
-            ? { ...d, cfg: { ...d.cfg, slave_id: editedSlaveId } }
-            : d,
-        ),
-      );
-      setSelectedDevice(editedSlaveId);
-    }
 
-    // Save other parameters (addressing the device at its current slave_id)
-    const { slave_id, device_type, ...parameters } = tabstore.editedData;
-    const data = {
-      device_type: tabstore.deviceType,
-      ...device.cfg,
-      ...(slaveIdChanged ? { slave_id: editedSlaveId } : {}),
-      parameters,
-    };
+      // Save other parameters (addressing the device at its current slave_id)
+      const { slave_id, device_type, ...parameters } = tabstore.editedData;
+      const data = {
+        device_type: tabstore.deviceType,
+        ...device.cfg,
+        ...(slaveIdChanged ? { slave_id: editedSlaveId } : {}),
+        parameters,
+      };
 
-    const result = await save(data);
-    if (result?.error) {
-      setError(result.error.message);
-    } else {
-      setSaveCounter((c) => c + 1);
+      const result = await save(data);
+      if (result?.error) {
+        setError(result.error.message);
+      } else {
+        setSaveCounter((c) => c + 1);
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -458,8 +465,9 @@ export const DeviceSettingsWasm = observer(() => {
           <Button label={t('wasm.buttons.scan')} onClick={handleScan} disabled={isBusy} />
           <Button
             label={t('wasm.buttons.save')}
-            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid || isBusy}
+            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid || isBusy || isSaving}
             variant="primary"
+            isLoading={isSaving}
             onClick={handleSave}
           />
           <Dropdown
