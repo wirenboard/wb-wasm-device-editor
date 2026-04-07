@@ -55,6 +55,7 @@ window.Module =
               switch (type) {
                   case 'configGetDeviceTypes': this.configGetDeviceTypes(json); break;
                   case 'configGetSchema': this.configGetSchema(json); break;
+                  case 'portLoad': this.portLoad(json); break;
                   case 'portScan': this.portScan(json); break;
                   case 'portSetup': this.portSetup(json); break;
                   case 'deviceLoadConfig': this.deviceLoadConfig(json); break;
@@ -182,43 +183,173 @@ window.Module =
       },
   };
 
-class PortScan {
-    baudRate = [115200, 57600, 38400, 19200, 9600, 4800, 2400, 1200];
+class ScanBase {
+    baudRate = [9600, 115200, 57600, 38400, 19200, 4800, 2400, 1200];
     parity = ['N', 'E', 'O'];
-    step = 100 / this.baudRate.length / this.parity.length;
+    baudRateIndex = 0;
+    parityIndex = 0;
+    slaveId = 0;
     progress = 0;
+    count = 0;
+    stopped = false;
 
     constructor(callback) {
         this.callback = callback;
     }
 
-    async request(start) {
-        let request =
-          {
-              command: 96,
-              mode: start ? 'start' : 'next',
-              baud_rate: this.baudRate[this.baudRateIndex],
-              data_bits: 8,
-              parity: this.parity[this.parityIndex],
-              stop_bits: 2,
-          };
+    updateStatus() {
+        if (!this.callback)
+            return;
 
+        let status = {
+            progress: Math.round(this.progress),
+            count: this.count,
+            slaveId: this.slaveId,
+        };
+
+        if (this.progress < 100)
+            status.options = this.baudRate[this.baudRateIndex] + ' 8' + this.parity[this.parityIndex] + '2';
+
+        this.callback(status);
+    }
+
+    stop() {
+        this.stopped = true;
+    }
+}
+
+class BootScan extends ScanBase {
+    async request(address, count, cfg) {
+        const request = {
+            protocol: 'modbus',
+            baud_rate: cfg?.baud_rate ?? this.baudRate[this.baudRateIndex],
+            data_bits: cfg?.data_bits ?? 8,
+            parity: cfg?.parity ?? this.parity[this.parityIndex],
+            stop_bits: cfg?.stop_bits ?? 2,
+            slave_id: cfg?.slave_id ?? this.slaveId,
+            function: 3,
+            address: address,
+            count: count,
+            format: 'HEX'
+        };
+        return await Module.request('portLoad', request);
+    }
+
+    async bootMode() {
+        let request = await this.request(330, 8);
+
+        if (request.error)
+            return false;
+
+        request = await this.request(330, 7);
+        return request.error ? true : false;
+    }
+
+    async readSignature() {
+        const request = await this.request(290, 12);
+        return this.parseString(request.result?.response);
+    }
+
+    async readDeviceInfo(cfg) {
+        const signature = await this.request(200, 20, cfg);
+        const version = await this.request(250, 16, cfg);
+        return {
+            device_signature: this.parseString(signature.result?.response),
+            fw: {version: this.parseString(version.result?.response)},
+        };
+    }
+
+    async exec() {
+        let maxSlaveId = 247;
+        let step = 100 / this.baudRate.length / this.parity.length / maxSlaveId;
+        let devices = new Array();
+
+        this.baudRateIndex = 0;
+        this.progress = 0;
+        this.count = 0;
+        this.stopped = false;
+
+        while (this.baudRateIndex < this.baudRate.length && !this.stopped) {
+            this.parityIndex = 0;
+
+            while (this.parityIndex < this.parity.length && !this.stopped) {
+                for (this.slaveId = 1; this.slaveId <= maxSlaveId && !this.stopped; this.slaveId++) {
+                    this.updateStatus();
+                    this.progress += step;
+
+                    if (!(await this.bootMode()))
+                        continue;
+
+                    devices.push({
+                        slave_id: this.slaveId,
+                        bootloader_mode: true,
+                        cfg: {
+                            slave_id: this.slaveId,
+                            baud_rate: this.baudRate[this.baudRateIndex],
+                            parity: this.parity[this.parityIndex],
+                            data_bits: 8,
+                            stop_bits: 2
+                        },
+                        fw_signature: await this.readSignature()
+                    });
+
+                    this.count = devices.length;
+                }
+
+                this.parityIndex++;
+            }
+
+            this.baudRateIndex++;
+        }
+
+        this.updateStatus();
+        return { devices: devices };
+    }
+
+    parseString(hex) {
+        let result = '';
+
+        for (let i = 0; i < hex.length; i += 4) {
+            const reg = parseInt(hex.substring(i, i + 4), 16) & 0xFF;
+
+            if (!reg)
+                break;
+
+            result += String.fromCharCode(reg);
+        }
+
+        return result;
+    }
+}
+
+class PortScan extends ScanBase {
+    async request(start) {
+        let request = {
+            command: 96,
+            mode: start ? 'start' : 'next',
+            baud_rate: this.baudRate[this.baudRateIndex],
+            data_bits: 8,
+            parity: this.parity[this.parityIndex],
+            stop_bits: 2,
+        };
         return await Module.request('portScan', request);
     }
 
     async exec() {
+        let step = 100 / this.baudRate.length / this.parity.length;
         let devices = new Array();
         let start = true;
 
         this.baudRateIndex = 0;
         this.progress = 0;
         this.count = 0;
+        this.stopped = false;
 
-        while (this.baudRateIndex < this.baudRate.length) {
+        while (this.baudRateIndex < this.baudRate.length && !this.stopped) {
             this.parityIndex = 0;
-            this.updateStatus();
 
-            while (this.parityIndex < this.parity.length) {
+            while (this.parityIndex < this.parity.length && !this.stopped) {
+                this.updateStatus();
                 let reply = await this.request(start);
 
                 if (reply.result?.devices?.length) {
@@ -227,9 +358,9 @@ class PortScan {
                     continue;
                 }
 
-                this.progress += this.step;
-                this.count += devices.length;
                 this.parityIndex++;
+                this.progress += step;
+                this.count = devices.length;
                 start = true;
             }
 
@@ -240,21 +371,7 @@ class PortScan {
         this.updateStatus();
         return { devices: devices };
     }
-
-    updateStatus() {
-        if (!this.callback)
-            return;
-
-        let status = {
-            progress: Math.round(this.progress),
-            count: this.count
-        };
-
-        if (this.progress < 100)
-            status.options = this.baudRate[this.progress ? this.baudRateIndex : 0] + ' 8' + this.parity[this.progress ? this.parityIndex : 0] + '2';
-
-        this.callback(status);
-    }
 }
 
+window.BootScan = BootScan;
 window.PortScan = PortScan;

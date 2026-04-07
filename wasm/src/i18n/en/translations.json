@@ -10,10 +10,16 @@
          "remove-local": "Remove local",
          "add-device": "Add device",
          "add": "Add",
-         "refresh": "Refresh"
+         "refresh": "Refresh",
+         "stop": "Stop",
+         "restore": "Restore"
       },
       "labels": {
          "scanning": "Scanning in progress {{message}}…",
+         "boot-scan": "Find devices in bootloader mode",
+         "boot-scanning": "Searching for devices in bootloader mode {{message}}…",
+         "found-devices_one": "Found {{count}} device",
+         "found-devices_other": "Found {{count}} devices",
          "runtime-view": "Runtime View",
          "auto-refresh": "Auto-refresh",
          "device-type": "Device type",
@@ -25,6 +31,7 @@
          "parity-never": "Never",
          "parity-even": "Even",
          "parity-odd": "Odd",
+         "bootloader-device": "Device is in bootloader mode. Firmware restore is required.",
          "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to specify device type and address manually."
       },
       "errors": {

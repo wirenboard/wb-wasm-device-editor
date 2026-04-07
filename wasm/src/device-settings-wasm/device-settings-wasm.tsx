@@ -1,37 +1,27 @@
 import classNames from 'classnames';
 import { autorun } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAsyncAction } from '@/utils/async-action';
 import { useTranslation } from 'react-i18next';
 import { Alert } from '@/components/alert';
+import WarnIcon from '@/assets/icons/warn.svg';
 import { Button } from '@/components/button';
 import { Dropdown, type Option } from '@/components/dropdown';
-import { JsonSchemaEditor } from '@/components/json-schema-editor';
 import { Loader } from '@/components/loader';
-import { Progress } from '@/components/progress';
-import { Tabs, TabContent, useTabs } from '@/components/tabs';
+import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
-import { EmbeddedSoftwarePanel } from '@/pages/settings/device-manager';
-import {
-  MakeEditors,
-} from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
-import {
-  DeviceTabStore,
-  DeviceTypesStore,
-  type WbDeviceParameterEditorsGroup,
-} from '@/stores/device-manager';
+import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { setReactLocale } from '~/react-directives/locale';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
-import { RuntimeView } from './components/runtime-view';
-import { SettingsTabContent } from './components/tab-content';
+import { BootloaderDeviceView } from './components/bootloader-device-view';
+import { DeviceSettingsView } from './components/device-settings-view';
+import { ScanProgress } from './components/scan-progress';
 import { useModule } from './module';
 import type { Device } from './types';
 import './styles.css';
-
-const RUNTIME_VIEW_TAB_ID = 'runtime-view';
-const EMPTY_GROUPS: WbDeviceParameterEditorsGroup[] = [];
 
 export const DeviceSettingsWasm = observer(() => {
   const { t, i18n } = useTranslation();
@@ -43,6 +33,7 @@ export const DeviceSettingsWasm = observer(() => {
   const [isModalOpened, setIsModalOpened] = useState(false);
   const [configDeviceTypesStore, setConfigDeviceTypesStore] = useState(null);
   const [error, setError] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [manualDevices, updateManualDevices] = useLocalStorage('devices');
   const allDevices = useMemo(() => [...devices, ...(devices.length ? manualDevices.filter((manual) => {
     return !devices.map((d) => d.cfg.slave_id).includes(manual.cfg.slave_id);
@@ -89,7 +80,15 @@ export const DeviceSettingsWasm = observer(() => {
     selectPort,
     getPortInfo,
     scan,
+    bootScan,
+    stopScan,
+    stopBootScan,
+    readDeviceInfo,
     scanMessage,
+    scanCount,
+    bootScanMessage,
+    bootScanCount,
+    bootScanProgress,
     loadConfig,
     configGetDeviceTypes,
     configGetSchema,
@@ -106,6 +105,9 @@ export const DeviceSettingsWasm = observer(() => {
   const [multiplePortsAvailable, setMultiplePortsAvailable] = useState(false);
   const [saveCounter, setSaveCounter] = useState(0);
   const [portError, setPortError] = useState<string | null>(null);
+  const [isPortScanning, setIsPortScanning] = useState(false);
+  const [isBootScanning, setIsBootScanning] = useState(false);
+  const bootScanRequestedRef = useRef(false);
 
   const refreshPortInfo = useCallback(async () => {
     try {
@@ -134,6 +136,7 @@ export const DeviceSettingsWasm = observer(() => {
   }, [subscribeFwUpdateState, tabstore, allDevices, selectedDevice]);
 
   const isUpdating = tabstore?.embeddedSoftware?.isUpdating ?? false;
+  const isBusy = isUpdating || isConfigLoading;
 
   useEffect(() => {
     if (!isUpdating) return;
@@ -222,17 +225,53 @@ export const DeviceSettingsWasm = observer(() => {
     });
   }, [tabstore, allDevices, selectedDevice]);
 
-  const handleScan = async () => {
-    reset();
-    const res = await scan();
+  const showScanResults = (allDevices: Device[]) => {
     refreshPortInfo();
-    const firstDevice = res.at(0);
+    const firstDevice = allDevices.at(0);
     setSelectedDevice(firstDevice?.cfg.slave_id);
-
-    setDevices(res);
-
+    setDevices(allDevices);
     loadDeviceSettings(firstDevice, configDeviceTypesStore);
   };
+
+  const handleScan = async () => {
+    reset();
+    bootScanRequestedRef.current = false;
+    setIsPortScanning(true);
+    const res = await scan();
+
+    if (bootScanRequestedRef.current) {
+      setIsBootScanning(true);
+      const bootDevices = await bootScan();
+      setIsBootScanning(false);
+      setIsPortScanning(false);
+      showScanResults([...res, ...bootDevices]);
+    } else {
+      setIsPortScanning(false);
+      showScanResults(res);
+    }
+  };
+
+  const handleStopBootScan = () => {
+    stopBootScan();
+  };
+
+  const [handleRestore, isRestoring] = useAsyncAction(async () => {
+    try {
+      const selectedDev = getDevice(selectedDevice);
+      await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus', port: getPortConfig(selectedDev.cfg) });
+      tabstore.embeddedSoftware.firmware.updateProgress = 100;
+      await new Promise((r) => setTimeout(r, 2500));
+      const info = await readDeviceInfo(selectedDev.cfg);
+      const updatedDevice = { ...selectedDev, ...info, bootloader_mode: false };
+      setDevices((prev) => prev.map((d) =>
+        d.cfg.slave_id === selectedDevice ? updatedDevice : d
+      ));
+      loadDeviceSettings(updatedDevice, configDeviceTypesStore);
+    } catch (err) {
+      tabstore.embeddedSoftware.firmware.updateProgress = null;
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  });
 
   const getType = (device: Device) => {
     return configDeviceTypesStore.findNotDeprecatedDeviceTypes(
@@ -293,54 +332,60 @@ export const DeviceSettingsWasm = observer(() => {
   const handleSave = async () => {
     const device = getDevice();
     if (!device.cfg || !tabstore?.editedData) return;
-    const editedSlaveId = Number(tabstore.editedData.slave_id);
-    const originalSlaveId = device.cfg.slave_id;
+    setIsSaving(true);
+    setError(null);
+    try {
+      const editedSlaveId = Number(tabstore.editedData.slave_id);
+      const originalSlaveId = device.cfg.slave_id;
 
-    // If slave_id changed on a WB device, write new address to register 0x80
-    const slaveIdChanged = Number.isInteger(editedSlaveId)
-      && editedSlaveId >= 1 && editedSlaveId <= 247
-      && editedSlaveId !== originalSlaveId;
-    if (slaveIdChanged && configDeviceTypesStore.isWbDevice(getType(device))) {
-      const setupRequest = {
-        items: [{
-          slave_id: originalSlaveId,
-          baud_rate: device.cfg.baud_rate,
-          data_bits: device.cfg.data_bits,
-          parity: device.cfg.parity,
-          stop_bits: device.cfg.stop_bits,
-          cfg: { slave_id: editedSlaveId },
-        }],
-      };
-      const result = await portSetup(setupRequest);
-      if (result.error) {
-        setError(result.error.message);
-        return;
+      // If slave_id changed on a WB device, write new address to register 0x80
+      const slaveIdChanged = Number.isInteger(editedSlaveId)
+        && editedSlaveId >= 1 && editedSlaveId <= 247
+        && editedSlaveId !== originalSlaveId;
+      if (slaveIdChanged && configDeviceTypesStore.isWbDevice(getType(device))) {
+        const setupRequest = {
+          items: [{
+            slave_id: originalSlaveId,
+            baud_rate: device.cfg.baud_rate,
+            data_bits: device.cfg.data_bits,
+            parity: device.cfg.parity,
+            stop_bits: device.cfg.stop_bits,
+            cfg: { slave_id: editedSlaveId },
+          }],
+        };
+        const result = await portSetup(setupRequest);
+        if (result.error) {
+          setError(result.error.message);
+          return;
+        }
+        // Update local device state with new slave_id
+        setDevices((prev) =>
+          prev.map((d) =>
+            d.cfg.slave_id === originalSlaveId
+              ? { ...d, cfg: { ...d.cfg, slave_id: editedSlaveId } }
+              : d,
+          ),
+        );
+        setSelectedDevice(editedSlaveId);
       }
-      // Update local device state with new slave_id
-      setDevices((prev) =>
-        prev.map((d) =>
-          d.cfg.slave_id === originalSlaveId
-            ? { ...d, cfg: { ...d.cfg, slave_id: editedSlaveId } }
-            : d,
-        ),
-      );
-      setSelectedDevice(editedSlaveId);
-    }
 
-    // Save other parameters (addressing the device at its current slave_id)
-    const { slave_id, device_type, ...parameters } = tabstore.editedData;
-    const data = {
-      device_type: tabstore.deviceType,
-      ...device.cfg,
-      ...(slaveIdChanged ? { slave_id: editedSlaveId } : {}),
-      parameters,
-    };
+      // Save other parameters (addressing the device at its current slave_id)
+      const { slave_id, device_type, ...parameters } = tabstore.editedData;
+      const data = {
+        device_type: tabstore.deviceType,
+        ...device.cfg,
+        ...(slaveIdChanged ? { slave_id: editedSlaveId } : {}),
+        parameters,
+      };
 
-    const result = await save(data);
-    if (result?.error) {
-      setError(result.error.message);
-    } else {
-      setSaveCounter((c) => c + 1);
+      const result = await save(data);
+      if (result?.error) {
+        setError(result.error.message);
+      } else {
+        setSaveCounter((c) => c + 1);
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -366,43 +411,6 @@ export const DeviceSettingsWasm = observer(() => {
     updateManualDevices(res);
   };
 
-  // Build settings tabs from schemaStore groups + RuntimeView
-  const schemaStore = tabstore?.schemaStore;
-  const translator = schemaStore?.schemaTranslator;
-  const settingsGroups: WbDeviceParameterEditorsGroup[] = schemaStore?.topLevelGroup?.subgroups || EMPTY_GROUPS;
-
-  const settingsTabs = useMemo(() => {
-    if (!settingsGroups.length) return [];
-    return settingsGroups
-      .filter((group) => !!(group.parameters.length + group.subgroups.length))
-      .map((group) => ({
-        id: group.properties.id,
-        label: (
-          <span
-            className={classNames({
-              'deviceSettingsEditor-tabWithError': group.hasErrors,
-              'deviceSettingsEditor-tabWithWarning': group.hasBadValuesFromRegisters && !group.hasErrors,
-            })}
-          >
-            {translator?.find(group.properties.title, i18n.language) ?? group.properties.title}
-          </span>
-        ),
-      }));
-  }, [settingsGroups, translator, i18n.language]);
-
-  const allTabs = useMemo(() => [
-    ...settingsTabs,
-    { id: RUNTIME_VIEW_TAB_ID, label: t('wasm.labels.runtime-view') },
-  ], [settingsTabs, t]);
-
-  const {
-    activeTab: activeSettingsTab,
-    onTabChange: onSettingsTabChange,
-  } = useTabs({
-    defaultTab: settingsTabs[0]?.id,
-    items: allTabs,
-  });
-
   return (
     <PageLayout
       title={t('wasm.title')}
@@ -421,13 +429,14 @@ export const DeviceSettingsWasm = observer(() => {
               {t('wasm.sw.update-available')}
             </a>
           )}
-          <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)} disabled={isUpdating}/>
-          <Button label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} disabled={isUpdating} />
-          <Button label={t('wasm.buttons.scan')} onClick={handleScan} disabled={isUpdating} />
+          <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)} disabled={isBusy} />
+          <Button label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} disabled={isBusy} />
+          <Button label={t('wasm.buttons.scan')} onClick={handleScan} disabled={isBusy} />
           <Button
             label={t('wasm.buttons.save')}
-            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid || isUpdating}
+            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid || isBusy || isSaving}
             variant="primary"
+            isLoading={isSaving}
             onClick={handleSave}
           />
           <Dropdown
@@ -470,27 +479,46 @@ export const DeviceSettingsWasm = observer(() => {
           {t('wasm.errors.select-port-failed', { error: portError })}
         </Alert>
       )}
-      {progress !== 0 && progress < 100 && (
-        <>
-          <Progress value={progress} caption={progress.toFixed() + '%'} />
-          <div className="deviceSettingsWasm-scanning">{t('wasm.labels.scanning', { message: scanMessage })}</div>
-        </>
-      )}
-      <main className="deviceSettingsWasm-container">
-        <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isUpdating })}>
+      <ScanProgress
+        isPortScanning={isPortScanning}
+        isBootScanning={isBootScanning}
+        progress={progress}
+        scanMessage={scanMessage}
+        scanCount={scanCount}
+        bootScanProgress={bootScanProgress ?? 0}
+        bootScanMessage={bootScanMessage}
+        bootScanCount={bootScanCount}
+        bootScanRequestedRef={bootScanRequestedRef}
+        onStopBootScan={handleStopBootScan}
+      />
+      {!isPortScanning && !isBootScanning && <main className="deviceSettingsWasm-container">
+        <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
           {!!(devices.length || manualDevices.length) && (
             <Tabs
               items={allDevices
                 .map((device) => ({
                   id: device.cfg.slave_id,
-                  label: `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
+                  label: device.bootloader_mode
+                    ? <span>{device.cfg.slave_id} {device.fw_signature} <WarnIcon style={{ width: 16, height: 16, verticalAlign: 'text-bottom', color: '#d9534f' }} /></span>
+                    : `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
                 }))}
               activeTab={activeTab}
               onTabChange={(id: number) => {
-                if (isUpdating) return;
+                if (isBusy) return;
                 const device = getDevice(id);
                 setSelectedDevice(id);
-                loadDeviceSettings(device, configDeviceTypesStore);
+                if (!device.bootloader_mode) {
+                  loadDeviceSettings(device, configDeviceTypesStore);
+                } else {
+                  const store = new DeviceTabStore(
+                    { slave_id: String(device.cfg.slave_id) },
+                    '',
+                    configDeviceTypesStore,
+                    fwUpdateProxy,
+                    { LoadConfig: () => Promise.resolve({}) },
+                  );
+                  setTabstore(store);
+                }
               }}
             />
           )}
@@ -505,108 +533,53 @@ export const DeviceSettingsWasm = observer(() => {
               {t('device-manager.errors.load-registers', { error })}
             </Alert>
           )}
+          {(() => {
+            const selectedDev = getDevice(selectedDevice);
+            if (selectedDev?.bootloader_mode && tabstore) {
+              return (
+                <BootloaderDeviceView
+                  selectedDevice={selectedDevice}
+                  fwSignature={selectedDev.fw_signature}
+                  embeddedSoftware={tabstore.embeddedSoftware}
+                  isRestoring={isRestoring}
+                  onRestore={handleRestore}
+                />
+              );
+            }
+            return null;
+          })()}
           {isConfigLoading ? (
             <div className="deviceSettingsWasm-loaderWrapper">
               <Loader caption={t('device-manager.labels.reading-parameters')} />
             </div>
           ) : (
-            !allDevices.length && !progress && moduleInitialized ? (
+            !allDevices.length && !isPortScanning && moduleInitialized ? (
               <div className="deviceSettingsWasm-emptyState">
                 <Alert variant="info">
                   {t('wasm.labels.empty-state')}
                 </Alert>
               </div>
             ) : (
-              tabstore && schemaStore && translator && (
-                <>
-                  <header className="deviceSettingsWasm-header">
-                    <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
-                    {manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)
-                      ? (
-                        <Button
-                          label={t('wasm.buttons.remove-local')}
-                          variant="secondary"
-                          size="small"
-                          disabled={isUpdating}
-                          onClick={() => removeLocal()}
-                        />
-                      )
-                      : (
-                        <Button
-                          label={t('wasm.buttons.save-local')}
-                          variant="secondary"
-                          size="small"
-                          disabled={isUpdating}
-                          onClick={() => saveLocal()}
-                        />
-                      )
-                    }
-
-                  </header>
-                  <EmbeddedSoftwarePanel
-                    embeddedSoftware={tabstore.embeddedSoftware}
-                    onUpdateFirmware={() => tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                    onUpdateBootloader={() => tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                    onUpdateComponents={() => tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                  />
-                  {!tabstore.embeddedSoftware.firmware.current && deviceFwVersion && (
-                    <div className="firmwareVersionPanel">
-                      <b>{t('device-manager.labels.current-firmware', { firmware: deviceFwVersion })}</b>
-                    </div>
-                  )}
-                  {tabstore.slaveIdIsDuplicate && (
-                    <Alert
-                      className="deviceSettingsWasm-alert"
-                      variant="danger"
-                    >
-                      {t('device-manager.errors.duplicate-slave-id')}
-                    </Alert>
-                  )}
-                  <div className={classNames('deviceSettingsEditor', 'deviceSettingsEditor-desktop', { 'deviceSettingsWasm-aside--disabled': isUpdating })}>
-                    <JsonSchemaEditor store={schemaStore.commonParams} translator={translator} />
-                    {MakeEditors(schemaStore.topLevelGroup.parameters, translator)}
-                    {allTabs.length > 0 && (
-                      <div className="deviceSettingsEditor-tabs">
-                        <Tabs
-                          activeTab={activeSettingsTab}
-                          items={allTabs}
-                          onTabChange={onSettingsTabChange}
-                        />
-                        {settingsGroups
-                          .filter((group) => !!(group.parameters.length + group.subgroups.length))
-                          .map((group) => (
-                            <TabContent
-                              key={group.properties.id}
-                              activeTab={activeSettingsTab}
-                              tabId={group.properties.id}
-                              className="deviceSettingsEditor-tabContent"
-                            >
-                              <SettingsTabContent group={group} translator={translator} />
-                            </TabContent>
-                          ))
-                        }
-                        <TabContent
-                          activeTab={activeSettingsTab}
-                          tabId={RUNTIME_VIEW_TAB_ID}
-                          className="deviceSettingsEditor-tabContent"
-                        >
-                          <RuntimeView
-                            key={saveCounter}
-                            deviceCfg={{ ...getDevice().cfg, device_type: tabstore.deviceType }}
-                            deviceLoad={deviceLoad}
-                            save={save}
-                            configGetSchema={configGetSchema}
-                          />
-                        </TabContent>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )
+              <DeviceSettingsView
+                tabstore={tabstore}
+                isBusy={isBusy}
+                isLocal={manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)}
+                deviceFwVersion={deviceFwVersion}
+                saveCounter={saveCounter}
+                deviceCfg={{ ...getDevice().cfg, device_type: tabstore?.deviceType }}
+                deviceLoad={deviceLoad}
+                save={save}
+                configGetSchema={configGetSchema}
+                onSaveLocal={saveLocal}
+                onRemoveLocal={() => removeLocal()}
+                onUpdateFirmware={() => tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                onUpdateBootloader={() => tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                onUpdateComponents={() => tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+              />
             )
           )}
         </section>
-      </main>
+      </main>}
 
       {isModalOpened && (
         <AddDevice

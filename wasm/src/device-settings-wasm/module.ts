@@ -6,11 +6,19 @@ import { WasmFwUpdateProxy } from './fw-update-proxy';
 export const useModule = (isOffline: boolean = false) => {
   const [moduleState, setModuleState] = useState<{
     scanMessage: string;
+    scanCount: number;
+    bootScanMessage: string;
+    bootScanCount: number;
     portScan: PortScan;
+    bootScan: any;
     moduleInitialized: boolean;
   }>({
     scanMessage: '',
+    scanCount: 0,
+    bootScanMessage: '',
+    bootScanCount: 0,
     portScan: null,
+    bootScan: null,
     moduleInitialized: false,
   });
 
@@ -23,17 +31,33 @@ export const useModule = (isOffline: boolean = false) => {
   }, []);
 
   useEffect(() => {
-    const portScan = new PortScan((options) =>
-      setModuleState((prevState) => ({ ...prevState, scanMessage: options.options })),
+    const portScan = new PortScan((status) =>
+      setModuleState((prevState) => ({
+        ...prevState,
+        scanMessage: status.options ? `(${status.options})` : '',
+        scanCount: status.count,
+      })),
+    );
+
+    const bootScan = new BootScan((status) =>
+      setModuleState((prevState) => ({
+        ...prevState,
+        bootScanMessage: status.options ? `(${status.options} #${status.slaveId})` : '',
+        bootScanCount: status.count,
+      })),
     );
 
     makeObservable(portScan, {
       progress: observable,
     });
 
+    makeObservable(bootScan, {
+      progress: observable,
+    });
+
     (async () => {
       await Module.isReady;
-      setModuleState((prevState) => ({ ...prevState, moduleInitialized: true, portScan }));
+      setModuleState((prevState) => ({ ...prevState, moduleInitialized: true, portScan, bootScan }));
     })();
   }, []);
 
@@ -59,6 +83,24 @@ export const useModule = (isOffline: boolean = false) => {
     await initializeModule();
     return moduleState.portScan.exec().then(({ devices }) => devices);
   }, [initializeModule, moduleState.portScan]);
+
+  const bootScan = useCallback(async (): Promise<any[]> => {
+    await initializeModule();
+    return moduleState.bootScan.exec().then(({ devices }) => devices);
+  }, [initializeModule, moduleState.bootScan]);
+
+  const stopScan = useCallback(() => {
+    moduleState.portScan?.stop();
+  }, [moduleState.portScan]);
+
+  const stopBootScan = useCallback(() => {
+    moduleState.bootScan?.stop();
+  }, [moduleState.bootScan]);
+
+  const readDeviceInfo = useCallback(async (cfg: any) => {
+    await initializeModule();
+    return moduleState.bootScan.readDeviceInfo(cfg);
+  }, [initializeModule, moduleState.bootScan]);
 
   const loadConfig = useCallback(
     async (cfg) => {
@@ -124,7 +166,15 @@ export const useModule = (isOffline: boolean = false) => {
     selectPort,
     getPortInfo,
     scan,
+    bootScan,
+    stopScan,
+    stopBootScan,
+    readDeviceInfo,
     scanMessage: moduleState.scanMessage,
+    scanCount: moduleState.scanCount,
+    bootScanMessage: moduleState.bootScanMessage,
+    bootScanCount: moduleState.bootScanCount,
+    bootScanProgress: moduleState.bootScan?.progress,
     loadConfig,
     configGetDeviceTypes,
     configGetSchema,

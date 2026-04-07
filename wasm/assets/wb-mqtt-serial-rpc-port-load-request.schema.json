@@ -30,44 +30,49 @@
     },
     "request_data": {
       "properties": {
-        "slave_id": {
-          "oneOf": [
-            {
-              "type": "integer",
-              "minimum": 0
-            },
-            {
-              "type": "string",
-              "minLength": 1
-            }
-          ]
-        },
-        "device_type": {
+        "msg": {
           "type": "string"
         },
-        "channels": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+        "format": {
+          "type": "string",
+          "enum": ["HEX", "STR"]
+        }
+      }
+    },
+    "modbus_request": {
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "enum": ["modbus"]
         },
-        "parameters": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+        "slave_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "function": {
+          "type": "integer",
+          "enum": [1, 2, 3, 4, 5, 6, 15, 16, 23]
+        },
+        "address": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [
-        "slave_id",
-        "device_type"
+        "protocol", 
+        "slave_id", 
+        "function",
+        "address" 
       ]
     }
   },
   "allOf": [
     { "$ref": "#/definitions/port_options" },
-    { "$ref": "#/definitions/request_data" }
+    { "$ref": "#/definitions/request_data" },
+    { "$ref": "#/definitions/modbus_request" }
   ]
 }
