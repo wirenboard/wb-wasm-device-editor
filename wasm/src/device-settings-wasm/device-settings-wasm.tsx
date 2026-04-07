@@ -8,32 +8,20 @@ import { Alert } from '@/components/alert';
 import WarnIcon from '@/assets/icons/warn.svg';
 import { Button } from '@/components/button';
 import { Dropdown, type Option } from '@/components/dropdown';
-import { JsonSchemaEditor } from '@/components/json-schema-editor';
 import { Loader } from '@/components/loader';
-import { Progress } from '@/components/progress';
-import { Tabs, TabContent, useTabs } from '@/components/tabs';
+import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
-import { EmbeddedSoftwarePanel } from '@/pages/settings/device-manager';
-import {
-  MakeEditors,
-} from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
-import {
-  DeviceTabStore,
-  DeviceTypesStore,
-  type WbDeviceParameterEditorsGroup,
-} from '@/stores/device-manager';
+import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { setReactLocale } from '~/react-directives/locale';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
-import { RuntimeView } from './components/runtime-view';
-import { SettingsTabContent } from './components/tab-content';
+import { BootloaderDeviceView } from './components/bootloader-device-view';
+import { DeviceSettingsView } from './components/device-settings-view';
+import { ScanProgress } from './components/scan-progress';
 import { useModule } from './module';
 import type { Device } from './types';
 import './styles.css';
-
-const RUNTIME_VIEW_TAB_ID = 'runtime-view';
-const EMPTY_GROUPS: WbDeviceParameterEditorsGroup[] = [];
 
 export const DeviceSettingsWasm = observer(() => {
   const { t, i18n } = useTranslation();
@@ -247,6 +235,7 @@ export const DeviceSettingsWasm = observer(() => {
 
   const handleScan = async () => {
     reset();
+    bootScanRequestedRef.current = false;
     setIsPortScanning(true);
     const res = await scan();
 
@@ -422,43 +411,6 @@ export const DeviceSettingsWasm = observer(() => {
     updateManualDevices(res);
   };
 
-  // Build settings tabs from schemaStore groups + RuntimeView
-  const schemaStore = tabstore?.schemaStore;
-  const translator = schemaStore?.schemaTranslator;
-  const settingsGroups: WbDeviceParameterEditorsGroup[] = schemaStore?.topLevelGroup?.subgroups || EMPTY_GROUPS;
-
-  const settingsTabs = useMemo(() => {
-    if (!settingsGroups.length) return [];
-    return settingsGroups
-      .filter((group) => !!(group.parameters.length + group.subgroups.length))
-      .map((group) => ({
-        id: group.properties.id,
-        label: (
-          <span
-            className={classNames({
-              'deviceSettingsEditor-tabWithError': group.hasErrors,
-              'deviceSettingsEditor-tabWithWarning': group.hasBadValuesFromRegisters && !group.hasErrors,
-            })}
-          >
-            {translator?.find(group.properties.title, i18n.language) ?? group.properties.title}
-          </span>
-        ),
-      }));
-  }, [settingsGroups, translator, i18n.language]);
-
-  const allTabs = useMemo(() => [
-    ...settingsTabs,
-    { id: RUNTIME_VIEW_TAB_ID, label: t('wasm.labels.runtime-view') },
-  ], [settingsTabs, t]);
-
-  const {
-    activeTab: activeSettingsTab,
-    onTabChange: onSettingsTabChange,
-  } = useTabs({
-    defaultTab: settingsTabs[0]?.id,
-    items: allTabs,
-  });
-
   return (
     <PageLayout
       title={t('wasm.title')}
@@ -527,31 +479,18 @@ export const DeviceSettingsWasm = observer(() => {
           {t('wasm.errors.select-port-failed', { error: portError })}
         </Alert>
       )}
-      {isPortScanning && !isBootScanning && (
-        <>
-          <Progress value={progress} caption={progress.toFixed() + '%'} />
-          <div className="deviceSettingsWasm-scanning">{t('wasm.labels.scanning', { message: scanMessage })}</div>
-          {!!scanCount && <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: scanCount })}…</div>}
-          <label style={{ display: 'block', textAlign: 'center', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              style={{ cursor: 'pointer' }}
-              onChange={(e) => { bootScanRequestedRef.current = e.target.checked; }}
-            />
-            {' '}{t('wasm.labels.boot-scan')}
-          </label>
-        </>
-      )}
-      {isBootScanning && (
-        <>
-          <Progress value={bootScanProgress ?? 0} caption={(bootScanProgress ?? 0).toFixed() + '%'} />
-          <div className="deviceSettingsWasm-scanning">{t('wasm.labels.boot-scanning', { message: bootScanMessage })}</div>
-          {!!bootScanCount && <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: bootScanCount })}…</div>}
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Button label={t('wasm.buttons.stop')} size="small" variant="secondary" onClick={handleStopBootScan} />
-          </div>
-        </>
-      )}
+      <ScanProgress
+        isPortScanning={isPortScanning}
+        isBootScanning={isBootScanning}
+        progress={progress}
+        scanMessage={scanMessage}
+        scanCount={scanCount}
+        bootScanProgress={bootScanProgress ?? 0}
+        bootScanMessage={bootScanMessage}
+        bootScanCount={bootScanCount}
+        bootScanRequestedRef={bootScanRequestedRef}
+        onStopBootScan={handleStopBootScan}
+      />
       {!isPortScanning && !isBootScanning && <main className="deviceSettingsWasm-container">
         <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
           {!!(devices.length || manualDevices.length) && (
@@ -598,31 +537,13 @@ export const DeviceSettingsWasm = observer(() => {
             const selectedDev = getDevice(selectedDevice);
             if (selectedDev?.bootloader_mode && tabstore) {
               return (
-                <>
-                  <header className="deviceSettingsWasm-header">
-                    <h3 className="deviceSettingsWasm-title">{selectedDevice} {selectedDev.fw_signature}</h3>
-                  </header>
-                  <EmbeddedSoftwarePanel
-                    embeddedSoftware={tabstore.embeddedSoftware}
-                    onUpdateFirmware={() => { }}
-                    onUpdateBootloader={() => { }}
-                    onUpdateComponents={() => { }}
-                  />
-                  {!tabstore.embeddedSoftware.isUpdating && (
-                    <Alert variant="warn" className="hasUpdateAlert">
-                      <div>
-                        {t('wasm.labels.bootloader-device')}
-                      </div>
-                      <Button
-                        label={t('wasm.buttons.restore')}
-                        variant="warn"
-                        isLoading={isRestoring}
-                        disabled={isRestoring}
-                        onClick={handleRestore}
-                      />
-                    </Alert>
-                  )}
-                </>
+                <BootloaderDeviceView
+                  selectedDevice={selectedDevice}
+                  fwSignature={selectedDev.fw_signature}
+                  embeddedSoftware={tabstore.embeddedSoftware}
+                  isRestoring={isRestoring}
+                  onRestore={handleRestore}
+                />
               );
             }
             return null;
@@ -639,92 +560,22 @@ export const DeviceSettingsWasm = observer(() => {
                 </Alert>
               </div>
             ) : (
-              tabstore && schemaStore && translator && (
-                <>
-                  <header className="deviceSettingsWasm-header">
-                    <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
-                    {manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)
-                      ? (
-                        <Button
-                          label={t('wasm.buttons.remove-local')}
-                          variant="secondary"
-                          size="small"
-                          disabled={isBusy}
-                          onClick={() => removeLocal()}
-                        />
-                      )
-                      : (
-                        <Button
-                          label={t('wasm.buttons.save-local')}
-                          variant="secondary"
-                          size="small"
-                          disabled={isBusy}
-                          onClick={() => saveLocal()}
-                        />
-                      )
-                    }
-
-                  </header>
-                  <EmbeddedSoftwarePanel
-                    embeddedSoftware={tabstore.embeddedSoftware}
-                    onUpdateFirmware={() => tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                    onUpdateBootloader={() => tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                    onUpdateComponents={() => tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                  />
-                  {!tabstore.embeddedSoftware.firmware.current && deviceFwVersion && (
-                    <div className="firmwareVersionPanel">
-                      <b>{t('device-manager.labels.current-firmware', { firmware: deviceFwVersion })}</b>
-                    </div>
-                  )}
-                  {tabstore.slaveIdIsDuplicate && (
-                    <Alert
-                      className="deviceSettingsWasm-alert"
-                      variant="danger"
-                    >
-                      {t('device-manager.errors.duplicate-slave-id')}
-                    </Alert>
-                  )}
-                  <div className={classNames('deviceSettingsEditor', 'deviceSettingsEditor-desktop', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
-                    <JsonSchemaEditor store={schemaStore.commonParams} translator={translator} />
-                    {MakeEditors(schemaStore.topLevelGroup.parameters, translator)}
-                    {allTabs.length > 0 && (
-                      <div className="deviceSettingsEditor-tabs">
-                        <Tabs
-                          activeTab={activeSettingsTab}
-                          items={allTabs}
-                          onTabChange={onSettingsTabChange}
-                        />
-                        {settingsGroups
-                          .filter((group) => !!(group.parameters.length + group.subgroups.length))
-                          .map((group) => (
-                            <TabContent
-                              key={group.properties.id}
-                              activeTab={activeSettingsTab}
-                              tabId={group.properties.id}
-                              className="deviceSettingsEditor-tabContent"
-                            >
-                              <SettingsTabContent group={group} translator={translator} />
-                            </TabContent>
-                          ))
-                        }
-                        <TabContent
-                          activeTab={activeSettingsTab}
-                          tabId={RUNTIME_VIEW_TAB_ID}
-                          className="deviceSettingsEditor-tabContent"
-                        >
-                          <RuntimeView
-                            key={saveCounter}
-                            deviceCfg={{ ...getDevice().cfg, device_type: tabstore.deviceType }}
-                            deviceLoad={deviceLoad}
-                            save={save}
-                            configGetSchema={configGetSchema}
-                          />
-                        </TabContent>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )
+              <DeviceSettingsView
+                tabstore={tabstore}
+                isBusy={isBusy}
+                isLocal={manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)}
+                deviceFwVersion={deviceFwVersion}
+                saveCounter={saveCounter}
+                deviceCfg={{ ...getDevice().cfg, device_type: tabstore?.deviceType }}
+                deviceLoad={deviceLoad}
+                save={save}
+                configGetSchema={configGetSchema}
+                onSaveLocal={saveLocal}
+                onRemoveLocal={() => removeLocal()}
+                onUpdateFirmware={() => tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                onUpdateBootloader={() => tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                onUpdateComponents={() => tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+              />
             )
           )}
         </section>

@@ -19,6 +19,15 @@
     margin-bottom: 6px;
 }
 
+.deviceSettingsWasm-scanActions {
+    display: flex;
+    justify-content: center;
+}
+
+.deviceSettingsWasm-scanActions .wb-checkbox {
+    align-items: baseline;
+}
+
 .deviceSettingsWasm-addDeviceButton {
     margin-top: 12px;
     width: 100%;
