@@ -2,6 +2,7 @@ import classNames from 'classnames';
 import { autorun } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAsyncAction } from '@/utils/async-action';
 import { useTranslation } from 'react-i18next';
 import { Alert } from '@/components/alert';
 import WarnIcon from '@/assets/icons/warn.svg';
@@ -118,7 +119,6 @@ export const DeviceSettingsWasm = observer(() => {
   const [portError, setPortError] = useState<string | null>(null);
   const [isPortScanning, setIsPortScanning] = useState(false);
   const [isBootScanning, setIsBootScanning] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
   const bootScanRequestedRef = useRef(false);
 
   const refreshPortInfo = useCallback(async () => {
@@ -266,6 +266,23 @@ export const DeviceSettingsWasm = observer(() => {
   const handleStopBootScan = () => {
     stopBootScan();
   };
+
+  const [handleRestore, isRestoring] = useAsyncAction(async () => {
+    try {
+      const selectedDev = getDevice(selectedDevice);
+      await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus' });
+      tabstore.embeddedSoftware.firmware.updateProgress = 100;
+      await new Promise((r) => setTimeout(r, 2500));
+      const info = await readDeviceInfo(selectedDev.cfg);
+      const updatedDevice = { ...selectedDev, ...info, bootloader_mode: false };
+      setDevices((prev) => prev.map((d) =>
+        d.cfg.slave_id === selectedDevice ? updatedDevice : d
+      ));
+      loadDeviceSettings(updatedDevice, configDeviceTypesStore);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  });
 
   const getType = (device: Device) => {
     return configDeviceTypesStore.findNotDeprecatedDeviceTypes(
@@ -601,24 +618,7 @@ export const DeviceSettingsWasm = observer(() => {
                         variant="warn"
                         isLoading={isRestoring}
                         disabled={isRestoring}
-                        onClick={async () => {
-                          setIsRestoring(true);
-                          try {
-                            await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus' });
-                            tabstore.embeddedSoftware.firmware.updateProgress = 100;
-                            await new Promise((r) => setTimeout(r, 2500));
-                            const info = await readDeviceInfo(selectedDev.cfg);
-                            const updatedDevice = { ...selectedDev, ...info, bootloader_mode: false };
-                            setDevices((prev) => prev.map((d) =>
-                              d.cfg.slave_id === selectedDevice ? updatedDevice : d
-                            ));
-                            loadDeviceSettings(updatedDevice, configDeviceTypesStore);
-                          } catch (err) {
-                            setError(err instanceof Error ? err.message : String(err));
-                          } finally {
-                            setIsRestoring(false);
-                          }
-                        }}
+                        onClick={handleRestore}
                       />
                     </Alert>
                   )}
