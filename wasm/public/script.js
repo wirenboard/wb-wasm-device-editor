@@ -252,11 +252,35 @@ class BootScan extends ScanBase {
 
     async readDeviceInfo(cfg) {
         const signature = await this.request(200, 20, cfg);
+
+        if (signature.error)
+            return null;
+
         const version = await this.request(250, 16, cfg);
         return {
             device_signature: this.parseString(signature.result?.response),
             fw: {version: this.parseString(version.result?.response)},
+            cfg: cfg
         };
+    }
+
+    async findDevice(cfg) {
+        const result = await this.readDeviceInfo(cfg);
+
+        if (result)
+            return result;
+
+        for (let i = 0; i < this.baudRate.length; i++) {
+            for (let j = 0; j < this.parity.length; j++) {
+                if (this.baudRate[i] != cfg.baud_rate || this.parity[j] != cfg.parity) {
+                    const result = await this.readDeviceInfo({...cfg, baud_rate: this.baudRate[i], parity: this.parity[j]});
+                    if (result)
+                        return result;
+                }
+            }
+        }
+
+        throw new Error('Device not responding after firmware restore');
     }
 
     async exec() {

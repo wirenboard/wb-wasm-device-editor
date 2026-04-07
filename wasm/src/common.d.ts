@@ -11,7 +11,7 @@ declare class BootScan {
   constructor(callback: (options: any) => void);
   exec(): Promise<{ devices: any[] }>;
   stop(): void;
-  readDeviceInfo(cfg: any): Promise<any>;
+  findDevice(cfg: any): Promise<any>;
   progress: number;
 }
 
