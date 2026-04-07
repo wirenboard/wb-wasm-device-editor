@@ -205,6 +205,7 @@ class ScanBase {
             progress: Math.round(this.progress),
             count: this.count,
             slaveId: this.slaveId,
+            type: this.type
         };
 
         if (this.progress < 100)
@@ -259,7 +260,7 @@ class BootScan extends ScanBase {
         const version = await this.request(250, 16, cfg);
         return {
             device_signature: this.parseString(signature.result?.response),
-            fw: {version: this.parseString(version.result?.response)},
+            fw: { version: this.parseString(version.result?.response) },
             cfg: cfg
         };
     }
@@ -273,7 +274,7 @@ class BootScan extends ScanBase {
         for (let i = 0; i < this.baudRate.length; i++) {
             for (let j = 0; j < this.parity.length; j++) {
                 if (this.baudRate[i] != cfg.baud_rate || this.parity[j] != cfg.parity) {
-                    const result = await this.readDeviceInfo({...cfg, baud_rate: this.baudRate[i], parity: this.parity[j]});
+                    const result = await this.readDeviceInfo({ ...cfg, baud_rate: this.baudRate[i], parity: this.parity[j] });
                     if (result)
                         return result;
                 }
@@ -283,11 +284,55 @@ class BootScan extends ScanBase {
         throw new Error('Device not responding after firmware restore');
     }
 
-    async exec() {
+    async broadcastScan() {
+        const step = 100 / this.baudRate.length / this.parity.length;
+
+        this.type = 'broadcast';
+        this.baudRateIndex = 0;
+        this.progress = 0;
+        this.slaveId = 0;
+        this.count = 0;
+        this.stopped = false;
+
+        while (this.baudRateIndex < this.baudRate.length && !this.stopped) {
+            this.parityIndex = 0;
+
+            while (this.parityIndex < this.parity.length && !this.stopped) {
+                this.updateStatus();
+                this.progress += step;
+
+                if (await this.bootMode()) {
+                    this.count = 1;
+                    this.updateStatus();
+                    return [{
+                        slave_id: 0,
+                        bootloader_mode: true,
+                        cfg: {
+                            slave_id: this.slaveId,
+                            baud_rate: this.baudRate[this.baudRateIndex],
+                            parity: this.parity[this.parityIndex],
+                            data_bits: 8,
+                            stop_bits: 2
+                        },
+                        fw_signature: await this.readSignature()
+                    }];
+                }
+
+                this.parityIndex++;
+            }
+
+            this.baudRateIndex++;
+        }
+
+        return new Array();
+    }
+
+    async fullScan() {
         let maxSlaveId = 247;
         let step = 100 / this.baudRate.length / this.parity.length / maxSlaveId;
         let devices = new Array();
 
+        this.type = 'fullscan';
         this.baudRateIndex = 0;
         this.progress = 0;
         this.count = 0;
@@ -327,7 +372,17 @@ class BootScan extends ScanBase {
         }
 
         this.updateStatus();
-        return { devices: devices };
+        return devices;
+    }
+
+    async exec() {
+        const devices = await this.broadcastScan();
+
+        if (devices.length || this.stopped) {
+            return { devices: devices };
+        }
+
+        return { devices: await this.fullScan() };
     }
 
     parseString(hex) {

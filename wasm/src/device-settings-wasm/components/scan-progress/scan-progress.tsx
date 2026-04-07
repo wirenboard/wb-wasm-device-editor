@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/button';
 import { Checkbox } from '@/components/checkbox';
@@ -13,6 +12,7 @@ interface ScanProgressProps {
   bootScanProgress: number;
   bootScanMessage: string;
   bootScanCount: number;
+  bootScanType: string;
   bootScanRequestedRef: React.MutableRefObject<boolean>;
   onStopBootScan: () => void;
 }
@@ -26,6 +26,7 @@ export const ScanProgress = ({
   bootScanProgress,
   bootScanMessage,
   bootScanCount,
+  bootScanType,
   bootScanRequestedRef,
   onStopBootScan,
 }: ScanProgressProps) => {
@@ -49,10 +50,14 @@ export const ScanProgress = ({
   }
 
   if (isBootScanning) {
+    const label = bootScanType === 'broadcast'
+      ? t('wasm.labels.boot-scan-broadcast', { message: bootScanMessage })
+      : t('wasm.labels.boot-scanning', { message: bootScanMessage });
+
     return (
       <>
-        <Progress value={bootScanProgress ?? 0} caption={(bootScanProgress ?? 0).toFixed() + '%'} />
-        <div className="deviceSettingsWasm-scanning">{t('wasm.labels.boot-scanning', { message: bootScanMessage })}</div>
+        <Progress value={bootScanProgress} caption={bootScanProgress.toFixed() + '%'} />
+        <div className="deviceSettingsWasm-scanning">{label}</div>
         {!!bootScanCount && <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: bootScanCount })}…</div>}
         <div className="deviceSettingsWasm-scanActions">
           <Button label={t('wasm.buttons.stop')} size="small" variant="secondary" onClick={onStopBootScan} />
