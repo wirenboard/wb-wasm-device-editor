@@ -50,9 +50,12 @@ export const ScanProgress = ({
   }
 
   if (isBootScanning) {
-    const label = bootScanType === 'broadcast'
-      ? t('wasm.labels.boot-scan-broadcast', { message: bootScanMessage })
-      : t('wasm.labels.boot-scanning', { message: bootScanMessage });
+    const labelKey = {
+      broadcast: 'wasm.labels.boot-scan-broadcast',
+      cache: 'wasm.labels.boot-scan-cache',
+      full: 'wasm.labels.boot-scanning'
+    }[bootScanType] || 'wasm.labels.boot-scanning';
+    const label = t(labelKey, { message: bootScanMessage });
 
     return (
       <>

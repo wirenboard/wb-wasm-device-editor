@@ -513,7 +513,7 @@ export const DeviceSettingsWasm = observer(() => {
                 .map((device) => ({
                   id: device.cfg.slave_id,
                   label: device.bootloader_mode
-                    ? <span>{device.cfg.slave_id} {device.fw_signature} <WarnIcon style={{ width: 16, height: 16, verticalAlign: 'text-bottom', color: '#d9534f' }} /></span>
+                    ? <span>{device.slave_id === 0 ? '[0]' : device.cfg.slave_id} {device.fw_signature} <WarnIcon style={{ width: 16, height: 16, verticalAlign: 'text-bottom', color: '#d9534f' }} /></span>
                     : `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
                 }))}
               activeTab={activeTab}

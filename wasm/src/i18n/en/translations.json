@@ -19,6 +19,7 @@
          "boot-scan": "Find devices in bootloader mode",
          "boot-scanning": "Searching for devices in bootloader mode {{message}}…",
          "boot-scan-broadcast": "Quick scan for bootloader devices {{message}}…",
+         "boot-scan-cache": "Checking known devices {{message}}…",
          "found-devices_one": "Found {{count}} device",
          "found-devices_other": "Found {{count}} devices",
          "runtime-view": "Runtime View",
