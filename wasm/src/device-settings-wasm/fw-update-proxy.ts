@@ -28,6 +28,16 @@ export class WasmFwUpdateProxy implements FwUpdateProxy {
     return ['GetFirmwareInfo', 'Update', 'ClearError', 'Restore'].includes(method);
   }
 
+  private portSettings(params: { port?: any }) {
+    if (!params.port) return {};
+    return {
+      baud_rate: params.port.baud_rate ?? params.port.baudRate,
+      data_bits: params.port.data_bits ?? params.port.dataBits,
+      parity: params.port.parity,
+      stop_bits: params.port.stop_bits ?? params.port.stopBits,
+    };
+  }
+
   async GetFirmwareInfo(
     params: FwUpdateProxyGetFirmwareInfoParams,
   ): Promise<FwUpdateProxyGetFirmwareInfoResult> {
@@ -35,6 +45,7 @@ export class WasmFwUpdateProxy implements FwUpdateProxy {
     const res = await Module.request('fwGetInfo', {
       slave_id: params.slave_id,
       protocol: params.protocol || 'modbus',
+      ...this.portSettings(params),
     });
     if (res.error) throw new Error(res.error.message);
     return res.result as FwUpdateProxyGetFirmwareInfoResult;
@@ -46,6 +57,7 @@ export class WasmFwUpdateProxy implements FwUpdateProxy {
       slave_id: params.slave_id,
       type: params.type || 'firmware',
       protocol: params.protocol || 'modbus',
+      ...this.portSettings(params),
     });
     if (res.error) throw new Error(res.error.message);
   }
@@ -63,6 +75,7 @@ export class WasmFwUpdateProxy implements FwUpdateProxy {
     const res = await Module.request('fwRestore', {
       slave_id: params.slave_id,
       protocol: params.protocol || 'modbus',
+      ...this.portSettings(params),
     });
     if (res.error) throw new Error(res.error.message);
   }

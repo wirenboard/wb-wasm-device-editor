@@ -253,7 +253,6 @@ export const DeviceSettingsWasm = observer(() => {
     if (bootScanRequestedRef.current) {
       setIsBootScanning(true);
       const bootDevices = await bootScan();
-      console.log('Boot scan results:', bootDevices);
       setIsBootScanning(false);
       setIsPortScanning(false);
       showScanResults([...res, ...bootDevices]);
@@ -270,7 +269,7 @@ export const DeviceSettingsWasm = observer(() => {
   const [handleRestore, isRestoring] = useAsyncAction(async () => {
     try {
       const selectedDev = getDevice(selectedDevice);
-      await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus' });
+      await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus', port: getPortConfig(selectedDev.cfg) });
       tabstore.embeddedSoftware.firmware.updateProgress = 100;
       await new Promise((r) => setTimeout(r, 2500));
       const info = await readDeviceInfo(selectedDev.cfg);
@@ -280,6 +279,7 @@ export const DeviceSettingsWasm = observer(() => {
       ));
       loadDeviceSettings(updatedDevice, configDeviceTypesStore);
     } catch (err) {
+      tabstore.embeddedSoftware.firmware.updateProgress = null;
       setError(err instanceof Error ? err.message : String(err));
     }
   });

@@ -310,7 +310,7 @@ class BootScan extends ScanBase {
         let result = '';
 
         for (let i = 0; i < hex.length; i += 4) {
-            const reg = parseInt(hex.substring(i, i + 4), 16);
+            const reg = parseInt(hex.substring(i, i + 4), 16) & 0xFF;
 
             if (!reg)
                 break;
