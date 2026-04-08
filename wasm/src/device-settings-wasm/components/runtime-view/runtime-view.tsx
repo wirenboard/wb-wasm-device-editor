@@ -72,6 +72,7 @@ export const RuntimeView = observer(({
   const { t, i18n } = useTranslation();
   const [cells, setCells] = useState<Cell[]>([]);
   const [channelNames, setChannelNames] = useState<string[]>([]);
+  const [unsupportedNames, setUnsupportedNames] = useState<Set<string>>(new Set());
   const [autoRefresh, setAutoRefresh] = useState(() => localStorage.getItem('runtimeViewAutoRefresh') === 'true');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,12 +121,17 @@ export const RuntimeView = observer(({
       const channelValues = result.result?.channels || {};
       const readonlyList: string[] = result.result?.readonly || [];
       applyReadonly(currentCells, readonlyList);
+      const unsupported = new Set<string>();
       currentCells.forEach((cell) => {
         const name = cell.controlId;
-        if (name in channelValues && channelValues[name] !== 'unsupported') {
+        if (!(name in channelValues)) return;
+        if (channelValues[name] !== 'unsupported') {
           cell.receiveValue(cleanStringValue(String(channelValues[name])));
+        } else {
+          unsupported.add(name);
         }
       });
+      setUnsupportedNames(unsupported);
     } catch (e: any) {
       setError(e.message || 'Failed to load channel values');
     }
@@ -194,23 +200,29 @@ export const RuntimeView = observer(({
           const channelValues = result.result?.channels || {};
           const readonlyList: string[] = result.result?.readonly || [];
 
-          // Build channel list from C++ response + schema metadata, excluding unsupported
+          // Build channel list from C++ response + schema metadata
           const returnedChannels = Object.keys(channelValues)
-            .filter((name) => channelValues[name] !== 'unsupported')
             .map((name) => channelsByName.get(name))
             .filter((ch): ch is TemplateChannel => !!ch);
 
           const names = returnedChannels.map((ch) => ch.name);
           const newCells = createCells(returnedChannels, translations, i18n.language, handleWrite);
           applyReadonly(newCells, readonlyList);
+          const unsupported = new Set<string>();
           newCells.forEach((cell) => {
-            cell.receiveValue(cleanStringValue(String(channelValues[cell.controlId])));
+            const val = channelValues[cell.controlId];
+            if (val !== 'unsupported') {
+              cell.receiveValue(cleanStringValue(String(val)));
+            } else {
+              unsupported.add(cell.controlId);
+            }
           });
 
           cellsRef.current = newCells;
           channelNamesRef.current = names;
           setCells(newCells);
           setChannelNames(names);
+          setUnsupportedNames(unsupported);
         } catch (e: any) {
           if (!cancelled) setError(e.message || 'Failed to load channel values');
         }
@@ -278,10 +290,17 @@ export const RuntimeView = observer(({
       <div className="deviceSettingsEditor-topGroupContent">
         {cells.map((cell) => (
           <div key={cell.id} className="deviceSettingsEditor-parameter">
-            <CellContent
-              cell={cell}
-              hideHistory={true}
-            />
+            {unsupportedNames.has(cell.controlId) ? (
+              <div className="deviceCell deviceCell-error">
+                <div className="deviceCell-name">{cell.name}</div>
+                <span>-</span>
+              </div>
+            ) : (
+              <CellContent
+                cell={cell}
+                hideHistory={true}
+              />
+            )}
           </div>
         ))}
       </div>
