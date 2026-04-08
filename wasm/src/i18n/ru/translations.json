@@ -18,6 +18,8 @@
          "scanning": "Сканирование {{message}}…",
          "boot-scan": "Найти устройства в режиме загрузчика",
          "boot-scanning": "Поиск устройств в режиме загрузчика {{message}}…",
+         "boot-scan-broadcast": "Быстрый поиск устройств в режиме загрузчика {{message}}…",
+         "boot-scan-cache": "Проверка известных устройств {{message}}…",
          "found-devices_one": "Найдено {{count}} устройство",
          "found-devices_few": "Найдено {{count}} устройства",
          "found-devices_many": "Найдено {{count}} устройств",

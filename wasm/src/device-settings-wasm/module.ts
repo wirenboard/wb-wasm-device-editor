@@ -9,6 +9,7 @@ export const useModule = (isOffline: boolean = false) => {
     scanCount: number;
     bootScanMessage: string;
     bootScanCount: number;
+    bootScanType: string;
     portScan: PortScan;
     bootScan: any;
     moduleInitialized: boolean;
@@ -17,6 +18,7 @@ export const useModule = (isOffline: boolean = false) => {
     scanCount: 0,
     bootScanMessage: '',
     bootScanCount: 0,
+    bootScanType: '',
     portScan: null,
     bootScan: null,
     moduleInitialized: false,
@@ -42,8 +44,9 @@ export const useModule = (isOffline: boolean = false) => {
     const bootScan = new BootScan((status) =>
       setModuleState((prevState) => ({
         ...prevState,
-        bootScanMessage: status.options ? `(${status.options} #${status.slaveId})` : '',
+        bootScanMessage: status.options ? `(${status.options}${status.slaveId ? ' #' + status.slaveId : ''})` : '',
         bootScanCount: status.count,
+        bootScanType: status.type || '',
       })),
     );
 
@@ -101,9 +104,9 @@ export const useModule = (isOffline: boolean = false) => {
     moduleState.bootScan?.stop();
   }, [moduleState.bootScan]);
 
-  const readDeviceInfo = useCallback(async (cfg: any) => {
+  const findDevice = useCallback(async (cfg: any) => {
     await initializeModule();
-    return moduleState.bootScan.readDeviceInfo(cfg);
+    return moduleState.bootScan.findDevice(cfg);
   }, [initializeModule, moduleState.bootScan]);
 
   const loadConfig = useCallback(
@@ -174,11 +177,12 @@ export const useModule = (isOffline: boolean = false) => {
     bootScan,
     stopScan,
     stopBootScan,
-    readDeviceInfo,
+    findDevice,
     scanMessage: moduleState.scanMessage,
     scanCount: moduleState.scanCount,
     bootScanMessage: moduleState.bootScanMessage,
     bootScanCount: moduleState.bootScanCount,
+    bootScanType: moduleState.bootScanType,
     bootScanProgress: moduleState.bootScan?.progress,
     loadConfig,
     configGetDeviceTypes,

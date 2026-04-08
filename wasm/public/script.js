@@ -190,11 +190,27 @@ class ScanBase {
     parityIndex = 0;
     slaveId = 0;
     progress = 0;
-    count = 0;
     stopped = false;
 
     constructor(callback) {
         this.callback = callback;
+    }
+
+    loadCache() {
+        this.cache = JSON.parse(localStorage.getItem('scanCache')) || {};
+    }
+
+    updateCache() {
+        this.loadCache();
+
+        for (let i = 0; i < this.devices.length; i++) {
+            this.cache[this.devices[i].cfg.slave_id] = {
+                baud_rate: this.devices[i].cfg.baud_rate,
+                parity: this.devices[i].cfg.parity
+            };
+        }
+
+        localStorage.setItem('scanCache', JSON.stringify(this.cache));
     }
 
     updateStatus() {
@@ -203,8 +219,9 @@ class ScanBase {
 
         let status = {
             progress: Math.round(this.progress),
-            count: this.count,
+            count: this.devices.length,
             slaveId: this.slaveId,
+            type: this.type
         };
 
         if (this.progress < 100)
@@ -252,21 +269,131 @@ class BootScan extends ScanBase {
 
     async readDeviceInfo(cfg) {
         const signature = await this.request(200, 20, cfg);
+
+        if (signature.error)
+            return null;
+
         const version = await this.request(250, 16, cfg);
         return {
             device_signature: this.parseString(signature.result?.response),
-            fw: {version: this.parseString(version.result?.response)},
+            fw: { version: this.parseString(version.result?.response) },
+            cfg: cfg
         };
     }
 
-    async exec() {
-        let maxSlaveId = 247;
-        let step = 100 / this.baudRate.length / this.parity.length / maxSlaveId;
-        let devices = new Array();
+    async deviceData(slaveId) {
+        return {
+            slave_id: slaveId ?? this.slaveId,
+            bootloader_mode: true,
+            cfg: {
+                slave_id: this.slaveId,
+                baud_rate: this.baudRate[this.baudRateIndex],
+                parity: this.parity[this.parityIndex],
+                data_bits: 8,
+                stop_bits: 2
+            },
+            fw_signature: await this.readSignature()
+        };
+    }
 
+    async findDevice(cfg) {
+        const result = await this.readDeviceInfo(cfg);
+
+        if (result)
+            return result;
+
+        for (let i = 0; i < this.baudRate.length; i++) {
+            for (let j = 0; j < this.parity.length; j++) {
+                if (this.baudRate[i] != cfg.baud_rate || this.parity[j] != cfg.parity) {
+                    const result = await this.readDeviceInfo({ ...cfg, baud_rate: this.baudRate[i], parity: this.parity[j] });
+                    if (result)
+                        return result;
+                }
+            }
+        }
+
+        throw new Error('Device not responding after firmware restore');
+    }
+
+    async broadcastScan() {
+        const step = 100 / this.baudRate.length / this.parity.length;
+
+        this.type = 'broadcast';
         this.baudRateIndex = 0;
         this.progress = 0;
-        this.count = 0;
+        this.slaveId = 0;
+        this.stopped = false;
+
+        while (this.baudRateIndex < this.baudRate.length && !this.stopped) {
+            this.parityIndex = 0;
+
+            while (this.parityIndex < this.parity.length && !this.stopped) {
+                this.updateStatus();
+                this.progress += step;
+
+                if (await this.bootMode()) {
+                    this.devices.push(await this.deviceData(0));
+                    this.updateStatus();
+                    return;
+                }
+
+                this.parityIndex++;
+            }
+
+            this.baudRateIndex++;
+        }
+    }
+
+    async cacheScan() {
+        const items = Object.entries(this.cache);
+
+        if (!items.length)
+            return;
+
+        const step = 100 / items.length;
+
+        this.type = 'cache';
+        this.progress = 0;
+        this.stopped = false;
+
+        for (const [slaveId, cfg] of items) {
+            if (this.stopped)
+                break;
+
+            this.baudRateIndex = this.baudRate.indexOf(cfg.baud_rate);
+            this.parityIndex = this.parity.indexOf(cfg.parity);
+            this.slaveId = Number(slaveId);
+
+            this.updateStatus();
+            this.progress += step;
+
+            if (await this.bootMode()) {
+                this.devices.push(await this.deviceData());
+                continue;
+            }
+
+            if (cfg.baud_rate == 9600 && cfg.parity == 'N')
+                continue;
+
+            this.baudRateIndex = 0;
+            this.parityIndex = 0;
+
+            if (!(await this.bootMode()))
+                continue;
+
+            this.devices.push(await this.deviceData());
+        }
+
+        this.updateStatus();
+    }
+
+    async fullScan() {
+        let maxSlaveId = 247;
+        let step = 100 / this.baudRate.length / this.parity.length / maxSlaveId;
+
+        this.type = 'full';
+        this.baudRateIndex = 0;
+        this.progress = 0;
         this.stopped = false;
 
         while (this.baudRateIndex < this.baudRate.length && !this.stopped) {
@@ -277,23 +404,13 @@ class BootScan extends ScanBase {
                     this.updateStatus();
                     this.progress += step;
 
+                    if (this.devices.some(d => d.slave_id === this.slaveId))
+                        continue;
+
                     if (!(await this.bootMode()))
                         continue;
 
-                    devices.push({
-                        slave_id: this.slaveId,
-                        bootloader_mode: true,
-                        cfg: {
-                            slave_id: this.slaveId,
-                            baud_rate: this.baudRate[this.baudRateIndex],
-                            parity: this.parity[this.parityIndex],
-                            data_bits: 8,
-                            stop_bits: 2
-                        },
-                        fw_signature: await this.readSignature()
-                    });
-
-                    this.count = devices.length;
+                    this.devices.push(await this.deviceData());
                 }
 
                 this.parityIndex++;
@@ -303,7 +420,24 @@ class BootScan extends ScanBase {
         }
 
         this.updateStatus();
-        return { devices: devices };
+    }
+
+    async exec() {
+        this.loadCache();
+        this.devices = new Array();
+
+        await this.broadcastScan();
+
+        if (this.devices.length)
+            return { devices: this.devices };
+
+        if (!this.stopped)
+            await this.cacheScan();
+
+        if (!this.stopped)
+            await this.fullScan();
+
+        return { devices: this.devices };
     }
 
     parseString(hex) {
@@ -337,12 +471,11 @@ class PortScan extends ScanBase {
 
     async exec() {
         let step = 100 / this.baudRate.length / this.parity.length;
-        let devices = new Array();
         let start = true;
 
+        this.devices = new Array();
         this.baudRateIndex = 0;
         this.progress = 0;
-        this.count = 0;
         this.stopped = false;
 
         while (this.baudRateIndex < this.baudRate.length && !this.stopped) {
@@ -353,14 +486,13 @@ class PortScan extends ScanBase {
                 let reply = await this.request(start);
 
                 if (reply.result?.devices?.length) {
-                    reply.result.devices.forEach((device) => devices.push(device));
+                    reply.result.devices.forEach((device) => this.devices.push(device));
                     start = false;
                     continue;
                 }
 
                 this.parityIndex++;
                 this.progress += step;
-                this.count = devices.length;
                 start = true;
             }
 
@@ -368,8 +500,10 @@ class PortScan extends ScanBase {
             start = true;
         }
 
+        this.updateCache();
         this.updateStatus();
-        return { devices: devices };
+
+        return { devices: this.devices };
     }
 }
 

@@ -84,11 +84,12 @@ export const DeviceSettingsWasm = observer(() => {
     bootScan,
     stopScan,
     stopBootScan,
-    readDeviceInfo,
+    findDevice,
     scanMessage,
     scanCount,
     bootScanMessage,
     bootScanCount,
+    bootScanType,
     bootScanProgress,
     loadConfig,
     configGetDeviceTypes,
@@ -261,12 +262,24 @@ export const DeviceSettingsWasm = observer(() => {
       await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus', port: getPortConfig(selectedDev.cfg) });
       tabstore.embeddedSoftware.firmware.updateProgress = 100;
       await new Promise((r) => setTimeout(r, 2500));
-      const info = await readDeviceInfo(selectedDev.cfg);
-      const updatedDevice = { ...selectedDev, ...info, bootloader_mode: false };
-      setDevices((prev) => prev.map((d) =>
-        d.cfg.slave_id === selectedDevice ? updatedDevice : d
-      ));
-      loadDeviceSettings(updatedDevice, configDeviceTypesStore);
+
+      if (selectedDevice !== 0) {
+        const info = await findDevice(selectedDev.cfg);
+        const updatedCfg = info.cfg ? { ...selectedDev.cfg, ...info.cfg } : selectedDev.cfg;
+        const updatedDevice = { ...selectedDev, ...info, cfg: updatedCfg, bootloader_mode: false };
+        setDevices((prev) => prev.map((d) =>
+          d.cfg.slave_id === selectedDevice ? updatedDevice : d
+        ));
+        loadDeviceSettings(updatedDevice, configDeviceTypesStore);
+      } else {
+        // Broadcast restore — rescan to find the device at its real address
+        reset();
+        bootScanRequestedRef.current = false;
+        setIsPortScanning(true);
+        const res = await scan();
+        setIsPortScanning(false);
+        showScanResults(res);
+      }
     } catch (err) {
       tabstore.embeddedSoftware.firmware.updateProgress = null;
       setError(err instanceof Error ? err.message : String(err));
@@ -490,6 +503,7 @@ export const DeviceSettingsWasm = observer(() => {
         bootScanProgress={bootScanProgress ?? 0}
         bootScanMessage={bootScanMessage}
         bootScanCount={bootScanCount}
+        bootScanType={bootScanType}
         bootScanRequestedRef={bootScanRequestedRef}
         onStopBootScan={handleStopBootScan}
       />
@@ -501,7 +515,7 @@ export const DeviceSettingsWasm = observer(() => {
                 .map((device) => ({
                   id: device.cfg.slave_id,
                   label: device.bootloader_mode
-                    ? <span>{device.cfg.slave_id} {device.fw_signature} <WarnIcon style={{ width: 16, height: 16, verticalAlign: 'text-bottom', color: '#d9534f' }} /></span>
+                    ? <span>{device.slave_id === 0 ? '[0]' : device.cfg.slave_id} {device.fw_signature} <WarnIcon style={{ width: 16, height: 16, verticalAlign: 'text-bottom', color: '#d9534f' }} /></span>
                     : `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
                 }))}
               activeTab={activeTab}
