@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.4.0...wb-wasm-device-editor-v1.5.0) (2026-04-08)
+
+
+### Features
+
+* optimize bootloader scan and firmware restore ([#48](https://github.com/wirenboard/wb-wasm-device-editor/issues/48)) ([cc6b72c](https://github.com/wirenboard/wb-wasm-device-editor/commit/cc6b72c95ff714079ff9116ded9d8b65b5aff206))
+
 ## [1.4.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.3.0...wb-wasm-device-editor-v1.4.0) (2026-04-08)
 
 
