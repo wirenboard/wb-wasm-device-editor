@@ -79,6 +79,7 @@ export const DeviceSettingsWasm = observer(() => {
     loadingProgress,
     selectPort,
     getPortInfo,
+    setExtendedTimeout,
     scan,
     bootScan,
     stopScan,
@@ -102,7 +103,6 @@ export const DeviceSettingsWasm = observer(() => {
 
   const [deviceFwVersion, setDeviceFwVersion] = useState<string | null>(null);
   const [portName, setPortName] = useState<string | null>(null);
-  const [portHexId, setPortHexId] = useState<string | null>(null);
   const [multiplePortsAvailable, setMultiplePortsAvailable] = useState(false);
   const [saveCounter, setSaveCounter] = useState(0);
   const [portError, setPortError] = useState<string | null>(null);
@@ -114,7 +114,6 @@ export const DeviceSettingsWasm = observer(() => {
     try {
       const info = await getPortInfo();
       setPortName(info.name);
-      setPortHexId(info.hexId);
       setMultiplePortsAvailable(info.matchingCount > 1);
     } catch {}
   }, [getPortInfo]);
@@ -259,6 +258,7 @@ export const DeviceSettingsWasm = observer(() => {
   const [handleRestore, isRestoring] = useAsyncAction(async () => {
     try {
       const selectedDev = getDevice(selectedDevice);
+      setExtendedTimeout(true);
       await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus', port: getPortConfig(selectedDev.cfg) });
       tabstore.embeddedSoftware.firmware.updateProgress = 100;
       await new Promise((r) => setTimeout(r, 2500));
@@ -283,6 +283,8 @@ export const DeviceSettingsWasm = observer(() => {
     } catch (err) {
       tabstore.embeddedSoftware.firmware.updateProgress = null;
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setExtendedTimeout(false);
     }
   });
 
@@ -586,9 +588,9 @@ export const DeviceSettingsWasm = observer(() => {
                 configGetSchema={configGetSchema}
                 onSaveLocal={saveLocal}
                 onRemoveLocal={() => removeLocal()}
-                onUpdateFirmware={() => tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                onUpdateBootloader={() => tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                onUpdateComponents={() => tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                onUpdateFirmware={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
+                onUpdateBootloader={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
+                onUpdateComponents={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
               />
             )
           )}

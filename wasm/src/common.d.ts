@@ -19,6 +19,7 @@ declare const Module: {
   request: (method: string, params: any) => Promise<any>;
   serial: {
     select: (auto: boolean) => Promise<any>;
+    setExtendedTimeout: (enabled: boolean) => void;
   };
   isReady: Promise<void>;
   loadingProgress: LoadingProgress | null;
