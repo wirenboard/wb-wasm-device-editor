@@ -58,6 +58,20 @@ function createCells(
     if (ch.max !== undefined) {
       cell.setMax(ch.max);
     }
+    if (Array.isArray(ch.enum) && Array.isArray(ch.enum_titles)) {
+      const enumObj: Record<string, Record<string, string>> = {};
+      ch.enum.forEach((val: number | string, i: number) => {
+        const title = ch.enum_titles![i] || String(val);
+        const entry: Record<string, string> = { en: title };
+        for (const [lang, dict] of Object.entries(translations)) {
+          if (lang !== 'en' && dict[title]) {
+            entry[lang] = dict[title];
+          }
+        }
+        enumObj[String(val)] = entry;
+      });
+      cell.setMeta(JSON.stringify({ enum: enumObj }));
+    }
 
     return cell;
   });

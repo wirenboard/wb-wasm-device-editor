@@ -6,8 +6,8 @@ export interface TemplateChannel {
   min?: number;
   max?: number;
   scale?: number;
-  enum?: Record<string, string>;
-  enum_titles?: Record<string, string>;
+  enum?: (number | string)[];
+  enum_titles?: string[];
   address?: number;
   reg_type?: string;
   enabled?: boolean;
