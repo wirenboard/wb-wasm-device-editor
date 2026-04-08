@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.5.0...wb-wasm-device-editor-v1.6.0) (2026-04-08)
+
+
+### Features
+
+* show unsupported channels in runtime view instead of hiding them ([#52](https://github.com/wirenboard/wb-wasm-device-editor/issues/52)) ([d77b27b](https://github.com/wirenboard/wb-wasm-device-editor/commit/d77b27b421ca32ea3622caeed0b813f35fcfda24))
+
 ## [1.5.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.4.0...wb-wasm-device-editor-v1.5.0) (2026-04-08)
 
 
