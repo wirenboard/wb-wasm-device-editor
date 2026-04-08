@@ -574,9 +574,9 @@ export const DeviceSettingsWasm = observer(() => {
                 configGetSchema={configGetSchema}
                 onSaveLocal={saveLocal}
                 onRemoveLocal={() => removeLocal()}
-                onUpdateFirmware={() => tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                onUpdateBootloader={() => tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
-                onUpdateComponents={() => tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))}
+                onUpdateFirmware={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
+                onUpdateBootloader={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
+                onUpdateComponents={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
               />
             )
           )}
