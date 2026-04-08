@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.6.0...wb-wasm-device-editor-v1.6.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* enums in runtime view ([e38d008](https://github.com/wirenboard/wb-wasm-device-editor/commit/e38d0080c6f906fbd4e5fb4c490ff950e88f490b))
+
 ## [1.6.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.5.0...wb-wasm-device-editor-v1.6.0) (2026-04-08)
 
 
