@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.3.0...wb-wasm-device-editor-v1.4.0) (2026-04-08)
+
+
+### Features
+
+* add extended timeout for firmware restore ([#49](https://github.com/wirenboard/wb-wasm-device-editor/issues/49)) ([2a2b471](https://github.com/wirenboard/wb-wasm-device-editor/commit/2a2b471af809628d95724a84b15ae28b5814128b))
+
 ## [1.3.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.2.1...wb-wasm-device-editor-v1.3.0) (2026-04-07)
 
 
