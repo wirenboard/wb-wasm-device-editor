@@ -432,7 +432,7 @@ class BootScan extends ScanBase {
             return { devices: this.devices };
 
         if (!this.stopped)
-           await this.cacheScan();
+            await this.cacheScan();
 
         if (!this.stopped)
             await this.fullScan();
