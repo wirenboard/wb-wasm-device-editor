@@ -23,6 +23,10 @@ class SerialPort {
         alert('Web Serial API is not supported by this browser :(\n\nIt\'s currently supported by Chrome/Chromium, Edge and Opera browsers.');
     }
 
+    setExtendedTimeout(enabled) {
+        this.extendedTimeout = enabled;
+    }
+
     setOptions(baudRate, dataBits, parity, stopBits) {
         switch (true) {
             case baudRate < 4800: this.replyTimeout = 1000; break;
@@ -36,6 +40,9 @@ class SerialPort {
             default: this.options.parity = 'none'; break;
         }
 
+        if (this.extendedTimeout)
+            this.replyTimeout *= 2;
+
         this.options.baudRate = baudRate;
         this.options.dataBits = dataBits;
         this.options.stopBits = stopBits;
@@ -43,12 +50,6 @@ class SerialPort {
 
     _portKey(info) {
         return info.usbVendorId + ':' + info.usbProductId;
-    }
-
-    _portHexId(info) {
-        const vid = info.usbVendorId?.toString(16).padStart(4, '0') ?? '????';
-        const pid = info.usbProductId?.toString(16).padStart(4, '0') ?? '????';
-        return vid + ':' + pid;
     }
 
     _getMatchingPorts(granted) {
@@ -82,11 +83,9 @@ class SerialPort {
         const granted = await navigator.serial.getPorts();
         const matching = this._getMatchingPorts(granted);
         let name = null;
-        let hexId = null;
         if (this.port) {
             const idx = matching.indexOf(this.port);
             name = 'Port ' + (idx >= 0 ? idx + 1 : 1);
-            hexId = this._portHexId(this.port.getInfo());
         }
         return { name, hexId, matchingCount: matching.length };
     }

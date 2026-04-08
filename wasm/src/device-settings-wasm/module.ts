@@ -74,10 +74,14 @@ export const useModule = (isOffline: boolean = false) => {
     await Module.serial.forceSelect();
   }, [initializeModule]);
 
-  const getPortInfo = useCallback(async (): Promise<{ name: string | null; hexId: string | null; matchingCount: number }> => {
+  const getPortInfo = useCallback(async (): Promise<{ name: string | null; matchingCount: number }> => {
     await initializeModule();
     return Module.serial.getPortInfo();
   }, [initializeModule]);
+
+  const setExtendedTimeout = useCallback((enabled: boolean) => {
+    Module.serial.setExtendedTimeout(enabled);
+  }, []);
 
   const scan = useCallback(async (): Promise<Device[]> => {
     await initializeModule();
@@ -165,6 +169,7 @@ export const useModule = (isOffline: boolean = false) => {
     initializeModule,
     selectPort,
     getPortInfo,
+    setExtendedTimeout,
     scan,
     bootScan,
     stopScan,
