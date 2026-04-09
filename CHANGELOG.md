@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.6.1...wb-wasm-device-editor-v1.7.0) (2026-04-09)
+
+
+### Features
+
+* add changelog ([#36](https://github.com/wirenboard/wb-wasm-device-editor/issues/36)) ([581c497](https://github.com/wirenboard/wb-wasm-device-editor/commit/581c4978e73139bd78ff5c6a508357d552ff7945))
+* add extended timeout for firmware restore ([#49](https://github.com/wirenboard/wb-wasm-device-editor/issues/49)) ([2a2b471](https://github.com/wirenboard/wb-wasm-device-editor/commit/2a2b471af809628d95724a84b15ae28b5814128b))
+* add firmware update support ([#42](https://github.com/wirenboard/wb-wasm-device-editor/issues/42)) ([80d5ab9](https://github.com/wirenboard/wb-wasm-device-editor/commit/80d5ab9151a0c16cbbdb8c1123c08d9690fdd8b1))
+* add more USB-TTL chip VID/PID filters ([#57](https://github.com/wirenboard/wb-wasm-device-editor/issues/57)) ([c9b2ffe](https://github.com/wirenboard/wb-wasm-device-editor/commit/c9b2ffee2cd8afcf5d0aba27464dd073d4d86ac8))
+* bootloader device scanning and firmware restore ([#44](https://github.com/wirenboard/wb-wasm-device-editor/issues/44)) ([55ec317](https://github.com/wirenboard/wb-wasm-device-editor/commit/55ec3170587c5920a44455cc85f713d64a6da7c2))
+* optimize bootloader scan and firmware restore ([#48](https://github.com/wirenboard/wb-wasm-device-editor/issues/48)) ([cc6b72c](https://github.com/wirenboard/wb-wasm-device-editor/commit/cc6b72c95ff714079ff9116ded9d8b65b5aff206))
+* show unsupported channels in runtime view instead of hiding them ([#52](https://github.com/wirenboard/wb-wasm-device-editor/issues/52)) ([d77b27b](https://github.com/wirenboard/wb-wasm-device-editor/commit/d77b27b421ca32ea3622caeed0b813f35fcfda24))
+
+
+### Bug Fixes
+
+* add description to package.json to bootstrap release-please ([#33](https://github.com/wirenboard/wb-wasm-device-editor/issues/33)) ([3b8ca90](https://github.com/wirenboard/wb-wasm-device-editor/commit/3b8ca906c1cc1892eab7f46a3c37d05d8f5f8875))
+* enums in runtime view ([#55](https://github.com/wirenboard/wb-wasm-device-editor/issues/55)) ([c43b811](https://github.com/wirenboard/wb-wasm-device-editor/commit/c43b8119551bc1a13f98d2dec4cc269c29655d60))
+* exclude device_type from parameters in deviceSet RPC request ([#45](https://github.com/wirenboard/wb-wasm-device-editor/issues/45)) ([84b8527](https://github.com/wirenboard/wb-wasm-device-editor/commit/84b8527e1aa9d9c17c39de45ba7c5df86f28fb14))
+
 ## [1.6.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.6.0...wb-wasm-device-editor-v1.6.1) (2026-04-08)
 
 
