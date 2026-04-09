@@ -1,16 +1,26 @@
 class SerialPort {
     filters =
       [
+          { usbVendorId: 0x0403, usbProductId: 0x1235 },
           { usbVendorId: 0x0403, usbProductId: 0x6001 },
+          { usbVendorId: 0x0403, usbProductId: 0x6010 },
+          { usbVendorId: 0x0403, usbProductId: 0x6011 },
           { usbVendorId: 0x0403, usbProductId: 0x6014 },
           { usbVendorId: 0x0403, usbProductId: 0x6015 },
+          { usbVendorId: 0x04d8, usbProductId: 0x00dd },
+          { usbVendorId: 0x04d8, usbProductId: 0x00df },
           { usbVendorId: 0x04d9, usbProductId: 0xb534 },
+          { usbVendorId: 0x067b, usbProductId: 0x2303 },
+          { usbVendorId: 0x067b, usbProductId: 0x23a3 },
           { usbVendorId: 0x10c4, usbProductId: 0xea60 },
           { usbVendorId: 0x10c4, usbProductId: 0xea61 },
           { usbVendorId: 0x10c4, usbProductId: 0xea63 },
+          { usbVendorId: 0x10c4, usbProductId: 0xea71 },
+          { usbVendorId: 0x1a86, usbProductId: 0x55d2 },
           { usbVendorId: 0x1a86, usbProductId: 0x55d3 },
+          { usbVendorId: 0x1a86, usbProductId: 0x55d4 },
           { usbVendorId: 0x1a86, usbProductId: 0x7522 },
-          { usbVendorId: 0x1a86, usbProductId: 0x7523 },
+          { usbVendorId: 0x1a86, usbProductId: 0x7523 }
       ];
 
     options = new Object();
