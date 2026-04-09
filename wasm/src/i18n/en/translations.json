@@ -12,7 +12,8 @@
          "add": "Add",
          "refresh": "Refresh",
          "stop": "Stop",
-         "restore": "Restore"
+         "restore": "Restore",
+         "reload": "Reload parameters"
       },
       "labels": {
          "scanning": "Scanning in progress {{message}}…",

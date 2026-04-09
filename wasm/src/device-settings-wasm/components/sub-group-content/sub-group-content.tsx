@@ -12,6 +12,7 @@ export const SubGroupContent = observer((
 ) => {
   const { i18n } = useTranslation();
   const currentLanguage = i18n.language;
+  if (!group.parameters.length && !group.subgroups.length) return null;
   return (
     <div className="deviceSettingsEditor-subGroup">
       {!group.properties.ui_options?.wb?.disable_title && (

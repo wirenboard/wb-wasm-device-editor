@@ -17,6 +17,11 @@ import { SettingsTabContent } from '../tab-content';
 const RUNTIME_VIEW_TAB_ID = 'runtime-view';
 const EMPTY_GROUPS: WbDeviceParameterEditorsGroup[] = [];
 
+function hasVisibleContent(group: WbDeviceParameterEditorsGroup): boolean {
+  return group.parameters.length > 0
+    || group.subgroups.some((sub) => hasVisibleContent(sub));
+}
+
 interface DeviceSettingsViewProps {
   tabstore: any;
   isBusy: boolean;
@@ -29,6 +34,7 @@ interface DeviceSettingsViewProps {
   configGetSchema: any;
   onSaveLocal: () => void;
   onRemoveLocal: () => void;
+  onReload: () => void;
   onUpdateFirmware: () => void;
   onUpdateBootloader: () => void;
   onUpdateComponents: () => void;
@@ -46,6 +52,7 @@ export const DeviceSettingsView = observer(({
   configGetSchema,
   onSaveLocal,
   onRemoveLocal,
+  onReload,
   onUpdateFirmware,
   onUpdateBootloader,
   onUpdateComponents,
@@ -59,7 +66,7 @@ export const DeviceSettingsView = observer(({
   const settingsTabs = useMemo(() => {
     if (!settingsGroups.length) return [];
     return settingsGroups
-      .filter((group) => !!(group.parameters.length + group.subgroups.length))
+      .filter((group) => hasVisibleContent(group))
       .map((group) => ({
         id: group.properties.id,
         label: (
@@ -94,26 +101,35 @@ export const DeviceSettingsView = observer(({
     <>
       <header className="deviceSettingsWasm-header">
         <h3 className="deviceSettingsWasm-title">{tabstore.name}</h3>
-        {isLocal
-          ? (
-            <Button
-              label={t('wasm.buttons.remove-local')}
-              variant="secondary"
-              size="small"
-              disabled={isBusy}
-              onClick={onRemoveLocal}
-            />
-          )
-          : (
-            <Button
-              label={t('wasm.buttons.save-local')}
-              variant="secondary"
-              size="small"
-              disabled={isBusy}
-              onClick={onSaveLocal}
-            />
-          )
-        }
+        <div className="deviceSettingsWasm-headerActions">
+          <Button
+            label={t('wasm.buttons.reload')}
+            variant="secondary"
+            size="small"
+            disabled={isBusy}
+            onClick={onReload}
+          />
+          {isLocal
+            ? (
+              <Button
+                label={t('wasm.buttons.remove-local')}
+                variant="secondary"
+                size="small"
+                disabled={isBusy}
+                onClick={onRemoveLocal}
+              />
+            )
+            : (
+              <Button
+                label={t('wasm.buttons.save-local')}
+                variant="secondary"
+                size="small"
+                disabled={isBusy}
+                onClick={onSaveLocal}
+              />
+            )
+          }
+        </div>
       </header>
       <EmbeddedSoftwarePanel
         embeddedSoftware={tabstore.embeddedSoftware}
@@ -145,7 +161,7 @@ export const DeviceSettingsView = observer(({
               onTabChange={onSettingsTabChange}
             />
             {settingsGroups
-              .filter((group) => !!(group.parameters.length + group.subgroups.length))
+              .filter((group) => hasVisibleContent(group))
               .map((group) => (
                 <TabContent
                   key={group.properties.id}
