@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.0...wb-wasm-device-editor-v1.7.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* UI improvements and bug fixes ([#60](https://github.com/wirenboard/wb-wasm-device-editor/issues/60)) ([d14c95c](https://github.com/wirenboard/wb-wasm-device-editor/commit/d14c95cb4d6120de2a25f3caf5d773c3781e1332))
+
 ## [1.7.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.6.1...wb-wasm-device-editor-v1.7.0) (2026-04-09)
 
 
