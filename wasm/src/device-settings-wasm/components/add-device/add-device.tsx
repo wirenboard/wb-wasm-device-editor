@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Confirm } from '@/components/confirm';
 import { Dropdown, type Option } from '@/components/dropdown';
@@ -9,7 +9,15 @@ import './styles.css';
 export const AddDevice = ({ isOpened, deviceTypes, onSave, onClose }: AddDeviceProps) => {
   const { t } = useTranslation();
 
-  const [device, setDevice] = useState();
+  const defaultDeviceType = useMemo(() => {
+    for (const group of deviceTypes as any[]) {
+      const opt = group.options?.find((o: any) => !o.hidden);
+      if (opt) return opt.value;
+    }
+    return undefined;
+  }, [deviceTypes]);
+
+  const [device, setDevice] = useState<string | undefined>(defaultDeviceType);
   const [cfg, setCfg] = useState<DeviceSettings>({
     slave_id: 1,
     baud_rate: 9600,

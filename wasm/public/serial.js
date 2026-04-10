@@ -97,7 +97,7 @@ class SerialPort {
             const idx = matching.indexOf(this.port);
             name = 'Port ' + (idx >= 0 ? idx + 1 : 1);
         }
-        return { name, hexId, matchingCount: matching.length };
+        return { name, matchingCount: matching.length };
     }
 
     async forceSelect() {

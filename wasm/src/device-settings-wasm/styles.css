@@ -1,3 +1,9 @@
+.page-container {
+    max-height: none;
+    overflow: visible;
+    padding-bottom: 48px;
+}
+
 .deviceSettingsWasm-container {
     width: 100%;
     display: flex;
@@ -6,6 +12,7 @@
 
 .deviceSettingsWasm-aside {
     min-width: 220px;
+    max-width: 350px;
 }
 
 .deviceSettingsWasm-aside--disabled {
@@ -54,6 +61,12 @@
     margin-top: 6px;
 }
 
+.deviceSettingsWasm-headerActions {
+    display: flex;
+    gap: 8px;
+    white-space: nowrap;
+}
+
 .deviceSettingsWasm-headerButton {
     white-space: nowrap;
 }
@@ -73,6 +86,9 @@
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
 }
 
 .deviceSettingsWasm-logo {
@@ -110,6 +126,7 @@
 
     .deviceSettingsWasm-aside {
         min-width: 0;
+        max-width: none;
     }
 
     .deviceSettingsWasm-aside .tabs {

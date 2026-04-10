@@ -215,9 +215,8 @@ export const RuntimeView = observer(({
           const readonlyList: string[] = result.result?.readonly || [];
 
           // Build channel list from C++ response + schema metadata
-          const returnedChannels = Object.keys(channelValues)
-            .map((name) => channelsByName.get(name))
-            .filter((ch): ch is TemplateChannel => !!ch);
+          const returnedChannels = channels
+            .filter((ch) => ch.name in channelValues);
 
           const names = returnedChannels.map((ch) => ch.name);
           const newCells = createCells(returnedChannels, translations, i18n.language, handleWrite);
