@@ -1,7 +1,7 @@
 import { makeObservable, observable } from 'mobx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Device, LoadingProgress } from './types';
 import { WasmFwUpdateProxy } from './fw-update-proxy';
+import type { Device, LoadingProgress } from './types';
 
 export const useModule = (isOffline: boolean = false) => {
   const [moduleState, setModuleState] = useState<{

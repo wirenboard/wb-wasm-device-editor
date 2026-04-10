@@ -89,7 +89,7 @@ test('out-of-range slave_id shows inline error and disables Save', async ({ page
   await getSlaveIdInput(page).fill('900');
 
   await expect(page.locator('.wb-jsonEditor-errorText')).toContainText(
-    'Slave ID must be an integer between 1 and 247'
+    'Slave ID must be an integer between 1 and 247',
   );
   await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
 });
@@ -102,7 +102,7 @@ test('zero slave_id shows inline error', async ({ page }) => {
   await getSlaveIdInput(page).fill('0');
 
   await expect(page.locator('.wb-jsonEditor-errorText')).toContainText(
-    'Slave ID must be an integer between 1 and 247'
+    'Slave ID must be an integer between 1 and 247',
   );
   await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
 });

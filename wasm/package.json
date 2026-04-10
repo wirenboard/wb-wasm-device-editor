@@ -17,7 +17,7 @@
     "@types/react": "18.2.0",
     "@types/react-dom": "18.2.0",
     "@vitejs/plugin-react": "5.0.4",
-    "@wirenboard/eslint": "1.6.0",
+    "@wirenboard/eslint": "1.7.0",
     "eslint": "9.39.1",
     "express": "^5.2.1",
     "path-type": "^6.0.0",

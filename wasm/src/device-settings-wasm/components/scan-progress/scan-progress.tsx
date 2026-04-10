@@ -1,3 +1,4 @@
+import { type MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/button';
 import { Checkbox } from '@/components/checkbox';
@@ -13,7 +14,7 @@ interface ScanProgressProps {
   bootScanMessage: string;
   bootScanCount: number;
   bootScanType: string;
-  bootScanRequestedRef: React.MutableRefObject<boolean>;
+  bootScanRequestedRef: MutableRefObject<boolean>;
   onStopBootScan: () => void;
 }
 
@@ -37,12 +38,16 @@ export const ScanProgress = ({
       <>
         <Progress value={progress} caption={progress.toFixed() + '%'} />
         <div className="deviceSettingsWasm-scanning">{t('wasm.labels.scanning', { message: scanMessage })}</div>
-        {!!scanCount && <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: scanCount })}…</div>}
+        {!!scanCount && (
+          <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: scanCount })}…</div>
+        )}
         <div className="deviceSettingsWasm-scanActions">
           <Checkbox
             checked={bootScanRequestedRef.current}
             title={t('wasm.labels.boot-scan')}
-            onChange={(checked) => { bootScanRequestedRef.current = checked; }}
+            onChange={(checked) => {
+              bootScanRequestedRef.current = checked;
+            }}
           />
         </div>
       </>
@@ -53,7 +58,7 @@ export const ScanProgress = ({
     const labelKey = {
       broadcast: 'wasm.labels.boot-scan-broadcast',
       cache: 'wasm.labels.boot-scan-cache',
-      full: 'wasm.labels.boot-scanning'
+      full: 'wasm.labels.boot-scanning',
     }[bootScanType] || 'wasm.labels.boot-scanning';
     const label = t(labelKey, { message: bootScanMessage });
 
@@ -61,7 +66,9 @@ export const ScanProgress = ({
       <>
         <Progress value={bootScanProgress} caption={bootScanProgress.toFixed() + '%'} />
         <div className="deviceSettingsWasm-scanning">{label}</div>
-        {!!bootScanCount && <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: bootScanCount })}…</div>}
+        {!!bootScanCount && (
+          <div className="deviceSettingsWasm-scanning">{t('wasm.labels.found-devices', { count: bootScanCount })}…</div>
+        )}
         <div className="deviceSettingsWasm-scanActions">
           <Button label={t('wasm.buttons.stop')} size="small" variant="secondary" onClick={onStopBootScan} />
         </div>

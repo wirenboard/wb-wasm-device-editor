@@ -150,7 +150,11 @@ export const DeviceSettingsView = observer(({
           {t('device-manager.errors.duplicate-slave-id')}
         </Alert>
       )}
-      <div className={classNames('deviceSettingsEditor', 'deviceSettingsEditor-desktop', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
+      <div
+        className={classNames('deviceSettingsEditor', 'deviceSettingsEditor-desktop', {
+          'deviceSettingsWasm-aside--disabled': isBusy,
+        })}
+      >
         <JsonSchemaEditor store={schemaStore.commonParams} translator={translator} />
         {MakeEditors(schemaStore.topLevelGroup.parameters, translator)}
         {allTabs.length > 0 && (

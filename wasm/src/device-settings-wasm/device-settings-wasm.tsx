@@ -2,16 +2,16 @@ import classNames from 'classnames';
 import { autorun } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAsyncAction } from '@/utils/async-action';
 import { useTranslation } from 'react-i18next';
-import { Alert } from '@/components/alert';
 import WarnIcon from '@/assets/icons/warn.svg';
+import { Alert } from '@/components/alert';
 import { Button } from '@/components/button';
 import { Dropdown, type Option } from '@/components/dropdown';
 import { Loader } from '@/components/loader';
 import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
+import { useAsyncAction } from '@/utils/async-action';
 import { setReactLocale } from '~/react-directives/locale';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
@@ -24,7 +24,7 @@ import type { Device } from './types';
 import './styles.css';
 
 export const DeviceSettingsWasm = observer(() => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [language, setLanguage] = useState(localStorage.getItem('language') || 'en');
   const [devices, setDevices] = useState<Device[]>([]);
   const [tabstore, setTabstore] = useState(null);
@@ -82,7 +82,6 @@ export const DeviceSettingsWasm = observer(() => {
     setExtendedTimeout,
     scan,
     bootScan,
-    stopScan,
     stopBootScan,
     findDevice,
     scanMessage,
@@ -103,7 +102,6 @@ export const DeviceSettingsWasm = observer(() => {
 
   const [deviceFwVersion, setDeviceFwVersion] = useState<string | null>(null);
   const [portName, setPortName] = useState<string | null>(null);
-  const [multiplePortsAvailable, setMultiplePortsAvailable] = useState(false);
   const [saveCounter, setSaveCounter] = useState(0);
   const [portError, setPortError] = useState<string | null>(null);
   const [isPortScanning, setIsPortScanning] = useState(false);
@@ -114,7 +112,6 @@ export const DeviceSettingsWasm = observer(() => {
     try {
       const info = await getPortInfo();
       setPortName(info.name);
-      setMultiplePortsAvailable(info.matchingCount > 1);
     } catch {}
   }, [getPortInfo]);
 
@@ -259,7 +256,11 @@ export const DeviceSettingsWasm = observer(() => {
     try {
       const selectedDev = getDevice(selectedDevice);
       setExtendedTimeout(true);
-      await fwUpdateProxy.Restore({ slave_id: selectedDevice, protocol: 'modbus', port: getPortConfig(selectedDev.cfg) });
+      await fwUpdateProxy.Restore({
+        slave_id: selectedDevice,
+        protocol: 'modbus',
+        port: getPortConfig(selectedDev.cfg),
+      });
       tabstore.embeddedSoftware.firmware.updateProgress = 100;
       await new Promise((r) => setTimeout(r, 2500));
 
@@ -268,7 +269,7 @@ export const DeviceSettingsWasm = observer(() => {
         const updatedCfg = info.cfg ? { ...selectedDev.cfg, ...info.cfg } : selectedDev.cfg;
         const updatedDevice = { ...selectedDev, ...info, cfg: updatedCfg, bootloader_mode: false };
         setDevices((prev) => prev.map((d) =>
-          d.cfg.slave_id === selectedDevice ? updatedDevice : d
+          d.cfg.slave_id === selectedDevice ? updatedDevice : d,
         ));
         loadDeviceSettings(updatedDevice, configDeviceTypesStore);
       } else {
@@ -444,12 +445,23 @@ export const DeviceSettingsWasm = observer(() => {
               {t('wasm.sw.update-available')}
             </a>
           )}
-          <Button label={t('wasm.buttons.add-device')} variant="secondary" onClick={() => setIsModalOpened(true)} disabled={isBusy} />
-          <Button label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')} variant="secondary" onClick={handleSelectPort} disabled={isBusy} />
-          <Button label={t('wasm.buttons.scan')} onClick={handleScan} disabled={isBusy} />
+          <Button
+            label={t('wasm.buttons.add-device')}
+            variant="secondary"
+            disabled={isBusy}
+            onClick={() => setIsModalOpened(true)}
+          />
+          <Button
+            label={portName ? `${t('wasm.buttons.select')} (${portName})` : t('wasm.buttons.select')}
+            variant="secondary"
+            disabled={isBusy}
+            onClick={handleSelectPort}
+          />
+          <Button label={t('wasm.buttons.scan')} disabled={isBusy} onClick={handleScan} />
           <Button
             label={t('wasm.buttons.save')}
-            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate || slaveIdInvalid || isBusy || isSaving}
+            disabled={!tabstore || !allDevices.length || tabstore?.slaveIdIsDuplicate
+              || slaveIdInvalid || isBusy || isSaving}
             variant="primary"
             isLoading={isSaving}
             onClick={handleSave}
@@ -507,96 +519,115 @@ export const DeviceSettingsWasm = observer(() => {
         bootScanRequestedRef={bootScanRequestedRef}
         onStopBootScan={handleStopBootScan}
       />
-      {!isPortScanning && !isBootScanning && <main className="deviceSettingsWasm-container">
-        <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
-          {!!(devices.length || manualDevices.length) && (
-            <Tabs
-              items={allDevices
-                .map((device) => ({
-                  id: device.cfg.slave_id,
-                  label: device.bootloader_mode
-                    ? <span>{device.slave_id === 0 ? '[0]' : device.cfg.slave_id} {device.fw_signature} <WarnIcon style={{ width: 16, height: 16, verticalAlign: 'text-bottom', color: '#d9534f' }} /></span>
-                    : `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
-                }))}
-              activeTab={activeTab}
-              onTabChange={(id: number) => {
-                if (isBusy) return;
-                const device = getDevice(id);
-                setSelectedDevice(id);
-                if (!device.bootloader_mode) {
-                  loadDeviceSettings(device, configDeviceTypesStore);
-                } else {
-                  const store = new DeviceTabStore(
-                    { slave_id: String(device.cfg.slave_id) },
-                    '',
-                    configDeviceTypesStore,
-                    fwUpdateProxy,
-                    { LoadConfig: () => Promise.resolve({}) },
-                  );
-                  setTabstore(store);
-                }
-              }}
-            />
-          )}
+      {!isPortScanning && !isBootScanning && (
+        <main className="deviceSettingsWasm-container">
+          <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
+            {!!(devices.length || manualDevices.length) && (
+              <Tabs
+                items={allDevices
+                  .map((device) => ({
+                    id: device.cfg.slave_id,
+                    label: device.bootloader_mode
+                      ? (
+                        <span>
+                          {device.slave_id === 0 ? '[0]' : device.cfg.slave_id}
+                          {device.fw_signature} <WarnIcon className="deviceSettingsWasm-warnIcon" />
+                        </span>
+                      )
+                      : `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
+                  }))}
+                activeTab={activeTab}
+                onTabChange={(id: number) => {
+                  if (isBusy) return;
+                  const device = getDevice(id);
+                  setSelectedDevice(id);
+                  if (!device.bootloader_mode) {
+                    loadDeviceSettings(device, configDeviceTypesStore);
+                  } else {
+                    const store = new DeviceTabStore(
+                      { slave_id: String(device.cfg.slave_id) },
+                      '',
+                      configDeviceTypesStore,
+                      fwUpdateProxy,
+                      { LoadConfig: () => Promise.resolve({}) },
+                    );
+                    setTabstore(store);
+                  }
+                }}
+              />
+            )}
 
-        </aside>
-        <section className="deviceSettingsWasm-content">
-          {error && (
-            <Alert
-              className="deviceSettingsWasm-alert"
-              variant="danger"
-            >
-              {t('device-manager.errors.load-registers', { error })}
-            </Alert>
-          )}
-          {(() => {
-            const selectedDev = getDevice(selectedDevice);
-            if (selectedDev?.bootloader_mode && tabstore) {
-              return (
-                <BootloaderDeviceView
-                  selectedDevice={selectedDevice}
-                  fwSignature={selectedDev.fw_signature}
-                  embeddedSoftware={tabstore.embeddedSoftware}
-                  isRestoring={isRestoring}
-                  onRestore={handleRestore}
-                />
-              );
-            }
-            return null;
-          })()}
-          {isConfigLoading ? (
-            <div className="deviceSettingsWasm-loaderWrapper">
-              <Loader caption={t('device-manager.labels.reading-parameters')} />
-            </div>
-          ) : (
-            !allDevices.length && !isPortScanning && moduleInitialized ? (
-              <div className="deviceSettingsWasm-emptyState">
-                <Alert variant="info">
-                  {t('wasm.labels.empty-state')}
-                </Alert>
+          </aside>
+          <section className="deviceSettingsWasm-content">
+            {error && (
+              <Alert
+                className="deviceSettingsWasm-alert"
+                variant="danger"
+              >
+                {t('device-manager.errors.load-registers', { error })}
+              </Alert>
+            )}
+            {(() => {
+              const selectedDev = getDevice(selectedDevice);
+              if (selectedDev?.bootloader_mode && tabstore) {
+                return (
+                  <BootloaderDeviceView
+                    selectedDevice={selectedDevice}
+                    fwSignature={selectedDev.fw_signature}
+                    embeddedSoftware={tabstore.embeddedSoftware}
+                    isRestoring={isRestoring}
+                    onRestore={handleRestore}
+                  />
+                );
+              }
+              return null;
+            })()}
+            {isConfigLoading ? (
+              <div className="deviceSettingsWasm-loaderWrapper">
+                <Loader caption={t('device-manager.labels.reading-parameters')} />
               </div>
             ) : (
-              <DeviceSettingsView
-                tabstore={tabstore}
-                isBusy={isBusy}
-                isLocal={manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)}
-                deviceFwVersion={deviceFwVersion}
-                saveCounter={saveCounter}
-                deviceCfg={{ ...getDevice().cfg, device_type: tabstore?.deviceType }}
-                deviceLoad={deviceLoad}
-                save={save}
-                configGetSchema={configGetSchema}
-                onSaveLocal={saveLocal}
-                onRemoveLocal={() => removeLocal()}
-                onReload={() => loadDeviceSettings(getDevice(), configDeviceTypesStore)}
-                onUpdateFirmware={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
-                onUpdateBootloader={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
-                onUpdateComponents={() => { setExtendedTimeout(true); tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg)).finally(() => setExtendedTimeout(false)); }}
-              />
-            )
-          )}
-        </section>
-      </main>}
+              !allDevices.length && !isPortScanning && moduleInitialized ? (
+                <div className="deviceSettingsWasm-emptyState">
+                  <Alert variant="info">
+                    {t('wasm.labels.empty-state')}
+                  </Alert>
+                </div>
+              ) : (
+                <DeviceSettingsView
+                  tabstore={tabstore}
+                  isBusy={isBusy}
+                  isLocal={manualDevices.map((device) => device.cfg.slave_id).includes(selectedDevice)}
+                  deviceFwVersion={deviceFwVersion}
+                  saveCounter={saveCounter}
+                  deviceCfg={{ ...getDevice().cfg, device_type: tabstore?.deviceType }}
+                  deviceLoad={deviceLoad}
+                  save={save}
+                  configGetSchema={configGetSchema}
+                  onSaveLocal={saveLocal}
+                  onRemoveLocal={() => removeLocal()}
+                  onReload={() => loadDeviceSettings(getDevice(), configDeviceTypesStore)}
+                  onUpdateFirmware={() => {
+                    setExtendedTimeout(true);
+                    tabstore.embeddedSoftware.startFirmwareUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))
+                      .finally(() => setExtendedTimeout(false));
+                  }}
+                  onUpdateBootloader={() => {
+                    setExtendedTimeout(true);
+                    tabstore.embeddedSoftware.startBootloaderUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))
+                      .finally(() => setExtendedTimeout(false));
+                  }}
+                  onUpdateComponents={() => {
+                    setExtendedTimeout(true);
+                    tabstore.embeddedSoftware.startComponentsUpdate(tabstore.slaveId, getPortConfig(getDevice().cfg))
+                      .finally(() => setExtendedTimeout(false));
+                  }}
+                />
+              )
+            )}
+          </section>
+        </main>
+      )}
 
       {isModalOpened && (
         <AddDevice

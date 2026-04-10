@@ -20,6 +20,13 @@
     pointer-events: none;
 }
 
+.deviceSettingsWasm-warnIcon {
+    width: 16px;
+    height: 16px;
+    vertical-align: text-bottom;
+    color: #d9534f;
+}
+
 .deviceSettingsWasm-scanning {
     width: 100%;
     text-align: center;

@@ -71,7 +71,9 @@ function throttleModuleData(): Plugin {
           if (!paused) {
             paused = true;
             stream.pause();
-            setTimeout(() => { paused = false; stream.resume(); }, CHUNK_INTERVAL);
+            setTimeout(() => {
+              paused = false; stream.resume();
+            }, CHUNK_INTERVAL);
           }
         });
         stream.on('end', () => res.end());
