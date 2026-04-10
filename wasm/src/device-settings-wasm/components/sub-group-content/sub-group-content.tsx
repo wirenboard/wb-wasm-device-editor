@@ -1,6 +1,7 @@
 import classNames from 'classnames';
 import { observer } from 'mobx-react-lite';
 import { useTranslation } from 'react-i18next';
+import { ParamDescription } from '@/components/json-schema-editor';
 import {
   MakeEditors,
 } from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
@@ -13,6 +14,7 @@ export const SubGroupContent = observer((
   const { i18n } = useTranslation();
   const currentLanguage = i18n.language;
   if (!group.parameters.length && !group.subgroups.length) return null;
+  const showDescription = !!group.properties.description;
   return (
     <div className="deviceSettingsEditor-subGroup">
       {!group.properties.ui_options?.wb?.disable_title && (
@@ -24,6 +26,9 @@ export const SubGroupContent = observer((
           'deviceSettingsEditor-subGroupContentWithBorder': !group.properties.ui_options?.wb?.disable_title,
         })}
       >
+        {showDescription && (
+          <ParamDescription description={translator.find(group.properties.description, currentLanguage)} />
+        )}
         {MakeEditors(group.parameters, translator)}
         {group.subgroups.map((sub) => (
           sub.isEnabledByCondition

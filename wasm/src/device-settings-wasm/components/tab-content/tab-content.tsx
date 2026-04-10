@@ -1,5 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useTranslation } from 'react-i18next';
+import { ParamDescription } from '@/components/json-schema-editor';
 import {
   MakeEditors,
 } from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
@@ -16,9 +17,7 @@ export const SettingsTabContent = observer((
   return (
     <div className="deviceSettingsEditor-topGroupContent">
       {showDescription && (
-        <p className="wb-jsonEditor-propertyDescription">
-          {translator.find(group.properties.description, currentLanguage)}
-        </p>
+        <ParamDescription description={translator.find(group.properties.description, currentLanguage)} />
       )}
       {MakeEditors(group.parameters, translator)}
       {group.subgroups.map((sub) => (
