@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.1...wb-wasm-device-editor-v1.7.2) (2026-04-13)
+
+
+### Bug Fixes
+
+* deduplicate channels in runtime view ([#63](https://github.com/wirenboard/wb-wasm-device-editor/issues/63)) ([2c7071d](https://github.com/wirenboard/wb-wasm-device-editor/commit/2c7071d4d3570e29af08679279c639ce8c7dcbd4))
+
 ## [1.7.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.0...wb-wasm-device-editor-v1.7.1) (2026-04-10)
 
 
