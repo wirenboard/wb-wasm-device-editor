@@ -213,9 +213,13 @@ export const RuntimeView = observer(({
           const channelValues = result.result?.channels || {};
           const readonlyList: string[] = result.result?.readonly || [];
 
-          // Build channel list from C++ response + schema metadata
+          // Build channel list from C++ response + schema metadata.
+          // Templates may define duplicate channel names with different conditions
+          // (e.g. WB-MR6C v.3 has two "K1" entries for normal/curtain modes).
+          // C++ returns one value per name, so keep only the first matching entry.
+          const seen = new Set<string>();
           const returnedChannels = channels
-            .filter((ch) => ch.name in channelValues);
+            .filter((ch) => ch.name in channelValues && !seen.has(ch.name) && seen.add(ch.name));
 
           const names = returnedChannels.map((ch) => ch.name);
           const newCells = createCells(returnedChannels, translations, i18n.language, handleWrite);
