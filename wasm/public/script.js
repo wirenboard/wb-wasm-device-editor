@@ -1,5 +1,18 @@
 let wasmReadyResolve;
 
+// Demo build override: force the configurator to advertise (and download)
+// a specific firmware version for the given devices, regardless of what the
+// CDN actually serves. Display name (`model`) is used to override `fwGetInfo`,
+// fw_signature is used to rewrite the .wbfw download URL. Leave empty for
+// normal builds.
+const PINNED_FW_VERSIONS = {
+    // model -> { signature, version }
+    'WBMWAC-v2': { signature: 'mwac0', version: '1.21.0' },
+    'WB-LED':    { signature: 'ledG',  version: '3.6.0' },
+    'MRWL3':     { signature: 'mrwl3G', version: '1.25.0' },
+    'WBMR6':     { signature: 'mr6G',   version: '1.25.0' },
+};
+
 window.Module =
   {
       isReady: new Promise((resolve) => {
@@ -90,6 +103,14 @@ window.Module =
               this.reply = { error: { code: -1, message: 'RPC request timeout' } };
           }
 
+          if (type === 'fwGetInfo' && this.reply && this.reply.result) {
+              const pinned = PINNED_FW_VERSIONS[this.reply.result.model];
+              if (pinned) {
+                  this.reply.result.available_fw = pinned.version;
+                  this.reply.result.fw_has_update = this.reply.result.fw !== pinned.version;
+              }
+          }
+
           return this.reply;
       },
 
@@ -113,8 +134,19 @@ window.Module =
       },
 
       async httpGetBinary(url) {
+          // Demo build override: rewrite firmware .wbfw URL to a pinned version.
+          // Bootloader URLs (/bootloader/by-signature/...) are intentionally not touched.
+          let rewritten = false;
+          for (const model in PINNED_FW_VERSIONS) {
+              const { signature, version } = PINNED_FW_VERSIONS[model];
+              if (signature && url.includes('/fw/by-signature/' + signature + '/') && url.endsWith('.wbfw')) {
+                  url = url.replace(/[^/]+\.wbfw$/, version + '.wbfw');
+                  rewritten = true;
+                  break;
+              }
+          }
           try {
-              const response = await fetch(url);
+              const response = await fetch(url, rewritten ? { cache: 'no-store' } : undefined);
 
               if (!response.ok)
                 throw new Error(`http ${response.status} downloading ${url}`);
