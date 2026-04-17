@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.3](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.2...wb-wasm-device-editor-v1.7.3) (2026-04-17)
+
+
+### Bug Fixes
+
+* skip settings read for devices in bootloader mode ([#65](https://github.com/wirenboard/wb-wasm-device-editor/issues/65)) ([25dd77c](https://github.com/wirenboard/wb-wasm-device-editor/commit/25dd77c81cfba66a82f477482c2664e22b7206a1))
+
 ## [1.7.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.1...wb-wasm-device-editor-v1.7.2) (2026-04-13)
 
 
