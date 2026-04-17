@@ -180,7 +180,19 @@ export const DeviceSettingsWasm = observer(() => {
     if (moduleInitialized) {
       configDeviceTypes().then((store) => {
         if (selectedDevice) {
-          loadDeviceSettings(getDevice(), store);
+          const device = getDevice();
+          if (!device.bootloader_mode) {
+            loadDeviceSettings(device, store);
+          } else {
+            const tabStore = new DeviceTabStore(
+              { slave_id: String(device.cfg.slave_id) },
+              '',
+              store,
+              fwUpdateProxy,
+              { LoadConfig: () => Promise.resolve({}) },
+            );
+            setTabstore(tabStore);
+          }
         }
       });
     }
@@ -227,7 +239,18 @@ export const DeviceSettingsWasm = observer(() => {
     const firstDevice = allDevices.at(0);
     setSelectedDevice(firstDevice?.cfg.slave_id);
     setDevices(allDevices);
-    loadDeviceSettings(firstDevice, configDeviceTypesStore);
+    if (firstDevice && !firstDevice.bootloader_mode) {
+      loadDeviceSettings(firstDevice, configDeviceTypesStore);
+    } else if (firstDevice) {
+      const store = new DeviceTabStore(
+        { slave_id: String(firstDevice.cfg.slave_id) },
+        '',
+        configDeviceTypesStore,
+        fwUpdateProxy,
+        { LoadConfig: () => Promise.resolve({}) },
+      );
+      setTabstore(store);
+    }
   };
 
   const handleScan = async () => {
@@ -531,7 +554,7 @@ export const DeviceSettingsWasm = observer(() => {
                       ? (
                         <span>
                           {device.slave_id === 0 ? '[0]' : device.cfg.slave_id}
-                          {device.fw_signature} <WarnIcon className="deviceSettingsWasm-warnIcon" />
+                          {' '}{device.fw_signature} <WarnIcon className="deviceSettingsWasm-warnIcon" />
                         </span>
                       )
                       : `${device.cfg.slave_id} ${configDeviceTypesStore?.getName(getType(device))}`,
