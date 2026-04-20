@@ -19,6 +19,9 @@ export const configI18n = () => {
     },
     ns: ['translations'],
     defaultNS: 'translations',
+    interpolation: {
+      escapeValue: false,
+    },
     react: {
       transSupportBasicHtmlNodes: true,
     },

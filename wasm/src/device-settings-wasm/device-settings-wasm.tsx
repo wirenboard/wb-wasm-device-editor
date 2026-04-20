@@ -410,6 +410,18 @@ export const DeviceSettingsWasm = observer(() => {
 
       // Save other parameters (addressing the device at its current slave_id)
       const { slave_id, device_type, ...parameters } = tabstore.editedData;
+
+      // Filter out readonly parameters that the backend rejects
+      const schema = await configDeviceTypesStore.getSchema(tabstore.deviceType);
+      const deviceTemplate = schema?.device as any;
+      if (deviceTemplate?.parameters) {
+        for (const param of deviceTemplate.parameters) {
+          if (param.readonly) {
+            delete parameters[param.id];
+          }
+        }
+      }
+
       const data = {
         device_type: tabstore.deviceType,
         ...device.cfg,
