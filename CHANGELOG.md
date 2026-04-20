@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.4](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.3...wb-wasm-device-editor-v1.7.4) (2026-04-20)
+
+
+### Bug Fixes
+
+* filter readonly params on save, fix escaped quotes in errors ([#67](https://github.com/wirenboard/wb-wasm-device-editor/issues/67)) ([5b2faa6](https://github.com/wirenboard/wb-wasm-device-editor/commit/5b2faa6bd2789c532aae433d3cfe1fda5e58c8bb))
+
 ## [1.7.3](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.2...wb-wasm-device-editor-v1.7.3) (2026-04-17)
 
 
