@@ -27,6 +27,7 @@
     "vite-plugin-svgr": "^4.5.0"
   },
   "dependencies": {
+    "@cmuav/web-serial-polyfill": "^1.2.0",
     "date-fns": "^4.1.0"
   }
 }
