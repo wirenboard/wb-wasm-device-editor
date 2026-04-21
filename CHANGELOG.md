@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.4...wb-wasm-device-editor-v1.8.0) (2026-04-21)
+
+
+### Features
+
+* add WebUSB polyfill fallback for Android and non-WebSerial browsers ([#69](https://github.com/wirenboard/wb-wasm-device-editor/issues/69)) ([7c95e8f](https://github.com/wirenboard/wb-wasm-device-editor/commit/7c95e8f668d4d5c34ff9428e42d96001107f22f2))
+
 ## [1.7.4](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.3...wb-wasm-device-editor-v1.7.4) (2026-04-20)
 
 
