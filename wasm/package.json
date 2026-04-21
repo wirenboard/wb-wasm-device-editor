@@ -5,6 +5,7 @@
   "description": "Wirenboard WASM-based device editor",
   "scripts": {
     "dev": "vite dev --host",
+    "prebuild": "mkdir -p public/vendor && cp node_modules/@cmuav/web-serial-polyfill/dist/serial.js public/vendor/web-serial-polyfill.js",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "npx eslint --cache --cache-location .eslintcache",
