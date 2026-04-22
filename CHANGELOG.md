@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.0...wb-wasm-device-editor-v1.8.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* try USB device reset before claiming interface on Android ([#71](https://github.com/wirenboard/wb-wasm-device-editor/issues/71)) ([577c2f9](https://github.com/wirenboard/wb-wasm-device-editor/commit/577c2f9309d3e90a6186cdd8c53434a391e4f660))
+
 ## [1.8.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.7.4...wb-wasm-device-editor-v1.8.0) (2026-04-21)
 
 
