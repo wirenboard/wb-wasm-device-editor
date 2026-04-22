@@ -160,7 +160,7 @@ class SerialPort {
         for (let i = 0; i < 100; i++) {
             try {
                 await this.select(false);
-                await this.port.open(this.options);
+                await this.port.open({ ...this.options, resetUsb: true });
                 this.isOpen = true;
             } catch (error) {
                 this.error = error;
