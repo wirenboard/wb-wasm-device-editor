@@ -2,7 +2,6 @@
 .clang-format
 .vscode
 wasm/public/module.*
-wasm/public/vendor/
 wblib/json
 
 # assets

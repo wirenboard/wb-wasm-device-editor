@@ -18,7 +18,6 @@ const PRECACHE_ASSETS = [
   '/img/logo.svg',
   '/img/logo-180.png',
   '/img/logo-192.png',
-  '/vendor/web-serial-polyfill.js',
 ];
 
 // Large assets precached with allSettled (won't block install on slow connections)
