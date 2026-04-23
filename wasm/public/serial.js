@@ -25,29 +25,12 @@ class SerialPort {
 
     options = new Object();
     isOpen = false;
-    _serial = null;
 
-    async init() {
-        if (navigator.serial) {
-            this._serial = navigator.serial;
-            console.log('Using native WebSerial API');
+    constructor() {
+        if (navigator.serial)
             return;
-        }
 
-        if (!navigator.usb) {
-            alert('WebSerial API and WebUSB API is not supported by this browser :(\n\nIt\'s currently supported by Chrome/Chromium, Edge and Opera browsers.');
-            console.error('WebSerial API and WebUSB API is not available');
-            return;
-        }
-
-        try {
-            const { serial } = await import('/vendor/web-serial-polyfill.js');
-            this._serial = serial;
-            console.log('WebSerial not available, using WebUSB polyfill');
-            return;
-        } catch (e) {
-            console.error('Failed to load WebUSB polyfill:', e);
-        }
+        alert('Web Serial API is not supported by this browser :(\n\nIt\'s currently supported by Chrome/Chromium, Edge and Opera browsers.');
     }
 
     setExtendedTimeout(enabled) {
@@ -91,7 +74,7 @@ class SerialPort {
 
     async tryAutoSelect() {
         if (this.port) return;
-        const granted = await this._serial.getPorts();
+        const granted = await navigator.serial.getPorts();
         const matching = this._getMatchingPorts(granted);
         if (matching.length === 1) {
             this.port = matching[0];
@@ -107,7 +90,7 @@ class SerialPort {
 
     async getPortInfo() {
         await this.tryAutoSelect();
-        const granted = await this._serial.getPorts();
+        const granted = await navigator.serial.getPorts();
         const matching = this._getMatchingPorts(granted);
         let name = null;
         if (this.port) {
@@ -118,7 +101,7 @@ class SerialPort {
     }
 
     async forceSelect() {
-        this.port = await this._serial.requestPort({ filters: this.filters });
+        this.port = await navigator.serial.requestPort({ filters: this.filters });
         localStorage.setItem('serialPort', this._portKey(this.port.getInfo()));
     }
 
@@ -127,7 +110,7 @@ class SerialPort {
             return;
 
         // Try to auto-select from already-granted ports
-        const granted = await this._serial.getPorts();
+        const granted = await navigator.serial.getPorts();
         const matching = this._getMatchingPorts(granted);
 
         if (matching.length === 1) {
@@ -149,7 +132,7 @@ class SerialPort {
         }
 
         // Fall back to chooser dialog (needs user gesture)
-        this.port = await this._serial.requestPort({ filters: this.filters });
+        this.port = await navigator.serial.requestPort({ filters: this.filters });
         localStorage.setItem('serialPort', this._portKey(this.port.getInfo()));
     }
 
@@ -160,7 +143,7 @@ class SerialPort {
         for (let i = 0; i < 100; i++) {
             try {
                 await this.select(false);
-                await this.port.open({ ...this.options, resetUsb: true });
+                await this.port.open(this.options);
                 this.isOpen = true;
             } catch (error) {
                 this.error = error;
