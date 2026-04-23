@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.1...wb-wasm-device-editor-v1.8.2) (2026-04-23)
+
+
+### Bug Fixes
+
+* revert WebUSB features ([#73](https://github.com/wirenboard/wb-wasm-device-editor/issues/73)) ([62c22bd](https://github.com/wirenboard/wb-wasm-device-editor/commit/62c22bdf647eb6227bad27434d5edfad9053358f))
+
 ## [1.8.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.0...wb-wasm-device-editor-v1.8.1) (2026-04-22)
 
 
