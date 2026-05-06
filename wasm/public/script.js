@@ -25,8 +25,9 @@ window.Module =
 
       _requestLock: Promise.resolve(),
 
-      onRuntimeInitialized() {
+      async onRuntimeInitialized() {
           this.serial = new SerialPort();
+          await this.serial.init();
           this.loadingProgress = { loaded: this.loadingProgress?.total || 0, total: this.loadingProgress?.total || 0, percent: 100 };
           this._notifyLoading();
           wasmReadyResolve();
