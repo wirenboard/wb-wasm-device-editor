@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.3](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.2...wb-wasm-device-editor-v1.8.3) (2026-05-06)
+
+
+### Bug Fixes
+
+* **sw:** reject HTML responses for /assets/* to defend against CDN cache poisoning ([#76](https://github.com/wirenboard/wb-wasm-device-editor/issues/76)) ([e88350c](https://github.com/wirenboard/wb-wasm-device-editor/commit/e88350ce2ce8ee50fe2fcff6d2f1a0700326854b))
+
 ## [1.8.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.1...wb-wasm-device-editor-v1.8.2) (2026-04-23)
 
 
