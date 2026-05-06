@@ -97,18 +97,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Hashed assets (/assets/*): cache-first (immutable)
+  // Hashed assets (/assets/*): cache-first (immutable).
+  // Defend against CDN SPA-fallback returning text/html for missing assets:
+  // ignore HTML responses (both from cache and network) so the browser sees a
+  // real failure instead of a poisoned MIME type.
   if (url.pathname.startsWith('/assets/')) {
+    const isHtml = (response) =>
+      response && (response.headers.get('content-type') || '').includes('text/html');
     event.respondWith(
-      caches.match(request).then((cached) =>
-        cached || fetch(request).then((response) => {
-          if (response.ok) {
+      caches.match(request).then((cached) => {
+        if (cached && !isHtml(cached)) return cached;
+        return fetch(request).then((response) => {
+          if (response.ok && !isHtml(response)) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }
           return response;
-        }),
-      ),
+        });
+      }),
     );
     return;
   }
