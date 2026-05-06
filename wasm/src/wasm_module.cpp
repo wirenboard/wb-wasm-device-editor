@@ -225,7 +225,10 @@ void PortLoad(const std::string& requestString)
     try {
         THelper helper(requestString, PORT_LOAD_SCHEMA_FILE, "port/Load");
         TRPCDeviceParametersCache parametersCache;
-        TRPCPortLoadModbusSerialClientTask task(helper.Request, OnResult, OnError, parametersCache);
+        auto rpcRequest = ParseRPCPortLoadModbusRequest(helper.Request, parametersCache);
+        rpcRequest->OnResult = OnResult;
+        rpcRequest->OnError = OnError;
+        TRPCPortLoadModbusSerialClientTask task(rpcRequest);
         auto accessHandler = helper.GetAccessHandler();
         task.Run(Port, accessHandler, PolledDevices);
     } catch (const std::exception& e) {
