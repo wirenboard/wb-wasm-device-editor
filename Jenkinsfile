@@ -95,15 +95,17 @@ pipeline {
             }
             agent {
                 docker {
-                    image 'node:latest'
+                    image 'registry.wirenboard.lan/node-playwright:node22-pw1.59.1-chromium'
                     args '--entrypoint="" -u root:root'
                     reuseNode true
                 }
             }
             steps {
                 dir(path: 'wasm') {
-                    sh 'npx playwright install --with-deps chromium'
-                    sh 'npm run test:e2e'
+                    sh '''
+                        export PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+                        npm run test:e2e
+                    '''
                 }
             }
         }
