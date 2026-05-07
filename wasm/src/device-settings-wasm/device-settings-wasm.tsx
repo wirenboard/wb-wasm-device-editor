@@ -112,7 +112,9 @@ export const DeviceSettingsWasm = observer(() => {
     try {
       const info = await getPortInfo();
       setPortName(info.name);
-    } catch {}
+    } catch (err) {
+      setPortError(err instanceof Error ? err.message : String(err));
+    }
   }, [getPortInfo]);
 
   useEffect(() => {

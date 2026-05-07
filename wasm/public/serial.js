@@ -43,11 +43,21 @@ class SerialPort {
         try {
             const { serial } = await import('/vendor/web-serial-polyfill.js');
             this._serial = serial;
-            console.log('WebSerial not available, using WebUSB polyfill');
+            console.log('WebSerial API is not available, using WebUSB API polyfill');
             return;
         } catch (e) {
-            console.error('Failed to load WebUSB polyfill:', e);
+            console.error('Failed to load WebUSB API polyfill:', e);
         }
+    }
+
+    _checkSerial(method) {
+        if (this._serial) return;
+        console.error(method + '() called but _serial is null');
+        console.error('userAgent: ' + navigator.userAgent);
+        console.error('isSecureContext: ' + window.isSecureContext);
+        console.error('navigator.serial: ' + typeof navigator.serial);
+        console.error('navigator.usb: ' + typeof navigator.usb);
+        throw new Error('WebSerial API and WebUSB API is not available, try to refresh page or open it in incognito mode.');
     }
 
     setExtendedTimeout(enabled) {
@@ -91,6 +101,7 @@ class SerialPort {
 
     async tryAutoSelect() {
         if (this.port) return;
+        this._checkSerial('tryAutoSelect');
         const granted = await this._serial.getPorts();
         const matching = this._getMatchingPorts(granted);
         if (matching.length === 1) {
@@ -118,6 +129,7 @@ class SerialPort {
     }
 
     async forceSelect() {
+        this._checkSerial('forceSelect');
         this.port = await this._serial.requestPort({ filters: this.filters });
         localStorage.setItem('serialPort', this._portKey(this.port.getInfo()));
     }
@@ -125,6 +137,8 @@ class SerialPort {
     async select(force) {
         if (this.port && !force)
             return;
+
+        this._checkSerial('select');
 
         // Try to auto-select from already-granted ports
         const granted = await this._serial.getPorts();
