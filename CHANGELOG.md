@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.4](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.3...wb-wasm-device-editor-v1.8.4) (2026-05-07)
+
+
+### Bug Fixes
+
+* **serial:** surface init failure to UI ([#80](https://github.com/wirenboard/wb-wasm-device-editor/issues/80)) ([4d14d8a](https://github.com/wirenboard/wb-wasm-device-editor/commit/4d14d8a837c9da5e252e50d4834367c99a29137a))
+
 ## [1.8.3](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.2...wb-wasm-device-editor-v1.8.3) (2026-05-06)
 
 
