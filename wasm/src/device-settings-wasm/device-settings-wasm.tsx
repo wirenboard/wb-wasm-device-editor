@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import WarnIcon from '@/assets/icons/warn.svg';
 import { Alert } from '@/components/alert';
 import { Button } from '@/components/button';
+import { Confirm } from '@/components/confirm';
 import { Dropdown, type Option } from '@/components/dropdown';
 import { Loader } from '@/components/loader';
 import { Tabs, useTabs } from '@/components/tabs';
@@ -18,6 +19,7 @@ import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
 import { BootloaderDeviceView } from './components/bootloader-device-view';
 import { DeviceSettingsView } from './components/device-settings-view';
+import { ReleaseSwitcher } from './components/release-switcher';
 import { ScanProgress } from './components/scan-progress';
 import { useModule } from './module';
 import type { Device } from './types';
@@ -45,6 +47,23 @@ export const DeviceSettingsWasm = observer(() => {
 
   const [isOffline, setIsOffline] = useState(false);
   const [hasUpdate, setHasUpdate] = useState(false);
+  const isTesting = localStorage.getItem('release') === 'testing';
+  const release = isTesting ? 'testing' : 'stable';
+  const nextRelease = isTesting ? 'stable' : 'testing';
+  const [isReleaseConfirmOpen, setIsReleaseConfirmOpen] = useState(false);
+  const [isTestingAlertVisible, setIsTestingAlertVisible] = useState(true);
+  const applyRelease = () => {
+    localStorage.setItem('release', nextRelease);
+    window.location.reload();
+  };
+
+  useEffect(() => {
+    if (isTesting) {
+      const original = document.title;
+      document.title = `[TESTING] ${original}`;
+      return () => { document.title = original; };
+    }
+  }, [isTesting]);
 
   useEffect(() => {
     const onUpdate = () => setHasUpdate(true);
@@ -534,6 +553,18 @@ export const DeviceSettingsWasm = observer(() => {
       }
       hasRights
     >
+      {isTesting && isTestingAlertVisible && (
+        <Alert
+          className="deviceSettingsWasm-alert"
+          variant="warn"
+          onClose={() => setIsTestingAlertVisible(false)}
+        >
+          {t('wasm.release.testing-banner')}{' '}
+          <a href="#" onClick={(e) => { e.preventDefault(); setIsReleaseConfirmOpen(true); }}>
+            {t('wasm.release.switch-to-stable-link')}
+          </a>.
+        </Alert>
+      )}
       {portError && (
         <Alert
           className="deviceSettingsWasm-alert"
@@ -674,6 +705,18 @@ export const DeviceSettingsWasm = observer(() => {
           onClose={() => setIsModalOpened(false)}
         />
       )}
+      <ReleaseSwitcher nextRelease={nextRelease} onClick={() => setIsReleaseConfirmOpen(true)} />
+      <Confirm
+        isOpened={isReleaseConfirmOpen}
+        heading={t(`wasm.release.switch-to-${nextRelease}-title`)}
+        acceptLabel={t('wasm.release.switch')}
+        cancelLabel={t('wasm.release.cancel')}
+        variant={nextRelease === 'testing' ? 'warn' : 'primary'}
+        confirmCallback={applyRelease}
+        closeCallback={() => setIsReleaseConfirmOpen(false)}
+      >
+        {t(`wasm.release.switch-to-${nextRelease}-text`)}
+      </Confirm>
     </PageLayout>
   );
 });

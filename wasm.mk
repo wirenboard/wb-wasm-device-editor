@@ -71,10 +71,6 @@ SRC = \
 	$(WASM_DIR)/src/wasm_port.cpp                                     \
 	$(WASM_DIR)/src/wasm_module.cpp                                   \
 
-JINJA_TEMPLATES = \
-	$(wildcard $(STABLE_DIR)/templates/config-map*.json.jinja) \
-	$(wildcard $(STABLE_DIR)/templates/config-wb-*.json.jinja) \
-
 OPT = \
 	-fexceptions                                    \
 	-lembind                                        \
@@ -82,8 +78,6 @@ OPT = \
 	-sASYNCIFY_IMPORTS=["emscripten_asm_const_int"] \
 	-sEXPORTED_FUNCTIONS=["_malloc","_free"]        \
 	-sEXPORTED_RUNTIME_METHODS=["HEAPU8","HEAP32"]  \
-
-TEMPLATES = $(JINJA_TEMPLATES:.json.jinja=.json)
 
 all: templates
 # copy assets
@@ -98,11 +92,5 @@ all: templates
 # build module
 	$(CC) -O3 $(addprefix -I, $(INC)) $(SRC) wblib/static/wblib.a -o $(WASM_DIR)/public/module.js --preload-file $(ASSETS_DIR)@/ $(OPT)
 
-templates: $(TEMPLATES)
-	cp $(STABLE_DIR)/templates/config-map*.json $(TEMPLATES_DIR)
-	cp $(STABLE_DIR)/templates/config-wb-*.json $(TEMPLATES_DIR)
-	grep -r '"deprecated"' $(TEMPLATES_DIR) | grep 'true' | awk -F ':' '{print $$1}' | xargs rm
-
-$(TEMPLATES): %.json: %.json.jinja
-	mkdir -p $(TEMPLATES_DIR)
-	j2 -o $(TEMPLATES_DIR)/$(notdir $@) $<
+templates:
+	bash scripts/build-templates.sh $(STABLE_DIR)/templates $(SERIAL_DIR)/templates $(TEMPLATES_DIR)

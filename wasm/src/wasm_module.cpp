@@ -27,7 +27,6 @@ using namespace std::chrono;
 namespace
 {
     const auto GROUP_NAMES_FILE = "groups.json";
-    const auto RELEASE_SUITE = "stable";
 
     const auto COMMON_SCHEMA_FILE = "wb-mqtt-serial-confed-common.schema.json";
     const auto PORTS_SCHEMA_FILE = "wb-mqtt-serial-ports.schema.json";
@@ -48,6 +47,9 @@ namespace
 
     auto Prepare = true;
     auto Port = std::make_shared<TFeaturePort>(std::make_shared<TWASMPort>(), false);
+
+    std::string ReleaseSuite = "stable";
+
     TSerialDeviceFactory DeviceFactory;
     std::list<PSerialDevice> PolledDevices;
 
@@ -123,14 +125,15 @@ namespace
                                                         *DevicesSchemasMap,
                                                         *ProtocolSchemasMap,
                                                         WBMQTT::JSON::Parse(GROUP_NAMES_FILE));
-                TemplateMap->AddTemplatesDir(TEMPLATES_DIR);
+                TemplateMap->AddTemplatesDir(std::string(TEMPLATES_DIR) + "/common");
+                TemplateMap->AddTemplatesDir(std::string(TEMPLATES_DIR) + "/" + ReleaseSuite);
 
                 auto httpClient = std::make_shared<TWASMHttpClient>();
                 FwDownloader = std::make_shared<TFwDownloader>(httpClient);
                 FwState = std::make_shared<TFwUpdateState>(SendFwUpdateState, std::string());
-                // FwState->Reset();
-
                 Prepare = false;
+
+                LOG(Info) << " Release suite: " << ReleaseSuite;
             }
 
             ParseRequest(requestString);
@@ -196,6 +199,11 @@ namespace
 
         SendReply(reply);
     }
+}
+
+void SetReleaseSuite(const std::string& suite)
+{
+    ReleaseSuite = suite;
 }
 
 void ConfigGetDeviceTypes(const std::string& requestString)
@@ -329,7 +337,7 @@ void FwGetInfo(const std::string& requestString)
         THelper helper(requestString, std::string(), "fw-update/GetFirmwareInfo");
         TFwGetFirmwareInfoTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
                                     "modbus",
-                                    RELEASE_SUITE,
+                                    ReleaseSuite,
                                     ParseRPCSerialPortSettings(helper.Request),
                                     FwDownloader,
                                     OnResult,
@@ -350,7 +358,7 @@ void FwUpdate(const std::string& requestString)
                                        "modbus",
                                        helper.Request.get("type", "firmware").asString(),
                                        "wasm",
-                                       RELEASE_SUITE,
+                                       ReleaseSuite,
                                        ParseRPCSerialPortSettings(helper.Request),
                                        FwDownloader,
                                        FwState,
@@ -373,7 +381,7 @@ void FwRestore(const std::string& requestString)
         TFwRestoreTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
                             "modbus",
                             "wasm",
-                            RELEASE_SUITE,
+                            ReleaseSuite,
                             ParseRPCSerialPortSettings(helper.Request),
                             FwDownloader,
                             FwState,
@@ -405,6 +413,7 @@ void FwClearError(const std::string& requestString)
 
 EMSCRIPTEN_BINDINGS(module)
 {
+    emscripten::function("setReleaseSuite", &SetReleaseSuite);
     emscripten::function("configGetDeviceTypes", &ConfigGetDeviceTypes);
     emscripten::function("configGetSchema", &ConfigGetSchema);
     emscripten::function("portLoad", &PortLoad);

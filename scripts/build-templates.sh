@@ -1,8 +1,8 @@
 #!/bin/bash
 
-STABLE_DIR=submodule/wb-mqtt-serial-stable/templates
-TESTING_DIR=submodule/wb-mqtt-serial/templates
-TEMPLATES_DIR=wasm/assets/templates
+STABLE_DIR=$1
+TESTING_DIR=$2
+TEMPLATES_DIR=$3
 
 prepare()
 {
