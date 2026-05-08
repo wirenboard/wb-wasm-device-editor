@@ -1,6 +1,7 @@
 CC = emcc
 
 SERIAL_DIR = submodule/wb-mqtt-serial
+STABLE_DIR = submodule/wb-mqtt-serial-stable
 JSONCPP_DIR = submodule/valijson/thirdparty/jsoncpp-1.9.4
 
 WASM_DIR = wasm
@@ -71,8 +72,8 @@ SRC = \
 	$(WASM_DIR)/src/wasm_module.cpp                                   \
 
 JINJA_TEMPLATES = \
-	$(wildcard $(SERIAL_DIR)/templates/config-map*.json.jinja) \
-	$(wildcard $(SERIAL_DIR)/templates/config-wb-*.json.jinja) \
+	$(wildcard $(STABLE_DIR)/templates/config-map*.json.jinja) \
+	$(wildcard $(STABLE_DIR)/templates/config-wb-*.json.jinja) \
 
 OPT = \
 	-fexceptions                                    \
@@ -98,8 +99,8 @@ all: templates
 	$(CC) -O3 $(addprefix -I, $(INC)) $(SRC) wblib/static/wblib.a -o $(WASM_DIR)/public/module.js --preload-file $(ASSETS_DIR)@/ $(OPT)
 
 templates: $(TEMPLATES)
-	cp $(SERIAL_DIR)/templates/config-map*.json $(TEMPLATES_DIR)
-	cp $(SERIAL_DIR)/templates/config-wb-*.json $(TEMPLATES_DIR)
+	cp $(STABLE_DIR)/templates/config-map*.json $(TEMPLATES_DIR)
+	cp $(STABLE_DIR)/templates/config-wb-*.json $(TEMPLATES_DIR)
 	grep -r '"deprecated"' $(TEMPLATES_DIR) | grep 'true' | awk -F ':' '{print $$1}' | xargs rm
 
 $(TEMPLATES): %.json: %.json.jinja
