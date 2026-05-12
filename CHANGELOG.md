@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.4...wb-wasm-device-editor-v1.9.0) (2026-05-12)
+
+
+### Features
+
+* stable/testing release channel switcher ([#82](https://github.com/wirenboard/wb-wasm-device-editor/issues/82)) ([1caeca0](https://github.com/wirenboard/wb-wasm-device-editor/commit/1caeca002b56625e06fd823a0c7ea39f681dc136))
+
 ## [1.8.4](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.3...wb-wasm-device-editor-v1.8.4) (2026-05-07)
 
 
