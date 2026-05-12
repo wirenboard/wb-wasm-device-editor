@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.9.0...wb-wasm-device-editor-v1.9.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* **ci:** pin Playwright to 1.59.1 to match CI image ([#84](https://github.com/wirenboard/wb-wasm-device-editor/issues/84)) ([2fde114](https://github.com/wirenboard/wb-wasm-device-editor/commit/2fde1142eebeb29efa2029c3f5fb679f2b477c8a))
+
 ## [1.9.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.8.4...wb-wasm-device-editor-v1.9.0) (2026-05-12)
 
 
