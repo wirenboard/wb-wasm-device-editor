@@ -45,6 +45,17 @@
       "sw": {
          "offline": "Без сети",
          "update-available": "Доступна новая версия — перезагрузите"
+      },
+      "release": {
+         "testing-banner": "Внимание, используется testing релиз.",
+         "switch-to-stable-link": "Переключить на stable",
+         "switch-to-testing-link": "Переключить на testing",
+         "switch-to-testing-title": "Переключение на testing релиз",
+         "switch-to-testing-text": "Конфигуратор будет использовать тестовые версии прошивок и шаблонов. Работа может быть нестабильной. Страница перезагрузится.",
+         "switch-to-stable-title": "Переключение на stable релиз",
+         "switch-to-stable-text": "Конфигуратор будет использовать стабильные версии прошивок и шаблонов. Страница перезагрузится.",
+         "cancel": "Отмена",
+         "switch": "Переключить"
       }
    }
 }

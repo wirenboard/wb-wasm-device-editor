@@ -26,6 +26,7 @@ window.Module =
       _requestLock: Promise.resolve(),
 
       async onRuntimeInitialized() {
+          this.setReleaseSuite(localStorage.getItem('release') || 'stable');
           this.serial = new SerialPort();
           await this.serial.init();
           this.loadingProgress = { loaded: this.loadingProgress?.total || 0, total: this.loadingProgress?.total || 0, percent: 100 };

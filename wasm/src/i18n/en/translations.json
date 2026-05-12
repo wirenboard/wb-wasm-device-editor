@@ -44,6 +44,17 @@
       "sw": {
          "offline": "Offline mode",
          "update-available": "New version available — reload"
+      },
+      "release": {
+         "testing-banner": "Attention: using testing release.",
+         "switch-to-stable-link": "Switch to stable",
+         "switch-to-testing-link": "Switch to testing",
+         "switch-to-testing-title": "Switching to testing release",
+         "switch-to-testing-text": "The configurator will use testing versions of firmware and templates. Operation may be unstable. The page will reload.",
+         "switch-to-stable-title": "Switching to stable release",
+         "switch-to-stable-text": "The configurator will use stable versions of firmware and templates. The page will reload.",
+         "cancel": "Cancel",
+         "switch": "Switch"
       }
    }
 }
