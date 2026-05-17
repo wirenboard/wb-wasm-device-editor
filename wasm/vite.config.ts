@@ -112,8 +112,14 @@ export default defineConfig(() => {
     plugins.push(swCachePlugin(), injectScripts);
   }
 
+  const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
+
   return {
     plugins,
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+      __APP_OFFLINE_BUILD__: JSON.stringify(offline),
+    },
     build: {
       outDir: path.resolve(__dirname, offline ? 'dist-offline' : 'dist-configurator'),
       emptyOutDir: true,

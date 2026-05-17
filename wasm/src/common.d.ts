@@ -1,5 +1,10 @@
 import type { LoadingProgress } from './device-settings-wasm/types';
 
+declare global {
+  const __APP_VERSION__: string;
+  const __APP_OFFLINE_BUILD__: boolean;
+}
+
 declare class PortScan {
   constructor(callback: (options: any) => void);
   exec(): Promise<{ devices: any[] }>;

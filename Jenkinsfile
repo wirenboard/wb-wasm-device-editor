@@ -88,6 +88,30 @@ pipeline {
             }
         }
 
+        stage('Build offline single-file') {
+            when {
+                beforeAgent true
+                expression { env.SKIP_AUTO_RELEASE_BUILD != 'true' }
+            }
+            agent {
+                docker {
+                    image 'node:latest'
+                    args '--entrypoint="" -u root:root'
+                    reuseNode true
+                }
+            }
+            steps {
+                dir(path: 'wasm') {
+                    sh 'npm run build:offline'
+                }
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'wasm/dist-offline/index.html', fingerprint: true
+                }
+            }
+        }
+
         stage('E2E tests') {
             when {
                 beforeAgent true
@@ -118,8 +142,24 @@ pipeline {
                 }
             }
             steps {
+                script {
+                    env.WASM_VERSION = sh(
+                        returnStdout: true,
+                        script: "node -p \"require('./wasm/package.json').version\"",
+                    ).trim()
+                }
                 withCredentials([file(credentialsId: 's3cmd-deveditor-config', variable: 'S3CMD_CONFIG')]) {
                     sh 'wbdev user s3cmd -c $S3CMD_CONFIG sync --delete-removed --guess-mime-type --no-mime-magic wasm/dist-configurator/ s3://wb-deveditor-02/'
+                    // Offline single-file: URL stays at /offline/index.html, but
+                    // Content-Disposition makes the browser save it with the
+                    // versioned filename when the user downloads it.
+                    sh '''
+                        wbdev user s3cmd -c $S3CMD_CONFIG put \
+                            --mime-type=text/html \
+                            --add-header="Content-Disposition: attachment; filename=\\"wb-device-editor-${WASM_VERSION}.html\\"" \
+                            wasm/dist-offline/index.html \
+                            s3://wb-deveditor-02/offline/index.html
+                    '''
                 }
             }
         }

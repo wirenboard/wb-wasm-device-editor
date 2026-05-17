@@ -561,6 +561,9 @@ export const DeviceSettingsWasm = observer(() => {
           <a href="https://wirenboard.com" target="_blank">
             <img src="./img/logo-wide.svg" className="deviceSettingsWasm-logo" loading="eager" alt="Wiren Board" />
           </a>
+          <span className="deviceSettingsWasm-version">
+            v{__APP_VERSION__}{__APP_OFFLINE_BUILD__ ? ` ${t('wasm.version.standalone-suffix')}` : ''}
+          </span>
         </div>
       }
       hasRights
