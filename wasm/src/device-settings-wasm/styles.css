@@ -108,6 +108,16 @@
     line-height: 1;
 }
 
+/* Stack vertically on narrow viewports so the version doesn't overlap the
+   bottom-right ReleaseSwitcher link (also position: fixed). */
+@media (max-width: 600px) {
+    .deviceSettingsWasm-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+}
+
 .deviceSettingsWasm-offline,
 .deviceSettingsWasm-update,
 .deviceSettingsWasm-portName {

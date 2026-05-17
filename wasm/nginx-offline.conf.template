@@ -1,0 +1,23 @@
+# Default nginx config baked into the docker image. The single non-default
+# rule: serving /offline/index.html (the standalone single-file build) with
+# Content-Disposition so the browser saves it under a versioned filename
+# instead of rendering the 14 MB HTML inline. The S3/CDN deployment sets
+# the same header via s3cmd at upload time; this config keeps the docker
+# deployment behaving identically.
+#
+# The placeholder below this line is substituted at docker build time from
+# a --build-arg.
+
+server {
+    listen 80 default_server;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    location = /offline/index.html {
+        add_header Content-Disposition 'attachment; filename="wb-device-editor-__VERSION__.html"';
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

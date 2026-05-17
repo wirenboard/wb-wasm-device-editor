@@ -32,6 +32,21 @@ docker build --no-cache --tag wb-wasm-device-editor:latest wasm
 
 После сборки готовые файлы конфигуратора будут находиться в директории `wasm/dist-configurator`.
 
+#### Автономная (standalone) сборка
+
+Один HTML-файл, открываемый по `file://` без HTTP-сервера — для распространения на компьютеры без сети. Внутрь зашиты приложение, WASM-модуль, шаблоны устройств, а также все стабильные и testing прошивки и загрузчики с `fw-releases.wirenboard.com` (загружаются при сборке, кешируются в `wasm/.firmware-cache/`).
+
+Сборка после шагов 1–5 выше:
+```
+docker run --rm -v $(PWD):/src -w /src/wasm node:latest npm run build:offline
+```
+
+Результат: `wasm/dist-offline/index.html` (~14 МБ). Открывается двойным кликом в Chrome/Edge 80+, Firefox 113+, Safari 16.4+ (нужен `DecompressionStream`). WebSerial работает на `file://` в Chromium.
+
+При наличии сети обновление прошивок идёт с `fw-releases.wirenboard.com`, иначе используется встроенная копия. Так же приложение проверяет `https://deveditor.wirenboard.com/sw.js` и показывает баннер, если онлайн-версия новее.
+
+CI публикует автономную версию по адресу `https://deveditor.wirenboard.com/offline/index.html` с заголовком `Content-Disposition`, чтобы браузер сохранял файл как `wb-device-editor-<версия>.html`. Этот же файл включён в `dist-configurator.tar.gz` и в Docker-образ.
+
 #### E2E-тесты
 
 Для запуска E2E-тестов необходимо сначала собрать конфигуратор (шаги 1-5), затем:

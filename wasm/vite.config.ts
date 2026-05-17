@@ -9,6 +9,7 @@ import svgr from 'vite-plugin-svgr';
 import { offlineEmbedPlugin } from './vite-plugin-offline-embed';
 
 const homeuiNodeModules = path.resolve(__dirname, '../submodule/homeui/frontend/node_modules');
+const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
 
 function swCachePlugin(): Plugin {
   return {
@@ -35,13 +36,14 @@ function swCachePlugin(): Plugin {
       }
 
       let sw = fs.readFileSync(swPath, 'utf-8');
+      sw = sw.replace('\'__APP_VERSION__\'', `'${pkg.version}'`);
       sw = sw.replace('\'__CACHE_VERSION__\'', `'${cacheVersion}'`);
       sw = sw.replace(
         '// __HASHED_ASSETS__',
         hashedAssets.map((a) => `  '${a}'`).join(',\n'),
       );
       fs.writeFileSync(swPath, sw);
-      console.log(`[sw-cache-inject] Injected version=${cacheVersion}, ${hashedAssets.length} hashed assets`);
+      console.log(`[sw-cache-inject] Injected version=${pkg.version} cache=${cacheVersion}, ${hashedAssets.length} hashed assets`);
     },
   };
 }
@@ -111,8 +113,6 @@ export default defineConfig(() => {
   } else {
     plugins.push(swCachePlugin(), injectScripts);
   }
-
-  const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
 
   return {
     plugins,

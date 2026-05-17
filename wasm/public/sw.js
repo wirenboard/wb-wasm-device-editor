@@ -1,5 +1,24 @@
+// Both placeholders are substituted at build time by swCachePlugin in
+// vite.config.ts: APP_VERSION ← package.json semver, CACHE_VERSION ← git
+// short hash (or a Date.now() base36 fallback if git isn't on PATH).
+//
+// Backward compatibility: PWA users on older builds detect updates by
+// byte-comparing /sw.js content on reg.update(). The lines below only ADD
+// content vs. the previous shape (still has the same CACHE_VERSION /
+// CACHE_NAME pattern), so the byte diff still triggers their normal
+// install + skipWaiting + controllerchange flow.
+const APP_VERSION = '__APP_VERSION__';
 const CACHE_VERSION = '__CACHE_VERSION__';
 const CACHE_NAME = `wb-device-editor-${CACHE_VERSION}`;
+// The standalone (file://) build can't fetch this file directly: the
+// deveditor.wirenboard.com bucket doesn't send Access-Control-Allow-Origin,
+// so a CORS preflight blocks fetch from an opaque (file://) origin. A
+// <script src=...> request has no preflight, so the standalone loads sw.js
+// that way instead. We mirror the build markers onto `self` (which is the
+// document's window when this file is executed as a regular script) so the
+// standalone's onload handler can read them and detect a redeploy.
+self.__WB_APP_VERSION__ = APP_VERSION;
+self.__WB_BUILD_ID__ = CACHE_VERSION;
 
 // Hashed assets (injected at build time by Vite plugin)
 const HASHED_ASSETS = [

@@ -83,6 +83,33 @@ export const DeviceSettingsWasm = observer(() => {
     return () => window.removeEventListener('wb-fw-mode-changed', onChange);
   }, []);
 
+  // Standalone build only: probe the online configurator's sw.js — the same
+  // file the normal in-browser update path uses. We load it via <script src=>
+  // (no CORS preflight, unlike fetch — the deveditor.wirenboard.com bucket
+  // doesn't send Access-Control-Allow-Origin). sw.js assigns its version
+  // marker to self.__WB_BUILD_ID__ so we can read it after onload.
+  const [remoteVersion, setRemoteVersion] = useState<string | null>(null);
+  useEffect(() => {
+    if (!__APP_OFFLINE_BUILD__) return;
+    const s = document.createElement('script');
+    s.src = `https://deveditor.wirenboard.com/sw.js?ts=${Date.now()}`;
+    const timer = setTimeout(() => s.remove(), 5000);
+    const finish = () => { clearTimeout(timer); s.remove(); };
+    s.onload = () => {
+      const win = window as unknown as { __WB_APP_VERSION__?: string };
+      // Compare the semver from package.json, not the git build hash —
+      // otherwise we'd nag users about every cache-invalidation rebuild
+      // within the same released version.
+      if (win.__WB_APP_VERSION__ && win.__WB_APP_VERSION__ !== __APP_VERSION__) {
+        setRemoteVersion(win.__WB_APP_VERSION__);
+      }
+      finish();
+    };
+    s.onerror = finish;
+    document.head.appendChild(s);
+    return finish;
+  }, []);
+
   useEffect(() => {
     if (!navigator.serviceWorker?.controller) return;
 
@@ -577,6 +604,18 @@ export const DeviceSettingsWasm = observer(() => {
           {t('wasm.release.testing-banner')}{' '}
           <a href="#" onClick={(e) => { e.preventDefault(); setIsReleaseConfirmOpen(true); }}>
             {t('wasm.release.switch-to-stable-link')}
+          </a>.
+        </Alert>
+      )}
+      {remoteVersion && (
+        <Alert className="deviceSettingsWasm-alert" variant="info">
+          {t('wasm.version.update-available', { version: remoteVersion })}{' '}
+          <a href="https://deveditor.wirenboard.com/" target="_blank" rel="noreferrer">
+            {t('wasm.version.open-online')}
+          </a>
+          {' '}/{' '}
+          <a href="https://deveditor.wirenboard.com/offline/index.html" target="_blank" rel="noreferrer">
+            {t('wasm.version.download-standalone')}
           </a>.
         </Alert>
       )}
