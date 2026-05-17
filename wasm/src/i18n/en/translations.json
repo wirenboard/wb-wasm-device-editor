@@ -45,6 +45,9 @@
          "offline": "Offline mode",
          "update-available": "New version available — reload"
       },
+      "offline-fw": {
+         "banner": "Offline mode — using embedded firmware. Updates work, but you won't get the latest versions until you reconnect."
+      },
       "release": {
          "testing-banner": "Attention: using testing release.",
          "switch-to-stable-link": "Switch to stable",

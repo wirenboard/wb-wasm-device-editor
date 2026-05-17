@@ -11,8 +11,12 @@ import type { Plugin } from 'vite';
 // them via DecompressionStream and wires them into Emscripten before
 // running module.js.
 //
-// Also embeds release-versions.yaml + every stable .wbfw/.compfw blob, and
-// wraps Module.httpGetText/httpGetBinary so firmware update works offline.
+// Also embeds the stable firmware + bootloader catalog from
+// fw-releases.wirenboard.com (release-versions.yaml, every stable
+// .wbfw/.compfw, plus every bootloader latest.txt + .wbfw). Module.httpGetText
+// and Module.httpGetBinary are wrapped with a network-first/embed-fallback
+// policy: fetch from the network with a short timeout, fall back to the
+// embedded copy if the fetch fails (offline / no DNS / non-2xx).
 
 const METRIKA_RE = /<!-- Yandex\.Metrika counter -->[\s\S]*?<!-- \/Yandex\.Metrika counter -->\s*/;
 
@@ -25,13 +29,12 @@ const BLOB_ID = {
 } as const;
 
 const FW_BASE_URL = 'https://fw-releases.wirenboard.com/';
+const BUCKET_LIST_URL = 'https://fw-releases.wirenboard.com/__s3_bucket_list';
 const FW_RELEASE_YAML_PATH = 'fw/by-signature/release-versions.yaml';
 const FIRMWARE_CACHE_DIR = path.resolve(__dirname, '.firmware-cache');
 const FW_BLOB_RE = /\.(wbfw|compfw)$/;
+const BOOTLOADER_LATEST_TXT_RE = /^bootloader\/by-signature\/[^/]+\/main\/latest\.txt$/;
 
-// Files we've already embedded inline (gzipped blobs, <style>, or <script>).
-// The sibling-asset walker skips these so it doesn't waste I/O re-encoding
-// 14MB of module.data/wasm just to drop the result.
 const ALREADY_EMBEDDED = new Set([
   'module.wasm', 'module.data', 'module.js',
   'script.js', 'serial.js',
@@ -69,8 +72,6 @@ async function fetchCached(relPath: string): Promise<Buffer> {
   return data;
 }
 
-// Pool-based concurrency: keep at most `limit` fetches in flight to avoid
-// blasting the firmware server with 160 simultaneous requests.
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -89,34 +90,94 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-// Downloads release-versions.yaml + every stable .wbfw / .compfw it points to
-// (cached on disk under .firmware-cache/). Returns the data ready to embed.
-async function buildFirmwareBundle(): Promise<{ yaml: string; blobs: Record<string, string> }> {
+// S3 v1 list-objects paginated by Marker. Yields every key under prefix.
+async function* listBucket(prefix: string): AsyncGenerator<{ key: string; size: number }> {
+  let marker = '';
+  while (true) {
+    const q = new URLSearchParams({ prefix, marker, 'max-keys': '1000' });
+    const res = await fetch(`${BUCKET_LIST_URL}?${q}`);
+    if (!res.ok) throw new Error(`bucket list ${prefix} → HTTP ${res.status}`);
+    const xml = await res.text();
+    // Tiny XML extraction — keys/sizes are simple text-only tags.
+    const entries = [...xml.matchAll(/<Contents>[\s\S]*?<Key>([^<]+)<\/Key>[\s\S]*?<Size>(\d+)<\/Size>[\s\S]*?<\/Contents>/g)];
+    if (!entries.length) return;
+    for (const m of entries) yield { key: m[1], size: parseInt(m[2], 10) };
+    const truncated = /<IsTruncated>true<\/IsTruncated>/.test(xml);
+    if (!truncated) return;
+    marker = entries[entries.length - 1][1];
+  }
+}
+
+interface FirmwareEmbed {
+  texts: Record<string, string>;
+  blobs: Record<string, string>;
+}
+
+async function buildFirmwareBundle(): Promise<FirmwareEmbed> {
+  const texts: Record<string, string> = {};
+  const blobs: Record<string, string> = {};
+
+  // 1. Stable user firmware: release-versions.yaml + each "stable: <path>" blob.
   const yamlBuf = await fetchCached(FW_RELEASE_YAML_PATH);
   const yaml = yamlBuf.toString('utf8');
+  texts[FW_RELEASE_YAML_PATH] = yaml;
 
-  // Match every line at exactly 4 spaces of indent under a signature block:
-  // "    stable: fw/by-signature/<sig>/main/<version>.wbfw"
-  const paths = new Set<string>();
-  for (const m of yaml.matchAll(/^ {4}stable:\s*(\S+)\s*$/gm)) {
-    const p = m[1];
-    if (FW_BLOB_RE.test(p)) paths.add(p);
+  // Embed both stable and testing release channels — they often point to the
+  // same blob (deduped by the Set) but testing occasionally has a newer build.
+  const releasePaths = new Set<string>();
+  for (const m of yaml.matchAll(/^ {4}(?:stable|testing):\s*(\S+)\s*$/gm)) {
+    if (FW_BLOB_RE.test(m[1])) releasePaths.add(m[1]);
   }
-  const sorted = Array.from(paths).sort();
+  const stableList = Array.from(releasePaths).sort();
 
-  console.log(`[offline-embed] firmware: fetching ${sorted.length} blobs (cache: ${FIRMWARE_CACHE_DIR})`);
+  // 2. Bootloaders: enumerate signatures via S3 listing → fetch latest.txt +
+  //    latest.wbfw for each. The downloader requests <version>.wbfw, where
+  //    <version> is the content of latest.txt, so we store the wbfw under
+  //    that versioned URL key (latest.wbfw and <version>.wbfw share content).
+  const bootloaderSigs: string[] = [];
+  for await (const { key } of listBucket('bootloader/by-signature/')) {
+    if (BOOTLOADER_LATEST_TXT_RE.test(key)) {
+      bootloaderSigs.push(key.split('/')[2]);
+    }
+  }
+
+  console.log(`[offline-embed] firmware: ${stableList.length} stable blobs + ${bootloaderSigs.length} bootloaders to fetch (cache: ${FIRMWARE_CACHE_DIR})`);
   const start = Date.now();
-  const datas = await mapWithConcurrency(sorted, 8, fetchCached);
-  const blobs: Record<string, string> = {};
+
+  const stableData = await mapWithConcurrency(stableList, 8, fetchCached);
   let raw = 0;
-  for (let i = 0; i < sorted.length; i++) {
-    blobs[sorted[i]] = datas[i].toString('base64');
-    raw += datas[i].length;
+  for (let i = 0; i < stableList.length; i++) {
+    blobs[stableList[i]] = stableData[i].toString('base64');
+    raw += stableData[i].length;
   }
+
+  let bootloaderSkipped = 0;
+  await mapWithConcurrency(bootloaderSigs, 8, async (sig) => {
+    const txtPath = `bootloader/by-signature/${sig}/main/latest.txt`;
+    const wbfwPath = `bootloader/by-signature/${sig}/main/latest.wbfw`;
+    let txtBuf: Buffer;
+    let wbfwBuf: Buffer;
+    try {
+      [txtBuf, wbfwBuf] = await Promise.all([fetchCached(txtPath), fetchCached(wbfwPath)]);
+    } catch (e) {
+      // Some signatures (e.g. mge_v3) ship .bin bootloaders only — skip those.
+      bootloaderSkipped++;
+      return;
+    }
+    const version = txtBuf.toString('utf8').trim();
+    texts[txtPath] = version;
+    // The downloader requests this exact versioned URL:
+    blobs[`bootloader/by-signature/${sig}/main/${version}.wbfw`] = wbfwBuf.toString('base64');
+    raw += wbfwBuf.length + txtBuf.length;
+  });
+  if (bootloaderSkipped > 0) {
+    console.log(`[offline-embed] firmware: skipped ${bootloaderSkipped} bootloader(s) with no .wbfw`);
+  }
+
   console.log(
-    `[offline-embed] firmware: ${sorted.length} blobs, ${(raw / 1024 / 1024).toFixed(2)} MB raw, fetched in ${((Date.now() - start) / 1000).toFixed(1)}s`,
+    `[offline-embed] firmware: ${stableList.length + bootloaderSigs.length} blobs, ${(raw / 1024 / 1024).toFixed(2)} MB raw, fetched in ${((Date.now() - start) / 1000).toFixed(1)}s`,
   );
-  return { yaml, blobs };
+  return { texts, blobs };
 }
 
 // Two-phase loader. First runs synchronously during HTML parsing, before the
@@ -140,14 +201,47 @@ const LOADER_SOURCE = `
       '<div style="font-family:sans-serif;padding:2em;max-width:40em;margin:auto">' +
       '<h2>Failed to load offline bundle</h2><p>' + msg + '</p></div>';
   }
+  async function fetchWithTimeout(url, timeoutMs, init) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { ...(init || {}), signal: ctrl.signal });
+        return res.ok ? res : null;
+      } finally {
+        clearTimeout(t);
+      }
+    } catch (_) {
+      return null;
+    }
+  }
   function patchFirmwareEndpoints(M) {
     const node = $(${JSON.stringify(BLOB_ID.firmware)});
     if (!node) return;
     const fw = JSON.parse(node.textContent);
     const FW_BASE = ${JSON.stringify(FW_BASE_URL)};
     const YAML_URL = FW_BASE + ${JSON.stringify(FW_RELEASE_YAML_PATH)};
-    const origText = M.httpGetText.bind(M);
-    const origBin = M.httpGetBinary.bind(M);
+    // One-shot online probe (HEAD on the manifest YAML, 2s timeout) cached
+    // for the session so we don't burn a 3s/15s timeout on every firmware
+    // fetch when opened on a fully offline machine. Mirrors the sw-ping
+    // pattern in sw.js, but service workers don't run from file://.
+    let onlinePromise = null;
+    function probeOnline() {
+      if (!onlinePromise) {
+        onlinePromise = fetchWithTimeout(YAML_URL, 2000, { method: 'HEAD' }).then((r) => !!r);
+      }
+      return onlinePromise;
+    }
+    async function tryFetch(url, timeoutMs) {
+      if (!(await probeOnline())) return null;
+      return fetchWithTimeout(url, timeoutMs);
+    }
+    // Kick off the probe so the banner state is known early; once resolved,
+    // expose result on window and notify React via a custom event.
+    probeOnline().then((online) => {
+      window.__WB_FW_OFFLINE__ = !online;
+      window.dispatchEvent(new CustomEvent('wb-fw-mode-changed', { detail: { offline: !online } }));
+    });
     function textPtr(s) {
       const bytes = new TextEncoder().encode(s);
       const ptr = M._malloc(bytes.length + 1);
@@ -161,16 +255,33 @@ const LOADER_SOURCE = `
       M.HEAPU8.set(bin, ptr + 4);
       return ptr;
     }
+    function embedKey(url) {
+      return url.startsWith(FW_BASE) ? url.slice(FW_BASE.length) : null;
+    }
     M.httpGetText = async function(url) {
-      if (url === YAML_URL) return textPtr(fw.yaml);
-      return origText(url);
+      const res = await tryFetch(url, 3000);
+      if (res) return textPtr(await res.text());
+      const key = embedKey(url);
+      if (key !== null && key in fw.texts) {
+        M.print('[offline] using embedded ' + key);
+        return textPtr(fw.texts[key]);
+      }
+      M.print('[offline] no embedded fallback for ' + url);
+      return 0;
     };
     M.httpGetBinary = async function(url) {
-      if (url.startsWith(FW_BASE)) {
-        const b64 = fw.blobs[url.slice(FW_BASE.length)];
-        if (b64) return binPtr(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+      const res = await tryFetch(url, 15000);
+      if (res) {
+        const bin = new Uint8Array(await res.arrayBuffer());
+        return binPtr(bin);
       }
-      return origBin(url);
+      const key = embedKey(url);
+      if (key !== null && fw.blobs[key]) {
+        M.print('[offline] using embedded ' + key);
+        return binPtr(Uint8Array.from(atob(fw.blobs[key]), (c) => c.charCodeAt(0)));
+      }
+      M.print('[offline] no embedded fallback for ' + url);
+      return 0;
     };
   }
   window.__WB_OFFLINE__ = true;

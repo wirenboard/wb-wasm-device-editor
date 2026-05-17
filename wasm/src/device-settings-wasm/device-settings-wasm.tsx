@@ -71,6 +71,18 @@ export const DeviceSettingsWasm = observer(() => {
     return () => window.removeEventListener('sw-update-available', onUpdate);
   }, []);
 
+  // Offline single-file build (file://) sets __WB_FW_OFFLINE__ once its online
+  // probe resolves. We mirror it into React state to show a banner when the
+  // firmware downloader will fall back to embedded blobs.
+  const [isFwOffline, setIsFwOffline] = useState(false);
+  useEffect(() => {
+    if (!(window as any).__WB_OFFLINE__) return;
+    if ((window as any).__WB_FW_OFFLINE__) setIsFwOffline(true);
+    const onChange = (e: Event) => setIsFwOffline(!!(e as CustomEvent).detail?.offline);
+    window.addEventListener('wb-fw-mode-changed', onChange);
+    return () => window.removeEventListener('wb-fw-mode-changed', onChange);
+  }, []);
+
   useEffect(() => {
     if (!navigator.serviceWorker?.controller) return;
 
@@ -563,6 +575,11 @@ export const DeviceSettingsWasm = observer(() => {
           <a href="#" onClick={(e) => { e.preventDefault(); setIsReleaseConfirmOpen(true); }}>
             {t('wasm.release.switch-to-stable-link')}
           </a>.
+        </Alert>
+      )}
+      {isFwOffline && (
+        <Alert className="deviceSettingsWasm-alert" variant="info">
+          {t('wasm.offline-fw.banner')}
         </Alert>
       )}
       {portError && (
