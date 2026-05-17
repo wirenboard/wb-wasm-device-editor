@@ -11,6 +11,8 @@ wasm/assets/*
 
 # artifacts
 dist-configurator*
+dist-offline*
 node_modules
 package-lock.json
 emsdk-docker-image.tar.gz
+.firmware-cache/
