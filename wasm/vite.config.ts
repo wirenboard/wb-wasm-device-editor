@@ -2,9 +2,11 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import react from '@vitejs/plugin-react';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type Plugin, type PluginOption } from 'vite';
 import commonjs from 'vite-plugin-commonjs';
+import { viteSingleFile } from 'vite-plugin-singlefile';
 import svgr from 'vite-plugin-svgr';
+import { offlineEmbedPlugin } from './vite-plugin-offline-embed';
 
 const homeuiNodeModules = path.resolve(__dirname, '../submodule/homeui/frontend/node_modules');
 
@@ -84,38 +86,36 @@ function throttleModuleData(): Plugin {
 }
 
 export default defineConfig(() => {
+  const offline = process.env.OFFLINE === '1';
+
+  const injectScripts: Plugin = {
+    name: 'inject-scripts',
+    transformIndexHtml() {
+      return [
+        { tag: 'script', attrs: { src: '/serial.js', defer: true }, injectTo: 'head' },
+        { tag: 'script', attrs: { src: '/script.js', defer: true }, injectTo: 'head' },
+        { tag: 'script', attrs: { src: '/module.js', defer: true }, injectTo: 'head' },
+      ];
+    },
+  };
+
+  const plugins: PluginOption[] = [
+    react(),
+    commonjs(),
+    svgr({ include: '**/*.svg' }),
+    throttleModuleData(),
+  ];
+
+  if (offline) {
+    plugins.push(viteSingleFile({ removeViteModuleLoader: true }), offlineEmbedPlugin());
+  } else {
+    plugins.push(swCachePlugin(), injectScripts);
+  }
+
   return {
-    plugins: [
-      react(),
-      commonjs(),
-      svgr({ include: '**/*.svg' }),
-      swCachePlugin(),
-      throttleModuleData(),
-      {
-        name: 'inject-scripts',
-        transformIndexHtml() {
-          return [
-            {
-              tag: 'script',
-              attrs: { src: '/serial.js', defer: true },
-              injectTo: 'head',
-            },
-            {
-              tag: 'script',
-              attrs: { src: '/script.js', defer: true },
-              injectTo: 'head',
-            },
-            {
-              tag: 'script',
-              attrs: { src: '/module.js', defer: true },
-              injectTo: 'head',
-            },
-          ];
-        },
-      },
-    ],
+    plugins,
     build: {
-      outDir: path.resolve(__dirname, 'dist-configurator'),
+      outDir: path.resolve(__dirname, offline ? 'dist-offline' : 'dist-configurator'),
       emptyOutDir: true,
     },
 

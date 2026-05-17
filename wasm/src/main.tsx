@@ -27,7 +27,11 @@ createRoot(document.querySelector('#root')).render(<DeviceSettingsWasm />);
 // (with 3s timeout fallback to cache). So the initial register() may update the SW,
 // but the page already has fresh content — no reload needed. We only notify about
 // updates detected by the periodic 60s polling (mid-session deployments).
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+if (
+  import.meta.env.PROD &&
+  'serviceWorker' in navigator &&
+  location.protocol !== 'file:'
+) {
   let periodicUpdateStarted = false;
 
   window.addEventListener('load', () => {
