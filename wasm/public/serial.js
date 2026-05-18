@@ -180,7 +180,7 @@ class SerialPort {
                 this.error = error;
                 if (error instanceof DOMException && error.name === 'NotFoundError') {
                     delete this.port;
-                    throw error;
+                    return;
                 }
                 await new Promise((resolve) => setTimeout(resolve, 1));
                 continue;
