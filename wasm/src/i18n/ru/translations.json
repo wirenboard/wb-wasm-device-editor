@@ -40,7 +40,8 @@
       },
       "errors": {
          "invalid-slave-id": "Адрес устройства должен быть целым числом от 1 до 247",
-         "select-port-failed": "Не удалось выбрать порт: {{error}}"
+         "select-port-failed": "Не удалось выбрать порт: {{error}}",
+         "port-not-selected": "Для связи с устройствами требуется преобразователь интерфейса USB - RS485, например, <a href=\"https://wirenboard.com/ru/product/WB-USB485/\" target=\"_blank\" rel=\"noopener noreferrer\">WB-USB485</a>. Чтобы продолжить работу, выберите порт преобразователя."
       },
       "sw": {
          "offline": "Без сети",
