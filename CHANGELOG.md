@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.9.2...wb-wasm-device-editor-v1.10.0) (2026-05-25)
+
+
+### Features
+
+* offline single-file build with embedded firmware ([#86](https://github.com/wirenboard/wb-wasm-device-editor/issues/86)) ([6e3bd04](https://github.com/wirenboard/wb-wasm-device-editor/commit/6e3bd04ad03b9fdc2f6a0ff53812a1db76e22fcc))
+
 ## [1.9.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.9.1...wb-wasm-device-editor-v1.9.2) (2026-05-25)
 
 
