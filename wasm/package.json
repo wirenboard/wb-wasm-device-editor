@@ -7,6 +7,7 @@
     "dev": "vite dev --host",
     "prebuild": "mkdir -p public/vendor && cp node_modules/@cmuav/web-serial-polyfill/dist/serial.js public/vendor/web-serial-polyfill.js",
     "build": "vite build",
+    "build:offline": "OFFLINE=1 vite build",
     "preview": "vite preview",
     "lint": "npx eslint --cache --cache-location .eslintcache",
     "lint:fix": "npx eslint --fix",
@@ -25,6 +26,7 @@
     "typescript": "5.7.3",
     "vite": "7.3.0",
     "vite-plugin-commonjs": "0.10.4",
+    "vite-plugin-singlefile": "^2.3.3",
     "vite-plugin-svgr": "^4.5.0"
   },
   "dependencies": {

@@ -71,6 +71,45 @@ export const DeviceSettingsWasm = observer(() => {
     return () => window.removeEventListener('sw-update-available', onUpdate);
   }, []);
 
+  // Offline single-file build (file://) sets __WB_FW_OFFLINE__ once its online
+  // probe resolves. We mirror it into React state to show a banner when the
+  // firmware downloader will fall back to embedded blobs.
+  const [isFwOffline, setIsFwOffline] = useState(false);
+  useEffect(() => {
+    if (!(window as any).__WB_OFFLINE__) return;
+    if ((window as any).__WB_FW_OFFLINE__) setIsFwOffline(true);
+    const onChange = (e: Event) => setIsFwOffline(!!(e as CustomEvent).detail?.offline);
+    window.addEventListener('wb-fw-mode-changed', onChange);
+    return () => window.removeEventListener('wb-fw-mode-changed', onChange);
+  }, []);
+
+  // Standalone build only: probe the online configurator's sw.js — the same
+  // file the normal in-browser update path uses. We load it via <script src=>
+  // (no CORS preflight, unlike fetch — the deveditor.wirenboard.com bucket
+  // doesn't send Access-Control-Allow-Origin). sw.js assigns its version
+  // marker to self.__WB_BUILD_ID__ so we can read it after onload.
+  const [remoteVersion, setRemoteVersion] = useState<string | null>(null);
+  useEffect(() => {
+    if (!__APP_OFFLINE_BUILD__) return;
+    const s = document.createElement('script');
+    s.src = `https://deveditor.wirenboard.com/sw.js?ts=${Date.now()}`;
+    const timer = setTimeout(() => s.remove(), 5000);
+    const finish = () => { clearTimeout(timer); s.remove(); };
+    s.onload = () => {
+      const win = window as unknown as { __WB_APP_VERSION__?: string };
+      // Compare the semver from package.json, not the git build hash —
+      // otherwise we'd nag users about every cache-invalidation rebuild
+      // within the same released version.
+      if (win.__WB_APP_VERSION__ && win.__WB_APP_VERSION__ !== __APP_VERSION__) {
+        setRemoteVersion(win.__WB_APP_VERSION__);
+      }
+      finish();
+    };
+    s.onerror = finish;
+    document.head.appendChild(s);
+    return finish;
+  }, []);
+
   useEffect(() => {
     if (!navigator.serviceWorker?.controller) return;
 
@@ -580,6 +619,9 @@ export const DeviceSettingsWasm = observer(() => {
           <a href="https://wirenboard.com" target="_blank">
             <img src="./img/logo-wide.svg" className="deviceSettingsWasm-logo" loading="eager" alt="Wiren Board" />
           </a>
+          <span className="deviceSettingsWasm-version">
+            v{__APP_VERSION__}{__APP_OFFLINE_BUILD__ ? ` ${t('wasm.version.standalone-suffix')}` : ''}
+          </span>
         </div>
       }
       hasRights
@@ -594,6 +636,23 @@ export const DeviceSettingsWasm = observer(() => {
           <a href="#" onClick={(e) => { e.preventDefault(); setIsReleaseConfirmOpen(true); }}>
             {t('wasm.release.switch-to-stable-link')}
           </a>.
+        </Alert>
+      )}
+      {remoteVersion && (
+        <Alert className="deviceSettingsWasm-alert" variant="info">
+          {t('wasm.version.update-available', { version: remoteVersion })}{' '}
+          <a href="https://deveditor.wirenboard.com/" target="_blank" rel="noreferrer">
+            {t('wasm.version.open-online')}
+          </a>
+          {' '}/{' '}
+          <a href="https://deveditor.wirenboard.com/offline/index.html" target="_blank" rel="noreferrer">
+            {t('wasm.version.download-standalone')}
+          </a>.
+        </Alert>
+      )}
+      {isFwOffline && (
+        <Alert className="deviceSettingsWasm-alert" variant="info">
+          {t('wasm.offline-fw.banner')}
         </Alert>
       )}
       {portError && (
@@ -745,7 +804,17 @@ export const DeviceSettingsWasm = observer(() => {
           onClose={() => setIsModalOpened(false)}
         />
       )}
-      <ReleaseSwitcher nextRelease={nextRelease} onClick={() => setIsReleaseConfirmOpen(true)} />
+      <div className="deviceSettingsWasm-bottomLinks">
+        {!__APP_OFFLINE_BUILD__ && (
+          <>
+            <a href="/offline/index.html" target="_blank" rel="noreferrer">
+              {t('wasm.offline-download.link')}
+            </a>
+            <span className="deviceSettingsWasm-bottomLinks-sep">|</span>
+          </>
+        )}
+        <ReleaseSwitcher nextRelease={nextRelease} onClick={() => setIsReleaseConfirmOpen(true)} />
+      </div>
       <Confirm
         isOpened={isReleaseConfirmOpen}
         heading={t(`wasm.release.switch-to-${nextRelease}-title`)}

@@ -1,0 +1,25 @@
+# Nginx config baked into the docker image that hosts the *online* configurator
+# (deveditor.wirenboard.com and any self-hosted deployment). The standalone
+# single-file build is also shipped here as /offline/index.html so it can be
+# downloaded from the running app — and the only non-default rule below sets
+# Content-Disposition: attachment on that path so the browser saves the 14 MB
+# HTML to disk under a versioned filename instead of rendering it inline. The
+# S3/CDN deployment sets the same header via s3cmd at upload time; this config
+# keeps the docker deployment behaving identically.
+#
+# The placeholder below this line is substituted at docker build time from
+# a --build-arg.
+
+server {
+    listen 80 default_server;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    location = /offline/index.html {
+        add_header Content-Disposition 'attachment; filename="wb-device-editor-__VERSION__.html"';
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

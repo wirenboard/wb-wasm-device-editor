@@ -91,8 +91,8 @@
 
 .deviceSettingsWasm-footer {
     display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
     position: fixed;
     bottom: 12px;
     left: 12px;
@@ -100,6 +100,44 @@
 
 .deviceSettingsWasm-logo {
     width: 140px;
+}
+
+/* Fixed bottom-right corner with the release switcher and (online build only)
+   the offline-version download link. Solid background + soft shadow keeps the
+   links readable when the page content scrolls underneath. */
+.deviceSettingsWasm-bottomLinks {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--background-color, #fff);
+    border-radius: 6px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+    font-size: 12px;
+}
+
+.deviceSettingsWasm-bottomLinks-sep {
+    color: var(--text-color-secondary, #888);
+}
+
+.deviceSettingsWasm-version {
+    color: var(--text-color-secondary, #888);
+    font-size: 12px;
+    line-height: 1;
+}
+
+/* Stack vertically on narrow viewports so the version doesn't overlap the
+   bottom-right links block (also position: fixed). */
+@media (max-width: 600px) {
+    .deviceSettingsWasm-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
 }
 
 .deviceSettingsWasm-offline,
