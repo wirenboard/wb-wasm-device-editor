@@ -162,6 +162,7 @@ export const DeviceSettingsWasm = observer(() => {
   const [portName, setPortName] = useState<string | null>(null);
   const [saveCounter, setSaveCounter] = useState(0);
   const [portError, setPortError] = useState<string | null>(null);
+  const [portNotSelected, setPortNotSelected] = useState(false);
   const [isPortScanning, setIsPortScanning] = useState(false);
   const [isBootScanning, setIsBootScanning] = useState(false);
   const bootScanRequestedRef = useRef(false);
@@ -209,6 +210,7 @@ export const DeviceSettingsWasm = observer(() => {
     try {
       setPortError(null);
       await selectPort();
+      setPortNotSelected(false);
       await refreshPortInfo();
     } catch (err) {
       if (err instanceof DOMException && err.name === 'NotFoundError') {
@@ -316,18 +318,47 @@ export const DeviceSettingsWasm = observer(() => {
   const handleScan = async () => {
     reset();
     bootScanRequestedRef.current = false;
-    setIsPortScanning(true);
-    const res = await scan();
 
-    if (bootScanRequestedRef.current) {
-      setIsBootScanning(true);
-      const bootDevices = await bootScan();
+    // If no granted ports match — prompt user to pick one first.
+    // Without this check, the WASM scan would itself trigger the picker
+    // and cancellation would surface from deep inside an async loop.
+    const info = await getPortInfo();
+    if (info.matchingCount === 0) {
+      try {
+        await selectPort();
+        setPortNotSelected(false);
+        await refreshPortInfo();
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'NotFoundError') {
+          setPortNotSelected(true);
+          return;
+        }
+        setPortError(err instanceof Error ? err.message : String(err));
+        return;
+      }
+    }
+
+    setIsPortScanning(true);
+    try {
+      const res = await scan();
+
+      if (bootScanRequestedRef.current) {
+        setIsBootScanning(true);
+        const bootDevices = await bootScan();
+        setIsBootScanning(false);
+        showScanResults([...res, ...bootDevices]);
+      } else {
+        showScanResults(res);
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotFoundError') {
+        setPortNotSelected(true);
+      } else {
+        setPortError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setIsPortScanning(false);
       setIsBootScanning(false);
-      setIsPortScanning(false);
-      showScanResults([...res, ...bootDevices]);
-    } else {
-      setIsPortScanning(false);
-      showScanResults(res);
     }
   };
 
@@ -631,6 +662,15 @@ export const DeviceSettingsWasm = observer(() => {
           onClose={() => setPortError(null)}
         >
           {t('wasm.errors.select-port-failed', { error: portError })}
+        </Alert>
+      )}
+      {portNotSelected && (
+        <Alert
+          className="deviceSettingsWasm-alert"
+          variant="warn"
+          onClose={() => setPortNotSelected(false)}
+        >
+          <span dangerouslySetInnerHTML={{ __html: t('wasm.errors.port-not-selected') }} />
         </Alert>
       )}
       <ScanProgress

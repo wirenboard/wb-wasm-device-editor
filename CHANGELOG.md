@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.9.1...wb-wasm-device-editor-v1.9.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* stop port picker dialog from reopening on cancel ([#87](https://github.com/wirenboard/wb-wasm-device-editor/issues/87)) ([6ceb124](https://github.com/wirenboard/wb-wasm-device-editor/commit/6ceb1244f157a4ac8518135f7619739fe161e4f6))
+
 ## [1.9.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.9.0...wb-wasm-device-editor-v1.9.1) (2026-05-12)
 
 
