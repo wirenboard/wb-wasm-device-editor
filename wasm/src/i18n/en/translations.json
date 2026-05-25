@@ -39,7 +39,8 @@
       },
       "errors": {
          "invalid-slave-id": "Slave ID must be an integer between 1 and 247",
-         "select-port-failed": "Failed to select port: {{error}}"
+         "select-port-failed": "Failed to select port: {{error}}",
+         "port-not-selected": "Communication with devices requires a USB - RS485 interface converter, e.g. <a href=\"https://wirenboard.com/ru/product/WB-USB485/\" target=\"_blank\" rel=\"noopener noreferrer\">WB-USB485</a>. To continue, select the converter port."
       },
       "sw": {
          "offline": "Offline mode",
