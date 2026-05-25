@@ -49,6 +49,9 @@
       "offline-fw": {
          "banner": "Автономный режим — используются встроенные прошивки. Обновление работает, но новые версии будут доступны только при подключении к сети."
       },
+      "offline-download": {
+         "link": "офлайн-версия"
+      },
       "version": {
          "standalone-suffix": "автономная",
          "update-available": "Доступна версия {{version}}.",
@@ -56,9 +59,9 @@
          "download-standalone": "скачать автономную"
       },
       "release": {
-         "testing-banner": "Внимание, используется testing релиз.",
-         "switch-to-stable-link": "Переключить на stable",
-         "switch-to-testing-link": "Переключить на testing",
+         "testing-banner": "Внимание, используется testing релиз —",
+         "switch-to-stable-link": "переключить на stable",
+         "switch-to-testing-link": "переключить на testing",
          "switch-to-testing-title": "Переключение на testing релиз",
          "switch-to-testing-text": "Конфигуратор будет использовать тестовые версии прошивок и шаблонов. Работа может быть нестабильной. Страница перезагрузится.",
          "switch-to-stable-title": "Переключение на stable релиз",

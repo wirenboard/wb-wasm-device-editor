@@ -764,7 +764,17 @@ export const DeviceSettingsWasm = observer(() => {
           onClose={() => setIsModalOpened(false)}
         />
       )}
-      <ReleaseSwitcher nextRelease={nextRelease} onClick={() => setIsReleaseConfirmOpen(true)} />
+      <div className="deviceSettingsWasm-bottomLinks">
+        {!__APP_OFFLINE_BUILD__ && (
+          <>
+            <a href="/offline/index.html" target="_blank" rel="noreferrer">
+              {t('wasm.offline-download.link')}
+            </a>
+            <span className="deviceSettingsWasm-bottomLinks-sep">|</span>
+          </>
+        )}
+        <ReleaseSwitcher nextRelease={nextRelease} onClick={() => setIsReleaseConfirmOpen(true)} />
+      </div>
       <Confirm
         isOpened={isReleaseConfirmOpen}
         heading={t(`wasm.release.switch-to-${nextRelease}-title`)}

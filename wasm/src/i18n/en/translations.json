@@ -48,6 +48,9 @@
       "offline-fw": {
          "banner": "Offline mode — using embedded firmware. Updates work, but you won't get the latest versions until you reconnect."
       },
+      "offline-download": {
+         "link": "offline version"
+      },
       "version": {
          "standalone-suffix": "standalone",
          "update-available": "Version {{version}} is available.",
@@ -55,9 +58,9 @@
          "download-standalone": "download standalone"
       },
       "release": {
-         "testing-banner": "Attention: using testing release.",
-         "switch-to-stable-link": "Switch to stable",
-         "switch-to-testing-link": "Switch to testing",
+         "testing-banner": "Attention: using testing release —",
+         "switch-to-stable-link": "switch to stable",
+         "switch-to-testing-link": "switch to testing",
          "switch-to-testing-title": "Switching to testing release",
          "switch-to-testing-text": "The configurator will use testing versions of firmware and templates. Operation may be unstable. The page will reload.",
          "switch-to-stable-title": "Switching to stable release",
