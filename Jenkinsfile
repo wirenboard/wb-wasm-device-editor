@@ -116,7 +116,7 @@ pipeline {
                 success {
                     archiveArtifacts(
                         artifacts: 'wasm/dist-configurator.tar.gz, wasm/dist-offline/index.html',
-                        fingerprint: true,
+                        fingerprint: true
                     )
                 }
             }

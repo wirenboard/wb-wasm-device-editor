@@ -10,6 +10,7 @@ class SerialPort {
           { usbVendorId: 0x04d8, usbProductId: 0x00dd },
           { usbVendorId: 0x04d8, usbProductId: 0x00df },
           { usbVendorId: 0x04d9, usbProductId: 0xb534 },
+          { usbVendorId: 0x04e2, usbProductId: 0x1411 },
           { usbVendorId: 0x067b, usbProductId: 0x2303 },
           { usbVendorId: 0x067b, usbProductId: 0x23a3 },
           { usbVendorId: 0x10c4, usbProductId: 0xea60 },
