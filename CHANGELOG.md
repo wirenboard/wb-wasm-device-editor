@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.10.0...wb-wasm-device-editor-v1.11.0) (2026-07-21)
+
+
+### Features
+
+* add USB device 04E2:1411 to serial port filter ([#90](https://github.com/wirenboard/wb-wasm-device-editor/issues/90)) ([7f5ae5d](https://github.com/wirenboard/wb-wasm-device-editor/commit/7f5ae5d3f6c516b56dc11dcfaaf7f3a9acddcd9a))
+
 ## [1.10.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.9.2...wb-wasm-device-editor-v1.10.0) (2026-05-25)
 
 
