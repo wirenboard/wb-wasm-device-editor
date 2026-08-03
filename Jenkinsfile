@@ -49,7 +49,7 @@ pipeline {
             }
             agent {
                 docker {
-                    image 'registry.wirenboard.lan/emsdk:latest'
+                    image 'registry.wirenboard.com/wirenboard/emsdk:latest'
                     args '--entrypoint="" -u root:root'
                     reuseNode true
                 }
@@ -129,7 +129,7 @@ pipeline {
             }
             agent {
                 docker {
-                    image 'registry.wirenboard.lan/node-playwright:node22-pw1.59.1-chromium'
+                    image 'registry.wirenboard.com/wirenboard/node-playwright:node22-pw1.59.1-chromium'
                     args '--entrypoint="" -u root:root'
                     reuseNode true
                 }
