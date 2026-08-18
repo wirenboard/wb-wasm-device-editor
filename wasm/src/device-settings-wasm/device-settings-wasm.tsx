@@ -438,7 +438,6 @@ export const DeviceSettingsWasm = observer(() => {
       },
     );
     await store.loadContent(device.cfg);
-    store.setDeviceType(device.device_signature, cfg);
     store.updateEmbeddedSoftwareVersion(getPortConfig(device.cfg));
     store.schemaStore.customChannels = null;
 
