@@ -1,8 +1,26 @@
 #!/bin/bash
 
-STABLE_DIR=$1
-TESTING_DIR=$2
+set -e
+
+STABLE_BRANCH=$1
+TESTING_BRANCH=$2
 TEMPLATES_DIR=$3
+
+URL=https://github.com/wirenboard/wb-mqtt-serial/archive/refs/heads
+FETCH_DIR=$(mktemp -d)
+
+trap "rm -rf $FETCH_DIR" EXIT
+
+fetch()
+{
+    local BRANCH=$1
+    local DST_DIR=$2
+
+    mkdir -p $DST_DIR
+    curl -sfL $URL/$BRANCH.tar.gz | tar -xz -C $DST_DIR --strip-components 2 --wildcards --no-wildcards-match-slash '*/templates/*'
+
+    echo "$BRANCH: $(ls $DST_DIR | wc -l) templates"
+}
 
 prepare()
 {
@@ -19,8 +37,13 @@ prepare()
     done
 }
 
-prepare $STABLE_DIR $TEMPLATES_DIR/stable
-prepare $TESTING_DIR $TEMPLATES_DIR/testing
+fetch $STABLE_BRANCH $FETCH_DIR/stable
+fetch $TESTING_BRANCH $FETCH_DIR/testing
+
+rm -rf $TEMPLATES_DIR
+
+prepare $FETCH_DIR/stable $TEMPLATES_DIR/stable
+prepare $FETCH_DIR/testing $TEMPLATES_DIR/testing
 
 mkdir -p $TEMPLATES_DIR/common
 

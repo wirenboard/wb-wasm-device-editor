@@ -1,8 +1,10 @@
 CC = emcc
 
 SERIAL_DIR = submodule/wb-mqtt-serial
-STABLE_DIR = submodule/wb-mqtt-serial-stable
 JSONCPP_DIR = submodule/valijson/thirdparty/jsoncpp-1.9.4
+
+STABLE_BRANCH = release/wb-2606
+TESTING_BRANCH = master
 
 WASM_DIR = wasm
 ASSETS_DIR = $(WASM_DIR)/assets
@@ -79,6 +81,8 @@ OPT = \
 	-sEXPORTED_FUNCTIONS=["_malloc","_free"]        \
 	-sEXPORTED_RUNTIME_METHODS=["HEAPU8","HEAP32"]  \
 
+.PHONY: templates
+
 all: templates
 # copy assets
 	mkdir -p $(PROTOCOLS_DIR)
@@ -93,4 +97,4 @@ all: templates
 	$(CC) -O3 $(addprefix -I, $(INC)) $(SRC) wblib/static/wblib.a -o $(WASM_DIR)/public/module.js --preload-file $(ASSETS_DIR)@/ $(OPT)
 
 templates:
-	bash scripts/build-templates.sh $(STABLE_DIR)/templates $(SERIAL_DIR)/templates $(TEMPLATES_DIR)
+	bash scripts/build-templates.sh $(STABLE_BRANCH) $(TESTING_BRANCH) $(TEMPLATES_DIR)
