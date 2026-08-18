@@ -6,11 +6,10 @@ STABLE_BRANCH=$1
 TESTING_BRANCH=$2
 TEMPLATES_DIR=$3
 
-URL=https://github.com/wirenboard/wb-mqtt-serial.git
+URL=https://github.com/wirenboard/wb-mqtt-serial/archive/refs/heads
 FETCH_DIR=$(mktemp -d)
 
 trap "rm -rf $FETCH_DIR" EXIT
-git init --bare --quiet $FETCH_DIR/repo.git
 
 fetch()
 {
@@ -18,11 +17,9 @@ fetch()
     local DST_DIR=$2
 
     mkdir -p $DST_DIR
+    curl -sfL $URL/$BRANCH.tar.gz | tar -xz -C $DST_DIR --strip-components 2 --wildcards --no-wildcards-match-slash '*/templates/*'
 
-    git -C $FETCH_DIR/repo.git fetch --quiet --depth 1 $URL $BRANCH
-    git -C $FETCH_DIR/repo.git archive FETCH_HEAD templates | tar -x -C $DST_DIR --strip-components 1
-
-    echo "$BRANCH: $(git -C $FETCH_DIR/repo.git rev-parse --short FETCH_HEAD), $(ls $DST_DIR | wc -l) templates"
+    echo "$BRANCH: $(ls $DST_DIR | wc -l) templates"
 }
 
 prepare()
