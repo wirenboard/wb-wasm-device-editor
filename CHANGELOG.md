@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.11.0...wb-wasm-device-editor-v1.12.0) (2026-08-18)
+
+
+### Features
+
+* keep the firmware-specific template when a device is scanned ([#94](https://github.com/wirenboard/wb-wasm-device-editor/issues/94)) ([6118a73](https://github.com/wirenboard/wb-wasm-device-editor/commit/6118a739822e740a2f907a0f2a3856387d319360))
+
 ## [1.11.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.10.0...wb-wasm-device-editor-v1.11.0) (2026-07-21)
 
 
