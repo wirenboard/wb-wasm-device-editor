@@ -1,8 +1,29 @@
 #!/bin/bash
 
-STABLE_DIR=$1
-TESTING_DIR=$2
+set -e
+
+STABLE_BRANCH=$1
+TESTING_BRANCH=$2
 TEMPLATES_DIR=$3
+
+URL=https://github.com/wirenboard/wb-mqtt-serial.git
+FETCH_DIR=$(mktemp -d)
+
+trap "rm -rf $FETCH_DIR" EXIT
+git init --bare --quiet $FETCH_DIR/repo.git
+
+fetch()
+{
+    local BRANCH=$1
+    local DST_DIR=$2
+
+    mkdir -p $DST_DIR
+
+    git -C $FETCH_DIR/repo.git fetch --quiet --depth 1 $URL $BRANCH
+    git -C $FETCH_DIR/repo.git archive FETCH_HEAD templates | tar -x -C $DST_DIR --strip-components 1
+
+    echo "$BRANCH: $(git -C $FETCH_DIR/repo.git rev-parse --short FETCH_HEAD), $(ls $DST_DIR | wc -l) templates"
+}
 
 prepare()
 {
@@ -19,8 +40,13 @@ prepare()
     done
 }
 
-prepare $STABLE_DIR $TEMPLATES_DIR/stable
-prepare $TESTING_DIR $TEMPLATES_DIR/testing
+fetch $STABLE_BRANCH $FETCH_DIR/stable
+fetch $TESTING_BRANCH $FETCH_DIR/testing
+
+rm -rf $TEMPLATES_DIR
+
+prepare $FETCH_DIR/stable $TEMPLATES_DIR/stable
+prepare $FETCH_DIR/testing $TEMPLATES_DIR/testing
 
 mkdir -p $TEMPLATES_DIR/common
 
