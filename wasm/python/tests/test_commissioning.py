@@ -11,7 +11,6 @@ import asyncio
 import pytest
 from wb.mqtt_dali.commissioning import Commissioning, CommissioningStage
 from wb.mqtt_dali.dali_device import DaliDeviceAddress
-from wb.mqtt_dali.wbdali import WBDALIConfig, WBDALIDriver
 
 from wbdali_browser.sim.control_gear import SimulatedControlGear as simulated_gear
 
@@ -19,11 +18,7 @@ from .conftest import GATEWAY_DEVICE_ID, SimulatedStack
 
 
 async def run_commissioning(stack, logger, old_devices=(), progress_cb=None):
-    driver = WBDALIDriver(
-        WBDALIConfig(device_name=GATEWAY_DEVICE_ID, bus=1),
-        mqtt_dispatcher=stack.dispatcher,
-        logger=logger,
-    )
+    driver = stack.driver(logger=logger)
     await driver.initialize()
     try:
         commissioning = Commissioning(driver, list(old_devices), False, progress_cb)

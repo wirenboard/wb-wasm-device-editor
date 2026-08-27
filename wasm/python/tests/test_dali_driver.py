@@ -1,10 +1,9 @@
-"""The unmodified `WBDALIDriver` driving the simulated gateway.
+"""The blocking DALI driver against the simulated gateway.
 
-This is the load-bearing test of the whole design: if the production driver can
-send a frame and get its answer back with nothing but the loopback broker, the
-emulated wb-mqtt-serial and the simulated bus underneath it, then everything
-above the driver — commissioning, device parameters, the Editor RPC — is
-unchanged production code.
+This is the load-bearing test of the whole design: one command written into a
+queue slot, one reply register polled for the answer, and nothing in between.
+Everything above the driver — commissioning, device parameters, the Editor RPC —
+is unchanged production code, so if this holds, that does too.
 """
 
 import asyncio
@@ -12,20 +11,16 @@ import asyncio
 import pytest
 from dali.address import GearBroadcast, GearShort
 from dali.gear.general import DAPC, Off, QueryActualLevel, QueryControlGearPresent
-from dali.tests import fakes
 
-from wb.mqtt_dali.wbdali import WBDALIConfig, WBDALIDriver
-from wb.mqtt_dali.wbdali_error_response import GatewayUnavailable, NoResponseFromGateway
+from wb.mqtt_dali.wbdali_error_response import NoResponseFromGateway
+
+from wbdali_browser.sim.control_gear import SimulatedControlGear as simulated_gear
 
 from .conftest import GATEWAY_DEVICE_ID, SimulatedStack
 
 
-async def make_driver(stack, logger, bus: int = 1) -> WBDALIDriver:
-    driver = WBDALIDriver(
-        WBDALIConfig(device_name=GATEWAY_DEVICE_ID, bus=bus),
-        mqtt_dispatcher=stack.dispatcher,
-        logger=logger,
-    )
+async def make_driver(stack, logger, bus: int = 1):
+    driver = stack.driver(bus=bus, logger=logger)
     await driver.initialize()
     return driver
 
@@ -100,7 +95,9 @@ async def test_an_unwired_bus_is_silent(stack, dali_logger):
 
 async def test_more_commands_than_the_queue_holds_are_split_into_batches(dali_logger):
     """The gateway queue is 16 slots deep; a longer batch must still resolve fully."""
-    stack = SimulatedStack(gear=[fakes.Gear(shortaddr=index) for index in range(20)])
+    stack = SimulatedStack(
+        gear=[simulated_gear(shortaddr=index, random_address=0x1000 + index) for index in range(20)]
+    )
     await stack.start()
     try:
         driver = await make_driver(stack, dali_logger)
@@ -131,22 +128,30 @@ async def test_a_silent_gateway_times_out_instead_of_hanging(stack, dali_logger)
         await driver.deinitialize()
 
 
-async def test_meta_error_marks_the_gateway_unavailable(stack, dali_logger):
-    """wb-mqtt-serial reports an unreachable device as `r`; pending traffic fails fast."""
+async def test_a_module_that_comes_back_answers_again(stack, dali_logger):
+    driver = await make_driver(stack, dali_logger)
+    driver.response_timeout = 0.2
+    try:
+        stack.gateway.reachable = False
+        assert isinstance(await driver.send(QueryActualLevel(GearShort(0))), NoResponseFromGateway)
+
+        stack.gateway.reachable = True
+        assert (await driver.send(QueryActualLevel(GearShort(0)))).value == 0
+    finally:
+        await driver.deinitialize()
+
+
+async def test_repeating_a_query_gets_a_fresh_answer_each_time(stack, dali_logger):
+    """Consecutive identical answers must not look like a stale reply register.
+
+    The driver rotates queue slots and remembers what each reply register held
+    before the write, so an answer that happens to equal the previous one is
+    still recognised as this frame's.
+    """
     driver = await make_driver(stack, dali_logger)
     try:
-        stack.serial.publish_availability(GATEWAY_DEVICE_ID, reachable=False)
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-
-        response = await asyncio.wait_for(driver.send(QueryActualLevel(GearShort(0))), timeout=1.0)
-        assert isinstance(response, GatewayUnavailable)
-
-        stack.serial.publish_availability(GATEWAY_DEVICE_ID, reachable=True)
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-
-        response = await asyncio.wait_for(driver.send(QueryActualLevel(GearShort(0))), timeout=1.0)
-        assert response.value == 0
+        await driver.send(DAPC(GearShort(0), 42))
+        for _ in range(4):
+            assert (await driver.send(QueryActualLevel(GearShort(0)))).value == 42
     finally:
         await driver.deinitialize()

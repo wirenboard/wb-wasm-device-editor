@@ -20,9 +20,10 @@ BUS_NUMBERS = (1, 2, 3)
 def default_scenario() -> Dict[str, Any]:
     """One module with a small mixed installation on bus 1.
 
-    Two units already carry short addresses, as they would after a previous
-    commissioning run; two are factory-fresh and only appear after a scan. That
-    is enough to exercise both halves of the commissioning algorithm.
+    Two luminaires already carry short addresses, as they would after a previous
+    commissioning run; two are factory-fresh and only appear after a scan. The
+    wall switch is a DALI-2 control device, so a scan exercises the input-device
+    half of commissioning as well.
     """
     return {
         "gateways": [
@@ -30,14 +31,19 @@ def default_scenario() -> Dict[str, Any]:
                 "id": "wb-mdali_1",
                 "slaveId": 1,
                 "buses": {
-                    "1": [
-                        {"shortAddress": 0, "randomAddress": 0x1A2B3C, "deviceTypes": [6]},
-                        {"shortAddress": 1, "randomAddress": 0x4D5E6F, "deviceTypes": [6]},
-                        {"shortAddress": None, "randomAddress": 0x7A8B9C, "deviceTypes": [8]},
-                        {"shortAddress": None, "randomAddress": 0xC1D2E3, "deviceTypes": [6]},
-                    ],
-                    "2": [],
-                    "3": [],
+                    "1": {
+                        "gear": [
+                            {"shortAddress": 0, "randomAddress": 0x1A2B3C, "deviceTypes": [6]},
+                            {"shortAddress": 1, "randomAddress": 0x4D5E6F, "deviceTypes": [6]},
+                            {"shortAddress": None, "randomAddress": 0x7A8B9C, "deviceTypes": [8]},
+                            {"shortAddress": None, "randomAddress": 0xC1D2E3, "deviceTypes": [6]},
+                        ],
+                        "devices": [
+                            {"shortAddress": None, "randomAddress": 0x2B3C4D},
+                        ],
+                    },
+                    "2": {"gear": [], "devices": []},
+                    "3": {"gear": [], "devices": []},
                 },
             }
         ],
@@ -49,14 +55,36 @@ def build_network(scenario: Dict[str, Any]) -> SimulatedModbusNetwork:
     network = SimulatedModbusNetwork(frame_delay_s=float(scenario.get("frameDelaySeconds") or 0.0))
     for gateway in scenario.get("gateways", []):
         buses = {index: SimulatedDaliBus() for index in BUS_NUMBERS}
-        for bus_key, units in (gateway.get("buses") or {}).items():
-            bus = buses[int(bus_key)]
-            for unit in units or []:
+        for bus_key, wiring in (gateway.get("buses") or {}).items():
+            bus = buses[_bus_number(bus_key)]
+            for unit in _control_gear(wiring):
                 bus.add_gear(_make_gear(unit))
-            for unit in (gateway.get("devices") or {}).get(bus_key, []):
-                bus.add_device(SimulatedControlDevice())
+            for unit in _control_devices(wiring):
+                bus.add_device(_make_device(unit))
         network.add_module(gateway["id"], buses)
     return network
+
+
+def _bus_number(bus_key: Any) -> int:
+    number = int(bus_key)
+    if number not in BUS_NUMBERS:
+        raise ValueError(f"a WB-DALI module has buses 1..3, not {number}")
+    return number
+
+
+def _control_gear(wiring: Any) -> list:
+    """A bus is either a bare list of control gear, or `{gear, devices}`.
+
+    The bare list is what a scenario written before DALI-2 support looks like,
+    and one may still be sitting in a browser's local storage.
+    """
+    if isinstance(wiring, dict):
+        return list(wiring.get("gear") or [])
+    return list(wiring or [])
+
+
+def _control_devices(wiring: Any) -> list:
+    return list(wiring.get("devices") or []) if isinstance(wiring, dict) else []
 
 
 def _make_gear(unit: Dict[str, Any]) -> SimulatedControlGear:
@@ -65,6 +93,13 @@ def _make_gear(unit: Dict[str, Any]) -> SimulatedControlGear:
         random_address=unit.get("randomAddress"),
         groups=set(unit.get("groups") or []),
         devicetypes=list(unit.get("deviceTypes") or []),
+    )
+
+
+def _make_device(unit: Dict[str, Any]) -> SimulatedControlDevice:
+    return SimulatedControlDevice(
+        shortaddr=unit.get("shortAddress"),
+        random_address=unit.get("randomAddress"),
     )
 
 
@@ -104,7 +139,10 @@ def export_scenario(scenario: Dict[str, Any], network: SimulatedModbusNetwork) -
             {
                 **gateway,
                 "buses": {
-                    str(index): [_export_gear(unit) for unit in bus.dali_bus.gear]
+                    str(index): {
+                        "gear": [_export_gear(unit) for unit in bus.dali_bus.gear],
+                        "devices": [_export_device(unit) for unit in bus.dali_bus.devices],
+                    }
                     for index, bus in simulated.buses.items()
                 },
             }
@@ -118,4 +156,11 @@ def _export_gear(unit) -> Dict[str, Any]:
         "randomAddress": unit.randomaddr.as_integer,
         "deviceTypes": list(unit.devicetypes),
         "groups": sorted(unit.groups),
+    }
+
+
+def _export_device(unit) -> Dict[str, Any]:
+    return {
+        "shortAddress": unit.short_address,
+        "randomAddress": unit.randomaddr.as_integer,
     }

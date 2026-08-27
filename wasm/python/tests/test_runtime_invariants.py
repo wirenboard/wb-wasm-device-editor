@@ -9,8 +9,7 @@ import asyncio
 
 import pytest
 
-from wbdali_browser.broker import Broker, Client
-from wbdali_browser.serial_service import WbMqttSerialEmulator
+from wbdali_browser.broker import Client
 from wbdali_browser.sim.control_gear import SimulatedControlGear
 from wbdali_browser.sim.dali_bus import SimulatedDaliBus
 from wbdali_browser.sim.network import SimulatedModbusNetwork
@@ -18,27 +17,23 @@ from wbdali_browser.sim.network import SimulatedModbusNetwork
 from .conftest import GATEWAY_DEVICE_ID, SimulatedStack, serial_config_with
 
 
-async def test_a_publish_in_the_same_tick_as_a_subscribe_is_delivered(tmp_path):
+async def test_a_publish_in_the_same_tick_as_a_subscribe_is_delivered():
     """`Broker.publish` matches subscriptions as it delivers.
 
     Deferring the broker-side subscribe to the event loop would silently drop
     anything published before it ran, which is exactly what a caller that
     subscribes and then immediately publishes does.
     """
-    stack = SimulatedStack()
-    await stack.start()
-    try:
-        received = []
-        client = Client(stack.broker, "same-tick")
-        client.add_filter("/probe/topic")
-        stack.broker.publish("/probe/topic", "hello")
+    from wbdali_browser.broker import Broker
 
-        message = await asyncio.wait_for(client.messages.__anext__(), 1.0)
-        received.append(message.payload)
+    broker = Broker()
+    client = Client(broker, "same-tick")
+    client.add_filter("/probe/topic")
+    broker.publish("/probe/topic", "hello")
 
-        assert received == [b"hello"]
-    finally:
-        await stack.stop()
+    message = await asyncio.wait_for(client.messages.__anext__(), 1.0)
+
+    assert message.payload == b"hello"
 
 
 async def test_writes_to_one_module_are_transmitted_in_order():
@@ -88,7 +83,6 @@ async def test_concurrent_rpc_calls_do_not_answer_each_other(tmp_path):
         vendor_dir=Path(__file__).parent.parent / "vendor",
         root=tmp_path,
     )
-    network.bind(runtime.serial.publish_control)
     await runtime.start()
     try:
         gateway, bus = await asyncio.gather(
@@ -102,29 +96,21 @@ async def test_concurrent_rpc_calls_do_not_answer_each_other(tmp_path):
         await runtime.stop()
 
 
-async def test_an_unreachable_module_reports_an_error_rather_than_hanging(tmp_path):
+async def test_an_unreachable_module_reports_an_error_rather_than_hanging():
     stack = SimulatedStack(gear=[SimulatedControlGear(shortaddr=0, random_address=0x1A2B3C)])
-    await stack.start()
-    try:
-        stack.gateway.reachable = False
+    stack.gateway.reachable = False
 
-        with pytest.raises(Exception):
-            await asyncio.wait_for(
-                stack.network.write_holding(GATEWAY_DEVICE_ID, 1400, [0, 0]), 1.0
-            )
-    finally:
-        await stack.stop()
+    with pytest.raises(Exception):
+        await asyncio.wait_for(stack.network.write_holding(GATEWAY_DEVICE_ID, 1400, [0, 0]), 1.0)
 
 
-async def test_the_serial_emulator_answers_the_config_the_daemon_discovers_gateways_from():
+async def test_the_config_service_lists_the_gateways_the_daemon_looks_for():
     """`Gateway._update_gateways` deletes any gateway this config does not list."""
-    stack = SimulatedStack()
-    await stack.start()
-    try:
-        config = await stack.serial._handle_config_load({})
+    from wbdali_browser.broker import Broker
+    from wbdali_browser.serial_service import WbMqttSerialConfigService
 
-        devices = config["config"]["ports"][0]["devices"]
-        assert [device["id"] for device in devices] == [GATEWAY_DEVICE_ID]
-        assert all(device["device_type"] == "WB-DALI" for device in devices)
-    finally:
-        await stack.stop()
+    service = WbMqttSerialConfigService(Broker(), serial_config_with(GATEWAY_DEVICE_ID))
+
+    assert service.device_ids == [GATEWAY_DEVICE_ID]
+    devices = service.serial_config["ports"][0]["devices"]
+    assert all(device["device_type"] == "WB-DALI" for device in devices)

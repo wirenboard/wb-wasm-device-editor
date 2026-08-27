@@ -35,7 +35,6 @@ async def make_runtime(tmp_path, gear=()):
         vendor_dir=VENDOR_DIR,
         root=tmp_path,
     )
-    network.bind(runtime.serial.publish_control)
     await runtime.start()
     runtime.buses = buses
     return runtime

@@ -51,7 +51,6 @@ async def runtime(tmp_path):
         vendor_dir=VENDOR_DIR,
         root=tmp_path,
     )
-    network.bind(instance.serial.publish_control)
     await instance.start()
     instance.buses = buses
     try:

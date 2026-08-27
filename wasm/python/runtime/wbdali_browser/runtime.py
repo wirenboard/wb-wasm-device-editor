@@ -2,8 +2,10 @@
 
 The daemon is started the way `main.py::default_service` starts it, minus the
 parts a browser cannot provide: no broker connection, no signal handlers, no
-journal. What replaces them is a loopback broker, an emulated wb-mqtt-serial and
-a pre-seeded virtual filesystem.
+journal. What replaces them is a loopback broker for the daemon's own
+publishing, a stub for the one wb-mqtt-serial RPC its boot depends on, a
+pre-seeded virtual filesystem, and a DALI driver that reaches the gateway over
+Modbus registers instead of MQTT.
 
 Boot order is not negotiable (see `Gateway.start()`):
 
@@ -29,7 +31,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .broker import Broker, Client, Message, get_payload_str
-from .serial_service import ModbusTransport, WbMqttSerialEmulator
+from .dali_driver import RegisterTransport, make_driver_class
+from .serial_service import WbMqttSerialConfigService
 
 logger = logging.getLogger("wbdali_browser.runtime")
 
@@ -127,14 +130,15 @@ class DaliRuntime:
 
     def __init__(
         self,
-        transport: ModbusTransport,
+        transport: RegisterTransport,
         serial_config: dict,
         config: Optional[dict] = None,
         vendor_dir: Optional[Path] = None,
         root: Path = Path("/"),
     ) -> None:
         self.broker = Broker()
-        self.serial = WbMqttSerialEmulator(self.broker, transport, serial_config)
+        self.transport = transport
+        self.serial = WbMqttSerialConfigService(self.broker, serial_config)
         self.config = config if config is not None else default_config(self.serial.device_ids)
         self.vendor_dir = vendor_dir
         self.root = Path(root)
@@ -150,9 +154,16 @@ class DaliRuntime:
     # -- lifecycle --------------------------------------------------------
 
     async def start(self) -> "DaliRuntime":
+        from wb.mqtt_dali import application_controller
         from wb.mqtt_dali.gateway import Gateway
         from wb.mqtt_dali.gtin_db import DaliDatabase
         from wb.mqtt_dali.mqtt_dispatcher import MQTTDispatcher
+
+        # `ApplicationController` builds its own DALI driver, handing it the MQTT
+        # dispatcher it would use to reach wb-mqtt-serial. Substituting the name
+        # it constructs is the whole adaptation: the browser talks to the gateway
+        # over Modbus registers instead, one blocking request at a time.
+        application_controller.WBDALIDriver = make_driver_class(self.transport)
 
         if self.vendor_dir is not None:
             install_data_files(self.vendor_dir, self.root)

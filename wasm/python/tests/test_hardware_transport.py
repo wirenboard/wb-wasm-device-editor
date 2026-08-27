@@ -1,23 +1,21 @@
-"""The real-hardware transport, driven against the virtual gateway.
+"""The register transport that reaches a real WB-DALI module over WebSerial.
 
-There was no WB-DALI module to test against, so `port/Load` is stubbed with one
-that reads and writes the simulated gateway's registers. That leaves exactly the
-part this class adds under test: deciding which reply slots a write covered, and
-polling them back out of the gateway's input registers instead of waiting for
-the sporadic-event stream a browser cannot subscribe to.
+There was no module to test against, so `port/Load` is stubbed with one that
+reads and writes the simulated gateway's registers. What that leaves under test
+is the Modbus request this builds and the hex encoding either way; the framing
+below it is the same C++ code the Modbus editor already uses, and the DALI
+protocol above it belongs to the driver.
 """
-
-import asyncio
 
 import pytest
 
+from wbdali_browser.dali_driver import BlockingDaliDriver
 from wbdali_browser.hardware import (
     ModbusError,
     WasmSerialTransport,
     hex_to_registers,
-    queue_slots_written,
+    registers_to_hex,
 )
-from wbdali_browser.serial_service import registers_to_hex
 from wbdali_browser.sim.control_gear import SimulatedControlGear
 from wbdali_browser.sim.dali_bus import SimulatedDaliBus
 from wbdali_browser.sim.gateway import VirtualWbDaliGateway
@@ -56,68 +54,34 @@ def make_port_load(gateway, calls=None):
 
 
 @pytest.mark.parametrize(
-    "address, registers, expected",
-    [
-        (1400, 2, (1, 0, 1)),
-        (1402, 2, (1, 1, 1)),
-        (1400, 6, (1, 0, 3)),
-        (1430, 2, (1, 15, 1)),
-        (2400, 2, (2, 0, 1)),
-        (3406, 4, (3, 3, 2)),
-        (1432, 1, None),  # the bulk-send pointer, not a queue slot
-        (1500, 1, None),  # a reply register
-    ],
+    "registers, hexed",
+    [([0x1234], "1234"), ([0x01A0, 0x8000], "01a08000"), ([], "")],
 )
-def test_queue_slot_arithmetic(address, registers, expected):
-    assert queue_slots_written(address, registers) == expected
+def test_register_hex_round_trip(registers, hexed):
+    assert registers_to_hex(registers) == hexed
+    assert hex_to_registers(hexed) == registers
 
 
-async def test_a_written_slot_is_polled_back_and_published():
-    gateway = make_gateway()
-    published = []
-    transport = WasmSerialTransport(make_port_load(gateway), {GATEWAY_DEVICE_ID: SLAVE_ID})
-    transport.bind(lambda device, control, value: published.append((device, control, value)))
-
-    # QueryActualLevel to short address 0, encoded the way the driver would.
-    await transport.write_holding(GATEWAY_DEVICE_ID, 1400, [0x01A0, 0x8000])
-
-    assert published == [(GATEWAY_DEVICE_ID, "bus_1_bulk_send_reply_0", 0x0100)]
+def test_a_truncated_reply_is_an_error_not_a_silent_short_read():
+    with pytest.raises(ModbusError):
+        hex_to_registers("12")
 
 
-async def test_only_the_slots_of_this_batch_are_published():
-    """A reply register keeps its value until the slot is reused.
-
-    Republishing one the driver has already consumed would resolve a later
-    command's future with an earlier command's answer.
-    """
-    gateway = make_gateway()
-    published = []
-    transport = WasmSerialTransport(make_port_load(gateway), {GATEWAY_DEVICE_ID: SLAVE_ID})
-    transport.bind(lambda device, control, value: published.append((device, control, value)))
-
-    await transport.write_holding(GATEWAY_DEVICE_ID, 1400, [0x01A0, 0x8000])
-    published.clear()
-    await transport.write_holding(GATEWAY_DEVICE_ID, 1402, [0x01A0, 0x8000])
-
-    assert [control for _device, control, _value in published] == ["bus_1_bulk_send_reply_1"]
-
-
-async def test_a_write_outside_the_queue_polls_nothing():
-    gateway = make_gateway()
-    published = []
-    transport = WasmSerialTransport(make_port_load(gateway), {GATEWAY_DEVICE_ID: SLAVE_ID})
-    transport.bind(lambda device, control, value: published.append((device, control, value)))
-
-    # The queue reset: the bulk-send pointer, which produces no reply.
-    await transport.write_holding(GATEWAY_DEVICE_ID, 1432, [0])
-
-    assert published == []
-
-
-async def test_reads_go_out_as_modbus_reads():
-    gateway = make_gateway()
+async def test_a_write_goes_out_as_a_multiple_register_write():
     calls = []
-    transport = WasmSerialTransport(make_port_load(gateway, calls), {GATEWAY_DEVICE_ID: SLAVE_ID})
+    transport = WasmSerialTransport(make_port_load(make_gateway(), calls), {GATEWAY_DEVICE_ID: SLAVE_ID})
+
+    await transport.write_holding(GATEWAY_DEVICE_ID, 1400, [0x01A0, 0x8000])
+
+    assert calls[-1]["function"] == 16
+    assert calls[-1]["address"] == 1400
+    assert calls[-1]["count"] == 2
+    assert calls[-1]["msg"] == "01a08000"
+
+
+async def test_reads_go_out_as_input_register_reads():
+    calls = []
+    transport = WasmSerialTransport(make_port_load(make_gateway(), calls), {GATEWAY_DEVICE_ID: SLAVE_ID})
 
     await transport.read_input(GATEWAY_DEVICE_ID, 1500, 4)
 
@@ -143,64 +107,20 @@ async def test_a_modbus_error_reply_is_raised():
         await transport.read_input(GATEWAY_DEVICE_ID, 1500, 1)
 
 
-async def test_a_silent_slot_gives_up_instead_of_polling_forever():
-    """A gateway that never transmits must not block the caller indefinitely."""
+async def test_the_driver_runs_over_this_transport_unchanged(dali_logger):
+    """The whole point of the transport seam: swap it and nothing else changes."""
+    from dali.address import GearShort
+    from dali.gear.general import DAPC, QueryActualLevel
+    from wb.mqtt_dali.wbdali import WBDALIConfig
+
     gateway = make_gateway()
-
-    async def port_load(request):
-        if request["function"] == 16:
-            return {"response": ""}  # accept the write, never transmit
-        return {"response": registers_to_hex([0] * request["count"])}
-
-    transport = WasmSerialTransport(port_load, {GATEWAY_DEVICE_ID: SLAVE_ID})
-    transport.bind(lambda *_: None)
-
-    await asyncio.wait_for(
-        transport.write_holding(GATEWAY_DEVICE_ID, 1400, [0x01A0, 0x8000]), timeout=5.0
+    transport = WasmSerialTransport(make_port_load(gateway), {GATEWAY_DEVICE_ID: SLAVE_ID})
+    driver = BlockingDaliDriver(
+        WBDALIConfig(device_name=GATEWAY_DEVICE_ID, bus=1), transport, dali_logger
     )
+    await driver.initialize()
 
+    await driver.send(DAPC(GearShort(0), 128))
+    response = await driver.send(QueryActualLevel(GearShort(0)))
 
-async def test_a_module_that_stops_answering_is_reported_unreachable():
-    """`/meta/error` is how the driver learns to fail fast.
-
-    Without it every command waits out its own 1.5 s timeout, and the daemon's
-    retries keep new ones coming — so a gateway that is simply not connected
-    turns into an unbounded stream of doomed requests.
-    """
-    availability = []
-
-    async def failing_port_load(_request):
-        return {"error": "Request timed out"}
-
-    transport = WasmSerialTransport(failing_port_load, {GATEWAY_DEVICE_ID: SLAVE_ID})
-    transport.bind(
-        lambda *_: None,
-        lambda device, reachable: availability.append((device, reachable)),
-    )
-
-    for _ in range(3):
-        with pytest.raises(ModbusError):
-            await transport.read_input(GATEWAY_DEVICE_ID, 1500, 1)
-
-    assert availability == [(GATEWAY_DEVICE_ID, False)]
-
-
-async def test_a_module_that_answers_again_is_reported_reachable():
-    replies = [{"error": "timeout"}] * 3 + [{"response": "0000"}]
-
-    async def flaky_port_load(_request):
-        return replies.pop(0)
-
-    availability = []
-    transport = WasmSerialTransport(flaky_port_load, {GATEWAY_DEVICE_ID: SLAVE_ID})
-    transport.bind(
-        lambda *_: None,
-        lambda device, reachable: availability.append((device, reachable)),
-    )
-
-    for _ in range(3):
-        with pytest.raises(ModbusError):
-            await transport.read_input(GATEWAY_DEVICE_ID, 1500, 1)
-    await transport.read_input(GATEWAY_DEVICE_ID, 1500, 1)
-
-    assert availability == [(GATEWAY_DEVICE_ID, False), (GATEWAY_DEVICE_ID, True)]
+    assert response.value == 128

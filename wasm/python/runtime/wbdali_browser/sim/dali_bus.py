@@ -16,7 +16,6 @@ timeout) live.
 from __future__ import annotations
 
 import logging
-from enum import IntEnum
 from typing import List, Optional, Sequence, Tuple
 
 from dali.command import Command, from_frame
@@ -24,24 +23,12 @@ from dali.device.helpers import DeviceInstanceTypeMapper
 from dali.frame import ForwardFrame
 from dali.gear.general import EnableDeviceType
 
+from ..registers import TransmissionStatus
+
 logger = logging.getLogger("wbdali_browser.sim.bus")
 
 GEAR_FRAME_BITS = 16
 DEVICE_FRAME_BITS = 24
-
-
-class TransmissionStatus(IntEnum):
-    """The status byte the WB-DALI gateway reports for a sent frame.
-
-    Mirrors the layout documented in ``WBDALIDriver._handle_reply_message``.
-    """
-
-    NO_TRANSMISSION = 0
-    WITH_BACKWARD_RESPONSE = 1
-    WITHOUT_RESPONSE = 2
-    BROKEN_RESPONSE = 3
-    NO_POWER_ON_BUS = 4
-    OVERHEAT = 5
 
 
 class SimulatedDaliBus:

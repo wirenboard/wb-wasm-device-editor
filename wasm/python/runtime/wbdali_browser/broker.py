@@ -1,10 +1,14 @@
 """An in-process MQTT broker that speaks enough of the protocol for wb-mqtt-dali.
 
-The daemon reaches the outside world through exactly one object: the
-``aiomqtt.Client`` it hands to :class:`~wb.mqtt_dali.mqtt_dispatcher.MQTTDispatcher`.
-Replacing that client with a loopback client attached to this broker lets the
-unmodified daemon run in a browser, with the web UI and the emulated
-wb-mqtt-serial attached to the same broker as ordinary clients.
+This is the daemon's own bus, not the DALI one. `Gateway`, `MQTTRPCServer` and
+`ApplicationController` are production code that publishes and subscribes for a
+living — the `Editor/*` RPC the web UI calls, the commissioning progress topic
+it watches, the virtual devices it publishes — and they take an
+``aiomqtt.Client`` to do it with. Giving them a loopback client attached to this
+broker is what lets them run unmodified in a browser.
+
+DALI traffic does not come through here. Commands go straight to the gateway's
+Modbus registers through `wbdali_browser.dali_driver`.
 
 Semantics that matter to the daemon and are therefore implemented here:
 

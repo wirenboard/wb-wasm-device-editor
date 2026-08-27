@@ -55,10 +55,10 @@ async def start(
 ) -> str:
     """Boot wb-mqtt-dali over a simulated installation or real hardware.
 
-    `mode` picks which `ModbusTransport` sits under the daemon: the simulated
-    WB-DALI modules described by the scenario, or real ones reached through the
-    C++ WASM module's `port/Load` RPC over WebSerial. Everything above the
-    transport is identical either way.
+    `mode` picks which `RegisterTransport` sits under the DALI driver: the
+    simulated WB-DALI modules described by the scenario, or real ones reached
+    through the C++ WASM module's `port/Load` RPC over WebSerial. Everything
+    above the transport is identical either way.
 
     `config_json` restores a previously saved daemon config, so an installation
     commissioned before a page reload comes back instead of looking untouched.
@@ -83,10 +83,6 @@ async def start(
         config=_restore_config(config_json, gateway_ids) or default_config(gateway_ids),
         root=Path("/"),
     )
-    if mode == HARDWARE:
-        transport.bind(_runtime.serial.publish_control, _runtime.serial.publish_availability)
-    else:
-        transport.bind(_runtime.serial.publish_control)
     await _runtime.start()
     return json.dumps(_scenario)
 
@@ -137,7 +133,7 @@ def snapshot_scenario() -> str:
     Returns the scenario unchanged in hardware mode: the state that matters
     lives in the modules themselves, and the daemon's config already records it.
     """
-    transport = _require().serial.transport
+    transport = _require().transport
     if not hasattr(transport, "gateways"):
         return json.dumps(_scenario)
     return json.dumps(export_scenario(_scenario, transport))
@@ -172,7 +168,7 @@ async def rpc(service: str, method: str, params_json: Optional[str] = None) -> s
 def diagnostics() -> str:
     """A snapshot of what the simulation is doing, for the page's debug panel."""
     runtime = _require()
-    network = runtime.serial.transport
+    network = runtime.transport
     return json.dumps(
         {
             "messagesPublished": runtime.broker.published_count,
@@ -198,12 +194,10 @@ def diagnostics() -> str:
 
 def set_gateway_reachable(device_id: str, reachable: bool) -> None:
     """Pull the plug on a simulated module, so the UI's error paths can be seen."""
-    runtime = _require()
-    gateways = getattr(runtime.serial.transport, "gateways", None)
+    gateways = getattr(_require().transport, "gateways", None)
     if gateways is None:
         raise RuntimeError("only a simulated module can be unplugged from here")
     gateways[device_id].reachable = reachable
-    runtime.serial.publish_availability(device_id, reachable)
 
 
 def _require() -> DaliRuntime:

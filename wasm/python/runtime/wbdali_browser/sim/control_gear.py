@@ -19,18 +19,27 @@ than by patching the vendored copy:
   failure level, fade time and rate, fast fade time — and the DT6 dimming curve.
   Real gear always answers these, the editor shows all of them, and a single
   unanswered query in a batch fails the whole parameter read.
+* The whole DALI-2 commissioning state machine of IEC 62386-103 §11. `fakes.Device`
+  models instances, DTRs and memory banks but not addressing, so a bus scan could
+  never find an input device — half of what the editor exists to configure.
 """
 
 from __future__ import annotations
 
+import random
 from typing import Optional
 
+from dali.address import DeviceGroup, DeviceShort, InstanceNumber
+from dali.device import general as control_device, pushbutton
 from dali.frame import Frame
 from dali.gear import colour, general as control_gear, led
 from dali.gear.colour import QueryColourValueDTR
 from dali.tests import fakes
 
 MASK = 0xFF
+
+# A backward frame of 0xFF is the DALI "yes".
+_YES = 0xFF
 
 # IEC 62386-209 §11.3.4.3, QUERY COLOUR STATUS.
 COLOUR_STATUS_TC_OUT_OF_RANGE = 1 << 1
@@ -170,8 +179,241 @@ class SimulatedControlGear(fakes.Gear):
         return None
 
 
-class SimulatedControlDevice(fakes.Device):
-    """One DALI-2 control device — a wall switch, presence or light sensor."""
+# IEC 62386-103 §11.4.2, INITIALISE parameter. Note that these are the reverse
+# of the control-gear meanings: for a control device MASK selects every device,
+# and 0x7F selects the unaddressed ones.
+INITIALISE_ALL = 0xFF
+INITIALISE_UNADDRESSED = 0x7F
 
-    def __init__(self, shortaddr=None, **kwargs):
+# Instance types, IEC 62386-3xx.
+INSTANCE_TYPE_PUSHBUTTON = 1
+
+# Event priorities: pushbuttons are a user action, other instance types are not
+# (IEC 62386-301 §9.4.1, IEC 62386-103 §9.14.2).
+EVENT_PRIORITY_PUSHBUTTON = 3
+EVENT_PRIORITY_DEFAULT = 4
+
+# The factory state of a simulated pushbutton's timers, in the raw units the
+# commands carry: 20 ms per step for the three press timers, 1 s for the stuck
+# timer. All are inside the ranges the editor accepts.
+DEFAULT_SHORT_TIMER = 20
+DEFAULT_DOUBLE_TIMER = 20
+DEFAULT_REPEAT_TIMER = 20
+DEFAULT_STUCK_TIMER = 20
+
+# A device with no group assigned answers MASK, not 0 — group 0 is a real group.
+NO_GROUP = 0xFF
+
+
+class _InstanceSettings:
+    """The configurable state of one instance of a control device."""
+
+    def __init__(self, inst_type: int) -> None:
+        self.inst_type = inst_type
+        self.event_priority = (
+            EVENT_PRIORITY_PUSHBUTTON if inst_type == INSTANCE_TYPE_PUSHBUTTON else EVENT_PRIORITY_DEFAULT
+        )
+        self.primary_group = NO_GROUP
+        self.group1 = NO_GROUP
+        self.group2 = NO_GROUP
+        self.short_timer = DEFAULT_SHORT_TIMER
+        self.short_timer_min = DEFAULT_SHORT_TIMER
+        self.double_timer = DEFAULT_DOUBLE_TIMER
+        self.double_timer_min = DEFAULT_DOUBLE_TIMER
+        self.repeat_timer = DEFAULT_REPEAT_TIMER
+        self.stuck_timer = DEFAULT_STUCK_TIMER
+
+
+class SimulatedControlDevice(fakes.Device):
+    """One DALI-2 control device — a wall switch, presence or light sensor.
+
+    :param shortaddr: short address 0..63, or ``None`` for an unaddressed device
+    :param random_address: the 24-bit random address the device left the factory with
+    """
+
+    def __init__(self, shortaddr: Optional[int] = None, random_address: Optional[int] = None, **kwargs):
+        if isinstance(shortaddr, int):
+            shortaddr = DeviceShort(shortaddr)
         super().__init__(shortaddr=shortaddr, **kwargs)
+        self.randomaddr = Frame(24, random_address or 0)
+        self.searchaddr = Frame(24)
+        self.initialising = False
+        self.withdrawn = False
+        # `fakes.Device._instances` is a class attribute, so every fake device
+        # shares one list: configuring one would configure all of them.
+        self._instances = [
+            fakes.Device.Instance(inst_type=inst.inst_type, scheme=inst.scheme, filter=inst.filter)
+            for inst in type(self)._instances  # pylint: disable=protected-access
+        ]
+        self._instance_settings = [
+            _InstanceSettings(inst.inst_type) for inst in self._instances
+        ]
+        self.version_number = 2  # IEC 62386-103 edition 2
+
+    @property
+    def short_address(self) -> Optional[int]:
+        """The short address as a plain number, or None when unaddressed."""
+        return None if self.shortaddr is None else self.shortaddr.address
+
+    def send(self, cmd):
+        answer = super().send(cmd)
+        if answer is not None:
+            return answer
+        if not self.valid_address(cmd):
+            return None
+        answer = self._instance_command(cmd)
+        if answer is not None:
+            return answer
+        return self._commission(cmd)
+
+    def _instance_command(self, cmd):  # pylint: disable=too-many-return-statements
+        """Per-instance settings of IEC 62386-103 §9 and -301 §9.
+
+        `fakes.Device` answers the instance type, scheme and event filter but
+        none of these, and `Editor/GetDevice` reads every one of them — a single
+        unanswered query fails the whole batch and empties the form.
+        """
+        instance = self._settings_for(cmd)
+        if instance is None:
+            return None
+
+        if isinstance(cmd, control_device.QueryEventPriority):
+            return instance.event_priority
+        if isinstance(cmd, control_device.SetEventPriority):
+            instance.event_priority = self.dtr0
+            return None
+        if isinstance(cmd, control_device.QueryPrimaryInstanceGroup):
+            return instance.primary_group
+        if isinstance(cmd, control_device.SetPrimaryInstanceGroup):
+            instance.primary_group = self.dtr0
+            return None
+        if isinstance(cmd, control_device.QueryInstanceGroup1):
+            return instance.group1
+        if isinstance(cmd, control_device.SetInstanceGroup1):
+            instance.group1 = self.dtr0
+            return None
+        if isinstance(cmd, control_device.QueryInstanceGroup2):
+            return instance.group2
+        if isinstance(cmd, control_device.SetInstanceGroup2):
+            instance.group2 = self.dtr0
+            return None
+        if isinstance(cmd, control_device.QueryFeatureType):
+            return instance.inst_type
+
+        if isinstance(cmd, pushbutton.QueryShortTimer):
+            return instance.short_timer
+        if isinstance(cmd, pushbutton.SetShortTimer):
+            instance.short_timer = self.dtr0
+            return None
+        if isinstance(cmd, pushbutton.QueryShortTimerMin):
+            return instance.short_timer_min
+        if isinstance(cmd, pushbutton.QueryDoubleTimer):
+            return instance.double_timer
+        if isinstance(cmd, pushbutton.SetDoubleTimer):
+            instance.double_timer = self.dtr0
+            return None
+        if isinstance(cmd, pushbutton.QueryDoubleTimerMin):
+            return instance.double_timer_min
+        if isinstance(cmd, pushbutton.QueryRepeatTimer):
+            return instance.repeat_timer
+        if isinstance(cmd, pushbutton.SetRepeatTimer):
+            instance.repeat_timer = self.dtr0
+            return None
+        if isinstance(cmd, pushbutton.QueryStuckTimer):
+            return instance.stuck_timer
+        if isinstance(cmd, pushbutton.SetStuckTimer):
+            instance.stuck_timer = self.dtr0
+            return None
+        return None
+
+    def _settings_for(self, cmd) -> Optional["_InstanceSettings"]:
+        instance = getattr(cmd, "instance", None)
+        if not isinstance(instance, InstanceNumber):
+            return None
+        number = instance.value
+        if number >= len(self._instance_settings):
+            return None
+        return self._instance_settings[number]
+
+    def _commission(self, cmd):  # pylint: disable=too-many-return-statements
+        """The addressing commands of IEC 62386-103 §11.
+
+        Deliberately mirrors `fakes.Gear`'s control-gear equivalent, including
+        the parts that make a binary search work: COMPARE answers while the
+        random address is at or below the search address, and WITHDRAW only
+        takes effect on the device the search has isolated.
+        """
+        if isinstance(cmd, control_device.Terminate):
+            self.initialising = False
+            self.withdrawn = False
+        elif isinstance(cmd, control_device.Initialise):
+            if cmd.param in (INITIALISE_ALL, self.short_address) or (
+                cmd.param == INITIALISE_UNADDRESSED and self.shortaddr is None
+            ):
+                self.initialising = True
+                self.withdrawn = False
+        elif isinstance(cmd, control_device.Randomise):
+            self.randomaddr = Frame(24, self._next_random_address())
+        elif isinstance(cmd, control_device.Compare):
+            if self._selectable() and self.randomaddr.as_integer <= self.searchaddr.as_integer:
+                return _YES
+        elif isinstance(cmd, control_device.Withdraw):
+            if self._selected():
+                self.withdrawn = True
+        elif isinstance(cmd, control_device.SearchAddrH):
+            self.searchaddr[23:16] = cmd.param
+        elif isinstance(cmd, control_device.SearchAddrM):
+            self.searchaddr[15:8] = cmd.param
+        elif isinstance(cmd, control_device.SearchAddrL):
+            self.searchaddr[7:0] = cmd.param
+        elif isinstance(cmd, control_device.ProgramShortAddress):
+            if self._selected():
+                self.shortaddr = None if cmd.param == MASK else DeviceShort(cmd.param)
+        elif isinstance(cmd, control_device.VerifyShortAddress):
+            if self.initialising and self.short_address == cmd.param:
+                return _YES
+        elif isinstance(cmd, control_device.QueryShortAddress):
+            if self._selected():
+                return MASK if self.shortaddr is None else self.short_address
+        elif isinstance(cmd, control_device.QueryRandomAddressH):
+            return self.randomaddr[23:16]
+        elif isinstance(cmd, control_device.QueryRandomAddressM):
+            return self.randomaddr[15:8]
+        elif isinstance(cmd, control_device.QueryRandomAddressL):
+            return self.randomaddr[7:0]
+        elif isinstance(cmd, control_device.QueryDeviceGroupsZeroToSeven):
+            return self._group_byte(0)
+        elif isinstance(cmd, control_device.QueryDeviceGroupsEightToFifteen):
+            return self._group_byte(1)
+        elif isinstance(cmd, control_device.QueryDeviceGroupsSixteenToTwentyThree):
+            return self._group_byte(2)
+        elif isinstance(cmd, control_device.QueryDeviceGroupsTwentyFourToThirtyOne):
+            return self._group_byte(3)
+        elif isinstance(cmd, control_device.QueryVersionNumber):
+            return self.version_number
+        return None
+
+    def _group_byte(self, index: int) -> int:
+        """Group membership, eight groups per answer.
+
+        A control device has 32 groups (IEC 62386-103 §9.7), read back as four
+        bytes; control gear has 16. `fakes.Device` tracks the set but never
+        reports it, and an unanswered query fails the whole parameter batch.
+        """
+        first = index * 8
+        bits = 0
+        for group in self.groups:
+            number = group.group if hasattr(group, "group") else int(group)
+            if first <= number < first + 8:
+                bits |= 1 << (number - first)
+        return bits
+
+    def _selectable(self) -> bool:
+        return self.initialising and not self.withdrawn
+
+    def _selected(self) -> bool:
+        """True for the one device the search address currently isolates."""
+        return self.initialising and self.randomaddr == self.searchaddr
+
+    def _next_random_address(self) -> int:
+        return random.randrange(0, 0x1000000)
