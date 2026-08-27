@@ -28,11 +28,18 @@ function swCachePlugin(): Plugin {
         cacheVersion = Date.now().toString(36);
       }
 
-      // Discover hashed asset filenames
+      // Discover hashed asset filenames. The DALI runtime is split out: it is
+      // an order of magnitude larger than the rest and only the DALI view needs
+      // it, so it is precached best-effort rather than as an install blocker.
       const assetsDir = path.join(outDir, 'assets');
+      const isDaliRuntime = (name: string) =>
+        /^(pyodide|python_stdlib|wbdali-|dali-worker)/.test(name);
       let hashedAssets: string[] = [];
+      let daliAssets: string[] = [];
       if (fs.existsSync(assetsDir)) {
-        hashedAssets = fs.readdirSync(assetsDir).map((f) => `/assets/${f}`);
+        for (const file of fs.readdirSync(assetsDir)) {
+          (isDaliRuntime(file) ? daliAssets : hashedAssets).push(`/assets/${file}`);
+        }
       }
 
       let sw = fs.readFileSync(swPath, 'utf-8');
@@ -42,8 +49,15 @@ function swCachePlugin(): Plugin {
         '// __HASHED_ASSETS__',
         hashedAssets.map((a) => `  '${a}'`).join(',\n'),
       );
+      sw = sw.replace(
+        '// __DALI_ASSETS__',
+        daliAssets.map((a) => `  '${a}'`).join(',\n'),
+      );
       fs.writeFileSync(swPath, sw);
-      console.log(`[sw-cache-inject] Injected version=${pkg.version} cache=${cacheVersion}, ${hashedAssets.length} hashed assets`);
+      console.log(
+        `[sw-cache-inject] Injected version=${pkg.version} cache=${cacheVersion}, `
+          + `${hashedAssets.length} hashed assets, ${daliAssets.length} DALI runtime assets`,
+      );
     },
   };
 }
@@ -192,6 +206,16 @@ export default defineConfig(() => {
 
     resolve: {
       alias: {
+        // The offline page has every byte asset inlined, so it must not import
+        // them by URL: singlefile would base64 each one a second time, inside
+        // the already-base64 inline bundle.
+        ...(offline
+          ? {
+            './pyodide-assets': path.resolve(__dirname, 'src/dali-wasm/pyodide-assets.offline.ts'),
+            './worker-host': path.resolve(__dirname, 'src/dali-wasm/worker-host.offline.ts'),
+          }
+          : {}),
+
         '@': path.resolve(__dirname, '../submodule/homeui/frontend/src'),
         '~': path.resolve(__dirname, '../submodule/homeui/frontend/app/scripts'),
         '~scripts': path.resolve(__dirname, '../submodule/homeui/frontend/app/scripts'),

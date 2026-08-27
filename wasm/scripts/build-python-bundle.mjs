@@ -90,7 +90,14 @@ async function fetchWheels() {
 
 async function main() {
   if (!fs.existsSync(path.join(VENDOR, 'wb/mqtt_dali/gateway.py'))) {
-    fail('vendored sources are missing; run scripts/fetch-python-sources.sh');
+    // `python/vendor` is gitignored, so it is absent on a fresh checkout and in
+    // CI. Fetching it here keeps `npm run build` self-contained rather than
+    // depending on a separate step nobody remembers to run.
+    console.log('[python-bundle] vendored sources missing, fetching');
+    execFileSync('bash', [path.join(WASM, '../scripts/fetch-python-sources.sh'), VENDOR], {
+      cwd: path.join(WASM, '..'),
+      stdio: 'inherit',
+    });
   }
 
   const wheels = await fetchWheels();

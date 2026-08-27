@@ -145,6 +145,7 @@ class DaliRuntime:
         self._ui_client: Optional[Client] = None
         self._ui_task: Optional[asyncio.Task] = None
         self._subscriptions: Dict[str, List[Callable[[str, str, bool], None]]] = {}
+        self._rpc_calls = 0
 
     # -- lifecycle --------------------------------------------------------
 
@@ -218,19 +219,23 @@ class DaliRuntime:
                     logger.exception("UI callback for %s failed", pattern)
 
     def subscribe(self, pattern: str, callback: Callable[[str, str, bool], None]) -> None:
-        """Subscribe the UI to a topic filter. Retained messages are replayed."""
+        """Subscribe the UI to a topic filter. Retained messages are replayed.
+
+        The filter reaches the broker synchronously: `Broker.publish` checks
+        subscriptions as it delivers, so deferring this would silently drop
+        anything published in the same tick as the subscribe.
+        """
         callbacks = self._subscriptions.setdefault(pattern, [])
         callbacks.append(callback)
         if len(callbacks) == 1:
-            asyncio.ensure_future(self._ui_client.subscribe(pattern))
-        else:
-            for message in self.broker.retained_matching(pattern):
-                callback(message.topic.value, get_payload_str(message), True)
+            self._ui_client.add_filter(pattern)
+        for message in self.broker.retained_matching(pattern):
+            callback(message.topic.value, get_payload_str(message), True)
 
     def unsubscribe(self, pattern: str) -> None:
         """Drop every UI callback for a filter, matching homeui's mqttClient."""
         if self._subscriptions.pop(pattern, None) is not None and self._ui_client is not None:
-            asyncio.ensure_future(self._ui_client.unsubscribe(pattern))
+            self._ui_client.remove_filter(pattern)
 
     def publish(self, topic: str, payload: Any = None, retain: bool = False, qos: int = 1) -> None:
         self.broker.publish(topic, payload, qos=qos, retain=retain)
@@ -272,7 +277,12 @@ class DaliRuntime:
         The web UI does not use this — it publishes MQTT-RPC itself, the same way
         homeui does — but tests and the console do.
         """
-        topic = f"/rpc/v1/wb-mqtt-dali/{service}/{method}/runtime"
+        self._rpc_calls += 1
+        call_id = self._rpc_calls
+        # One client id per call: correlation is by reply topic, and
+        # `unsubscribe` drops every callback for a topic, so two concurrent
+        # calls sharing one would tear down each other's subscription.
+        topic = f"/rpc/v1/wb-mqtt-dali/{service}/{method}/runtime-{call_id}"
         reply_topic = topic + "/reply"
         future: asyncio.Future = asyncio.get_running_loop().create_future()
 
@@ -292,7 +302,7 @@ class DaliRuntime:
         self.subscribe(reply_topic, on_reply)
         try:
             await asyncio.sleep(0)  # let the subscribe reach the broker
-            self.publish(topic, json.dumps({"id": 1, "params": params or {}}))
+            self.publish(topic, json.dumps({"id": call_id, "params": params or {}}))
             return await asyncio.wait_for(future, timeout)
         finally:
             self.unsubscribe(reply_topic)

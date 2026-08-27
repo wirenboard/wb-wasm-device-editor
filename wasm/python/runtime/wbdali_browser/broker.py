@@ -217,16 +217,28 @@ class Client:
     def is_subscribed(self, topic: str) -> bool:
         return any(topic_matches(pattern, topic) for pattern in self._filters)
 
-    async def subscribe(self, topic: str, qos: int = 0, **_kwargs) -> None:
-        first_time = topic not in self._filters
+    def add_filter(self, topic: str) -> None:
+        """Start matching a filter now, without waiting for the event loop.
+
+        `Broker.publish` consults `is_subscribed` as it delivers, so a caller
+        that subscribes and publishes in the same tick would otherwise miss its
+        own message.
+        """
+        if topic in self._filters:
+            return
         self._filters.add(topic)
-        if first_time:
-            # A broker sends matching retained messages on SUBSCRIBE.
-            for message in self.broker.retained_matching(topic):
-                self.deliver(Message(message.topic.value, message.payload, message.qos, retain=True))
+        # A broker sends matching retained messages on SUBSCRIBE.
+        for message in self.broker.retained_matching(topic):
+            self.deliver(Message(message.topic.value, message.payload, message.qos, retain=True))
+
+    def remove_filter(self, topic: str) -> None:
+        self._filters.discard(topic)
+
+    async def subscribe(self, topic: str, qos: int = 0, **_kwargs) -> None:
+        self.add_filter(topic)
 
     async def unsubscribe(self, topic: str, **_kwargs) -> None:
-        self._filters.discard(topic)
+        self.remove_filter(topic)
 
     # -- traffic ---------------------------------------------------------
 

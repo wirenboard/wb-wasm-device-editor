@@ -25,6 +25,14 @@ const HASHED_ASSETS = [
   // __HASHED_ASSETS__
 ];
 
+// The DALI runtime: a Python interpreter and its packages, ~13 MB, reached only
+// from the DALI view. Precaching it eagerly would make every first visit to the
+// Modbus editor pay for it, and one failed request would reject the whole
+// install and lose offline support for the editor as well.
+const DALI_ASSETS = [
+  // __DALI_ASSETS__
+];
+
 // Small assets precached eagerly
 const PRECACHE_ASSETS = [
   '/',
@@ -44,6 +52,7 @@ const PRECACHE_ASSETS = [
 const LARGE_ASSETS = [
   '/module.wasm',
   '/module.data',
+  ...DALI_ASSETS,
 ];
 
 self.addEventListener('install', (event) => {

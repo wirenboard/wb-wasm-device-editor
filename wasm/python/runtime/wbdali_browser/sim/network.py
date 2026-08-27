@@ -38,6 +38,13 @@ class SimulatedModbusNetwork:
         self.gateways: Dict[str, VirtualWbDaliGateway] = {}
         self.frame_delay_s = frame_delay_s
         self._publish_control: Optional[ControlPublisher] = None
+        # A real module has one RS-485 link and one queue: it serves requests
+        # strictly in order. Without this, charging bus time before transmitting
+        # lets a later, shorter write overtake an earlier one — and an
+        # EnableDeviceType that ends one batch can be overtaken by the DT
+        # command that starts the next, which then decodes as an unknown
+        # command.
+        self._locks: Dict[str, asyncio.Lock] = {}
 
     # -- construction -----------------------------------------------------
 
@@ -68,21 +75,31 @@ class SimulatedModbusNetwork:
 
     async def read_holding(self, device_id: str, address: int, count: int) -> List[int]:
         gateway = self._require(device_id)
-        await self._charge_bus_time(1)
-        return gateway.read_holding(address, count)
+        async with self._lock_for(device_id):
+            await self._charge_bus_time(1)
+            return gateway.read_holding(address, count)
 
     async def read_input(self, device_id: str, address: int, count: int) -> List[int]:
         gateway = self._require(device_id)
-        await self._charge_bus_time(1)
-        return gateway.read_input(address, count)
+        async with self._lock_for(device_id):
+            await self._charge_bus_time(1)
+            return gateway.read_input(address, count)
 
     async def write_holding(self, device_id: str, address: int, values: List[int]) -> None:
         gateway = self._require(device_id)
-        # A queue slot is two registers, so the register count is the frame
-        # count. Charge the bus time before transmitting, so replies never
-        # appear earlier than the frames that produced them could have.
-        await self._charge_bus_time(max(1, len(values) // 2))
-        gateway.write_holding(address, values)
+        async with self._lock_for(device_id):
+            # A queue slot is two registers, so the register count is the frame
+            # count. Charge the bus time before transmitting, so replies never
+            # appear earlier than the frames that produced them could have.
+            await self._charge_bus_time(max(1, len(values) // 2))
+            gateway.write_holding(address, values)
+
+    def _lock_for(self, device_id: str) -> asyncio.Lock:
+        lock = self._locks.get(device_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[device_id] = lock
+        return lock
 
     def _require(self, device_id: str) -> VirtualWbDaliGateway:
         gateway = self.gateways.get(device_id)
