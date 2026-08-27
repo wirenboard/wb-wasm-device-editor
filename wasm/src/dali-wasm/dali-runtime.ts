@@ -24,6 +24,13 @@ export interface RuntimeHost {
   assetBytes(name: string): Promise<Uint8Array>;
   /** True when every asset is inlined and reaching the network is a bug. */
   isOffline(): boolean;
+  /**
+   * Run one Modbus request through the C++ WASM module over WebSerial.
+   *
+   * Only used in hardware mode. It lives on the host because the module runs on
+   * the main thread: a worker has to proxy back to the page for it.
+   */
+  portLoad(request: string): Promise<string>;
 }
 
 export interface DaliRuntimeHandle {
@@ -99,7 +106,9 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
         case 'boot': {
           const applied = await dali.start(
             message.scenario ? JSON.stringify(message.scenario) : undefined,
-            message.config ?? undefined
+            message.config ?? undefined,
+            message.mode ?? 'simulated',
+            (request: string) => host.portLoad(request)
           );
 
           // The daemon rewrites its config after a scan and on other edits; the

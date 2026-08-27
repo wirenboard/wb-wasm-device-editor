@@ -19,10 +19,28 @@ import { clearInstallation, loadInstallation, saveInstallation } from './persist
 import { ASSET_URL } from './pyodide-assets';
 import { startWorker, type WorkerHost } from './worker-host';
 
+/** Where the DALI bus is: simulated in the browser, or a real module on WebSerial. */
+export type DaliMode = 'simulated' | 'hardware';
+
 export interface PyodideBackendOptions {
+  mode?: DaliMode;
   /** The simulated installation to boot over; omitted means the last one used. */
   scenario?: unknown;
   onLog?: (text: string) => void;
+}
+
+/**
+ * Run one Modbus request through the C++ WASM module over WebSerial.
+ *
+ * This is the same `port/Load` RPC the Modbus editor uses, so hardware mode
+ * shares its serial port, its framing and its port-selection flow.
+ */
+async function portLoad(request: string): Promise<string> {
+  try {
+    return JSON.stringify(await Module.request('portLoad', JSON.parse(request)));
+  } catch (error) {
+    return JSON.stringify({ error: { message: String((error as Error)?.message ?? error) } });
+  }
 }
 
 /**
@@ -66,6 +84,7 @@ export class PyodideDaliBackend implements DaliBackend {
     const boot = {
       type: 'boot',
       baseURI: document.baseURI,
+      mode: options.mode ?? 'simulated',
       scenario: options.scenario ?? stored?.scenario,
       config: stored?.config,
       inline,
@@ -100,6 +119,7 @@ export class PyodideDaliBackend implements DaliBackend {
       post: (message) => this.#onMessage(message),
       assetBytes: (name) => this.#assetBytes(name, inline),
       isOffline: () => inline !== null,
+      portLoad,
     })
       .then(async (runtime) => {
         this.#inlineRuntime = runtime;
@@ -160,6 +180,13 @@ export class PyodideDaliBackend implements DaliBackend {
 
       case 'log':
         this.#onLog?.(message.text);
+        break;
+
+      case 'portLoad':
+        // Only the main thread can reach the C++ module, so the worker asks.
+        portLoad(message.request).then((reply) =>
+          this.#send({ type: 'portLoadReply', id: message.id, reply })
+        );
         break;
 
       case 'error':

@@ -78,7 +78,11 @@
       "labels": {
          "starting": "Starting the DALI service…",
          "boot-failed": "The DALI service failed to start.",
-         "simulated": "Simulated DALI installation — no hardware is connected."
+         "simulated": "Simulated DALI installation — no hardware is connected.",
+         "mode-simulated": "Simulated bus",
+         "mode-hardware": "Connected WB-DALI",
+         "mode": "DALI bus",
+         "select-port-hint": "Choose the serial port the WB-DALI gateway is connected to."
       }
    }
 }

@@ -21,6 +21,19 @@ const pending: any[] = [];
 
 const post = (message: unknown) => (self as unknown as Worker).postMessage(message);
 
+// The C++ WASM module lives on the main thread, so hardware-mode Modbus
+// requests are proxied back to the page and matched up by id.
+let nextPortLoadId = 1;
+const portLoadCalls = new Map<number, (reply: string) => void>();
+
+function portLoad(request: string): Promise<string> {
+  const id = nextPortLoadId++;
+  return new Promise<string>((resolve) => {
+    portLoadCalls.set(id, resolve);
+    post({ type: 'portLoad', id, request });
+  });
+}
+
 async function assetBytes(name: string): Promise<Uint8Array> {
   if (inlineAssets) {
     const asset = inlineAssets[name];
@@ -39,6 +52,12 @@ async function assetBytes(name: string): Promise<Uint8Array> {
 self.onmessage = async (event: MessageEvent) => {
   const message = event.data;
   try {
+    if (message.type === 'portLoadReply') {
+      portLoadCalls.get(message.id)?.(message.reply);
+      portLoadCalls.delete(message.id);
+      return;
+    }
+
     if (message.type === 'boot') {
       baseURI = message.baseURI || baseURI;
       inlineAssets = message.inline ?? null;
@@ -46,6 +65,7 @@ self.onmessage = async (event: MessageEvent) => {
         post,
         assetBytes,
         isOffline: () => inlineAssets !== null,
+        portLoad,
       });
       await runtime.handle(message);
       // Anything sent while Pyodide was still starting waited here rather than

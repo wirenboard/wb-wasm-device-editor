@@ -17,10 +17,14 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from .hardware import WasmSerialTransport
 from .runtime import DaliRuntime, default_config
 from .scenario import build_network, default_scenario, export_scenario, serial_config
 
 logger = logging.getLogger("wbdali_browser")
+
+SIMULATED = "simulated"
+HARDWARE = "hardware"
 
 _runtime: Optional[DaliRuntime] = None
 _scenario: Dict[str, Any] = {}
@@ -43,8 +47,18 @@ def configure_logging(level: str = "INFO") -> None:
     logging.getLogger("wbdali_browser.sim").setLevel(logging.INFO)
 
 
-async def start(scenario_json: Optional[str] = None, config_json: Optional[str] = None) -> str:
-    """Boot wb-mqtt-dali over a simulated installation.
+async def start(
+    scenario_json: Optional[str] = None,
+    config_json: Optional[str] = None,
+    mode: str = SIMULATED,
+    port_load: Optional[Callable] = None,
+) -> str:
+    """Boot wb-mqtt-dali over a simulated installation or real hardware.
+
+    `mode` picks which `ModbusTransport` sits under the daemon: the simulated
+    WB-DALI modules described by the scenario, or real ones reached through the
+    C++ WASM module's `port/Load` RPC over WebSerial. Everything above the
+    transport is identical either way.
 
     `config_json` restores a previously saved daemon config, so an installation
     commissioned before a page reload comes back instead of looking untouched.
@@ -60,18 +74,41 @@ async def start(scenario_json: Optional[str] = None, config_json: Optional[str] 
         await stop()
 
     _scenario = json.loads(scenario_json) if scenario_json else default_scenario()
-    network = build_network(_scenario)
     gateway_ids = [gateway["id"] for gateway in _scenario.get("gateways", [])]
+    transport = _make_transport(mode, port_load)
 
     _runtime = DaliRuntime(
-        transport=network,
+        transport=transport,
         serial_config=serial_config(_scenario),
         config=_restore_config(config_json, gateway_ids) or default_config(gateway_ids),
         root=Path("/"),
     )
-    network.bind(_runtime.serial.publish_control)
+    if mode == HARDWARE:
+        transport.bind(_runtime.serial.publish_control, _runtime.serial.publish_availability)
+    else:
+        transport.bind(_runtime.serial.publish_control)
     await _runtime.start()
     return json.dumps(_scenario)
+
+
+def _make_transport(mode: str, port_load: Optional[Callable]):
+    if mode == SIMULATED:
+        return build_network(_scenario)
+    if mode != HARDWARE:
+        raise ValueError(f"unknown transport mode {mode!r}")
+    if port_load is None:
+        raise ValueError("hardware mode needs a port_load callable")
+
+    async def call_port_load(request: Dict[str, Any]) -> Dict[str, Any]:
+        # The JS side returns a JsProxy; `to_py` is what makes it a dict.
+        reply = await port_load(json.dumps(request))
+        return json.loads(reply)
+
+    slave_ids = {
+        gateway["id"]: gateway.get("slaveId", index + 1)
+        for index, gateway in enumerate(_scenario.get("gateways", []))
+    }
+    return WasmSerialTransport(call_port_load, slave_ids)
 
 
 def _restore_config(config_json: Optional[str], gateway_ids: list) -> Optional[dict]:
@@ -95,8 +132,15 @@ def watch_config(callback: Callable[[str], None]) -> None:
 
 
 def snapshot_scenario() -> str:
-    """The simulated installation as it stands now, short addresses included."""
-    return json.dumps(export_scenario(_scenario, _require().serial.transport))
+    """The simulated installation as it stands now, short addresses included.
+
+    Returns the scenario unchanged in hardware mode: the state that matters
+    lives in the modules themselves, and the daemon's config already records it.
+    """
+    transport = _require().serial.transport
+    if not hasattr(transport, "gateways"):
+        return json.dumps(_scenario)
+    return json.dumps(export_scenario(_scenario, transport))
 
 
 async def stop() -> None:
@@ -132,6 +176,7 @@ def diagnostics() -> str:
     return json.dumps(
         {
             "messagesPublished": runtime.broker.published_count,
+            "mode": SIMULATED if hasattr(network, "gateways") else HARDWARE,
             "gateways": {
                 device_id: {
                     "framesSent": gateway.frames_sent,
@@ -152,10 +197,12 @@ def diagnostics() -> str:
 
 
 def set_gateway_reachable(device_id: str, reachable: bool) -> None:
-    """Pull the plug on a module, so the UI's error paths can be seen."""
+    """Pull the plug on a simulated module, so the UI's error paths can be seen."""
     runtime = _require()
-    gateway = runtime.serial.transport.gateways[device_id]
-    gateway.reachable = reachable
+    gateways = getattr(runtime.serial.transport, "gateways", None)
+    if gateways is None:
+        raise RuntimeError("only a simulated module can be unplugged from here")
+    gateways[device_id].reachable = reachable
     runtime.serial.publish_availability(device_id, reachable)
 
 

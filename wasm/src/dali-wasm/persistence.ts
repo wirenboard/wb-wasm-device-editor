@@ -9,6 +9,7 @@
  */
 
 const STORAGE_KEY = 'wb-dali-installation';
+const MODE_KEY = 'wb-dali-mode';
 
 export interface StoredInstallation {
   /** The daemon's `/etc/wb-mqtt-dali.conf`, verbatim. */
@@ -41,5 +42,22 @@ export function clearInstallation(): void {
     window.localStorage.removeItem(STORAGE_KEY);
   } catch {
     // Nothing to do: the entry is already unreachable.
+  }
+}
+
+/** Which transport the daemon last ran on, so a reload keeps the operator's choice. */
+export function loadMode(): 'simulated' | 'hardware' {
+  try {
+    return window.localStorage.getItem(MODE_KEY) === 'hardware' ? 'hardware' : 'simulated';
+  } catch {
+    return 'simulated';
+  }
+}
+
+export function saveMode(mode: 'simulated' | 'hardware'): void {
+  try {
+    window.localStorage.setItem(MODE_KEY, mode);
+  } catch (error) {
+    console.warn('DALI: could not save the transport mode', error);
   }
 }
