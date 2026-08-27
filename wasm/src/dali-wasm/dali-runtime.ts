@@ -144,10 +144,6 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
           dali.set_gateway_reachable(message.gatewayId, message.reachable);
           break;
 
-        case 'diagnostics':
-          host.post({ type: 'diagnostics', data: JSON.parse(dali.diagnostics()) });
-          break;
-
         default:
           break;
       }

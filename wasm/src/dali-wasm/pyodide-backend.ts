@@ -180,6 +180,12 @@ export class PyodideDaliBackend implements DaliBackend {
 
       case 'log':
         this.#onLog?.(message.text);
+        // The boot panel is unmounted once the page loads, so without this the
+        // daemon's own errors — an unsupported feature, a bus fault — would go
+        // nowhere at all.
+        if (/error|traceback|exception/i.test(message.text)) {
+          console.error('[dali]', message.text);
+        }
         break;
 
       case 'portLoad':

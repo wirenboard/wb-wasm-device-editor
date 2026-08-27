@@ -27,14 +27,32 @@ export interface DaliBackend {
   dispose(): void;
 }
 
-/** What the simulated DALI installation should look like when the page opens. */
+/**
+ * What the simulated DALI installation looks like.
+ *
+ * Mirrors `wbdali_browser.scenario`, which is the authority: it is what parses
+ * this, and what writes it back with the short addresses a scan assigned.
+ */
 export interface SimulationScenario {
-  /** MQTT device ids of the WB-DALI modules on the emulated Modbus network. */
-  gateways: string[];
-  /** Control gear per bus, keyed by bus number 1..3. */
-  gear: Record<number, SimulatedGear[]>;
+  gateways: SimulatedGateway[];
   /** Seconds of simulated bus time charged per DALI frame; 0 keeps the UI instant. */
   frameDelaySeconds?: number;
+}
+
+export interface SimulatedGateway {
+  /** MQTT device id of the WB-DALI module. */
+  id: string;
+  /** Its Modbus address. */
+  slaveId?: number;
+  /** What is wired to each bus, keyed by bus number "1".."3". */
+  buses: Record<string, SimulatedBus>;
+}
+
+export interface SimulatedBus {
+  /** Luminaires: control gear, on 16-bit frames. */
+  gear?: SimulatedGear[];
+  /** Wall switches and sensors: DALI-2 control devices, on 24-bit frames. */
+  devices?: SimulatedDevice[];
 }
 
 export interface SimulatedGear {
@@ -44,5 +62,12 @@ export interface SimulatedGear {
   randomAddress: number;
   /** DALI device types the unit reports, e.g. [6] for an LED driver, [8] for colour. */
   deviceTypes?: number[];
+  /** Colour temperature in mireds, for a DT8 unit. */
+  colourTemperature?: number;
   groups?: number[];
+}
+
+export interface SimulatedDevice {
+  shortAddress: number | null;
+  randomAddress: number;
 }

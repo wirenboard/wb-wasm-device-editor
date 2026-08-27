@@ -31,9 +31,14 @@ export class BrowserMqttClient {
 
   constructor(backend: DaliBackend) {
     this.#backend = backend;
-    backend.ready.then(() => {
-      this.#connected = true;
-    });
+    // The caller reports a boot failure; swallowing it here only keeps it from
+    // surfacing a second time as an unhandled rejection.
+    backend.ready.then(
+      () => {
+        this.#connected = true;
+      },
+      () => {}
+    );
   }
 
   getID(): string {

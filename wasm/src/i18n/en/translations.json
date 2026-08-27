@@ -76,7 +76,6 @@
          "back": "Back to Modbus devices"
       },
       "labels": {
-         "starting": "Starting the DALI service…",
          "boot-failed": "The DALI service failed to start.",
          "simulated": "Simulated DALI installation — no hardware is connected.",
          "mode-simulated": "Simulated bus",
