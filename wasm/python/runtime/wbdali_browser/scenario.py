@@ -91,6 +91,7 @@ def _make_gear(unit: Dict[str, Any]) -> SimulatedControlGear:
     return SimulatedControlGear(
         shortaddr=unit.get("shortAddress"),
         random_address=unit.get("randomAddress"),
+        colour_temperature=unit.get("colourTemperature"),
         groups=set(unit.get("groups") or []),
         devicetypes=list(unit.get("deviceTypes") or []),
     )
@@ -155,6 +156,7 @@ def _export_gear(unit) -> Dict[str, Any]:
         "shortAddress": unit.shortaddr,
         "randomAddress": unit.randomaddr.as_integer,
         "deviceTypes": list(unit.devicetypes),
+        "colourTemperature": unit.actual_ct,
         "groups": sorted(unit.groups),
     }
 

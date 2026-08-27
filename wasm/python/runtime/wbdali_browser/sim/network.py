@@ -16,6 +16,11 @@ from .gateway import VirtualWbDaliGateway
 
 logger = logging.getLogger("wbdali_browser.sim.network")
 
+# How long the simulator may run without yielding, when no bus time is being
+# simulated. One animation frame: long enough that the yields are rare, short
+# enough that the page still repaints during a scan.
+MAX_UNINTERRUPTED_S = 0.016
+
 
 class SimulatedModbusNetwork:
     """Modbus registers backed by simulated WB-DALI modules.
@@ -31,6 +36,7 @@ class SimulatedModbusNetwork:
         self.frame_delay_s = frame_delay_s
         # A real module has one RS-485 link and serves requests in order.
         self._locks: Dict[str, asyncio.Lock] = {}
+        self._yielded_at = 0.0
 
     def add_module(self, device_id: str, buses: Dict[int, SimulatedDaliBus]) -> VirtualWbDaliGateway:
         gateway = VirtualWbDaliGateway(buses)
@@ -78,7 +84,19 @@ class SimulatedModbusNetwork:
     async def _charge_bus_time(self, frames: int) -> None:
         if self.frame_delay_s and frames > 0:
             await asyncio.sleep(self.frame_delay_s * frames)
-        else:
-            # Always yield, so a caller looping over transactions cannot starve
-            # the event loop the way a purely synchronous transport would.
+            return
+
+        # With no simulated bus time there is still the event loop to think
+        # about: a bus scan is tens of thousands of register operations, and a
+        # long enough run of them without yielding freezes the page.
+        #
+        # Yielding on *every* operation is worse, though. Under Pyodide each
+        # yield is a `setTimeout`, which browsers clamp to about 4 ms once
+        # nested — so a scan that takes seconds in a worker took minutes on the
+        # main thread, which is where the offline build has to run. Yielding by
+        # elapsed time instead bounds how long the page can be blocked without
+        # paying a clamped timer per register access.
+        now = asyncio.get_running_loop().time()
+        if now - self._yielded_at >= MAX_UNINTERRUPTED_S:
+            self._yielded_at = now
             await asyncio.sleep(0)

@@ -66,10 +66,24 @@ class SimulatedControlGear(fakes.Gear):
     :param random_address: the 24-bit random address the unit left the factory with
     """
 
-    def __init__(self, shortaddr: Optional[int] = None, random_address: Optional[int] = None, **kwargs):
+    def __init__(
+        self,
+        shortaddr: Optional[int] = None,
+        random_address: Optional[int] = None,
+        colour_temperature: Optional[int] = None,
+        **kwargs,
+    ):
         super().__init__(shortaddr=shortaddr, **kwargs)
         if random_address is not None:
             self.randomaddr = Frame(24, random_address)
+        if DEVICE_TYPE_COLOUR in self.devicetypes:
+            # `fakes.Gear` powers up reporting colour temperature 0, which is not
+            # a colour: the editor converts mireds to kelvin by dividing into
+            # them, so a zero makes the daemon's poll loop raise on every pass —
+            # and it retries a failing poll every millisecond, which is enough to
+            # wedge the browser tab it runs in. Real gear powers up at a colour.
+            self.actual_ct = colour_temperature or self.ct_mired_max
+            self.temp_ct = self.actual_ct
         self.power_on_level = DEFAULT_POWER_ON_LEVEL
         self.system_failure_level = DEFAULT_SYSTEM_FAILURE_LEVEL
         self.fade_time = DEFAULT_FADE_TIME
