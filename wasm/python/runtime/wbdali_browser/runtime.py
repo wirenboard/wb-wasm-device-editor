@@ -235,6 +235,35 @@ class DaliRuntime:
     def publish(self, topic: str, payload: Any = None, retain: bool = False, qos: int = 1) -> None:
         self.broker.publish(topic, payload, qos=qos, retain=retain)
 
+    # -- persistence ------------------------------------------------------
+
+    def watch_config(self, callback: Callable[[str], None]) -> None:
+        """Report the daemon's config file whenever it changes.
+
+        The browser's filesystem does not survive a reload, so the page has to
+        keep the config itself. Rather than polling, this watches the two events
+        that can follow a config write — an `Editor/*` reply and a commissioning
+        state change — and reports the file when its contents actually differ.
+        The daemon rewrites the file on boot, on every GetList, on SetBus,
+        SetGateway and ResetDevice, and when a scan completes.
+        """
+        last: List[str] = [self.read_config()]
+
+        def check(_topic: str, _payload: str, _retained: bool) -> None:
+            current = self.read_config()
+            if current and current != last[0]:
+                last[0] = current
+                callback(current)
+
+        self.subscribe("/rpc/v1/wb-mqtt-dali/+/+/+/reply", check)
+        self.subscribe("/wb-dali/+/commissioning", check)
+
+    def read_config(self) -> str:
+        try:
+            return (self.root / CONFIG_PATH).read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
     # -- convenience for callers that do not want to speak MQTT-RPC -------
 
     async def rpc(self, service: str, method: str, params: Optional[dict] = None, timeout: float = 60.0):

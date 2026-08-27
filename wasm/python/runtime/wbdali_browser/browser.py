@@ -18,11 +18,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from .runtime import DaliRuntime, default_config
-from .scenario import build_network, default_scenario, serial_config
+from .scenario import build_network, default_scenario, export_scenario, serial_config
 
 logger = logging.getLogger("wbdali_browser")
 
 _runtime: Optional[DaliRuntime] = None
+_scenario: Dict[str, Any] = {}
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -42,29 +43,60 @@ def configure_logging(level: str = "INFO") -> None:
     logging.getLogger("wbdali_browser.sim").setLevel(logging.INFO)
 
 
-async def start(scenario_json: Optional[str] = None) -> str:
+async def start(scenario_json: Optional[str] = None, config_json: Optional[str] = None) -> str:
     """Boot wb-mqtt-dali over a simulated installation.
 
-    Returns the scenario actually used, as JSON, so the page can show what it got.
+    `config_json` restores a previously saved daemon config, so an installation
+    commissioned before a page reload comes back instead of looking untouched.
+    It is only honoured when it describes the same gateways as the scenario:
+    `Gateway._update_gateways` deletes any gateway the serial config does not
+    list, and would silently discard a mismatched one.
+
+    Returns the scenario actually used, as JSON.
     """
-    global _runtime  # pylint: disable=global-statement
+    global _runtime, _scenario  # pylint: disable=global-statement
 
     if _runtime is not None:
         await stop()
 
-    scenario: Dict[str, Any] = json.loads(scenario_json) if scenario_json else default_scenario()
-    network = build_network(scenario)
-    gateway_ids = [gateway["id"] for gateway in scenario.get("gateways", [])]
+    _scenario = json.loads(scenario_json) if scenario_json else default_scenario()
+    network = build_network(_scenario)
+    gateway_ids = [gateway["id"] for gateway in _scenario.get("gateways", [])]
 
     _runtime = DaliRuntime(
         transport=network,
-        serial_config=serial_config(scenario),
-        config=default_config(gateway_ids),
+        serial_config=serial_config(_scenario),
+        config=_restore_config(config_json, gateway_ids) or default_config(gateway_ids),
         root=Path("/"),
     )
     network.bind(_runtime.serial.publish_control)
     await _runtime.start()
-    return json.dumps(scenario)
+    return json.dumps(_scenario)
+
+
+def _restore_config(config_json: Optional[str], gateway_ids: list) -> Optional[dict]:
+    if not config_json:
+        return None
+    try:
+        config = json.loads(config_json)
+    except ValueError:
+        logger.warning("Saved DALI config is not valid JSON; starting fresh")
+        return None
+    saved_ids = [gateway.get("device_id") for gateway in config.get("gateways", [])]
+    if sorted(saved_ids) != sorted(gateway_ids):
+        logger.info("Saved DALI config is for a different installation; starting fresh")
+        return None
+    return config
+
+
+def watch_config(callback: Callable[[str], None]) -> None:
+    """Report the daemon's config whenever it changes, so the page can keep it."""
+    _require().watch_config(callback)
+
+
+def snapshot_scenario() -> str:
+    """The simulated installation as it stands now, short addresses included."""
+    return json.dumps(export_scenario(_scenario, _require().serial.transport))
 
 
 async def stop() -> None:

@@ -84,3 +84,38 @@ def serial_config(scenario: Dict[str, Any]) -> Dict[str, Any]:
         for index, gateway in enumerate(scenario.get("gateways", []))
     ]
     return {"ports": [{"path": "/dev/ttyRS485-1", "enabled": True, "devices": devices}]}
+
+
+def export_scenario(scenario: Dict[str, Any], network: SimulatedModbusNetwork) -> Dict[str, Any]:
+    """Read the simulated installation back out, short addresses included.
+
+    Commissioning writes short addresses into the control gear, and the daemon
+    records them in its config. Persisting one without the other would make a
+    reload look like a bus whose devices had all been swapped: the config would
+    claim addressed devices where the simulation had factory-fresh ones.
+    """
+    exported = {**scenario, "gateways": []}
+    for gateway in scenario.get("gateways", []):
+        simulated = network.gateways.get(gateway["id"])
+        if simulated is None:
+            exported["gateways"].append(gateway)
+            continue
+        exported["gateways"].append(
+            {
+                **gateway,
+                "buses": {
+                    str(index): [_export_gear(unit) for unit in bus.dali_bus.gear]
+                    for index, bus in simulated.buses.items()
+                },
+            }
+        )
+    return exported
+
+
+def _export_gear(unit) -> Dict[str, Any]:
+    return {
+        "shortAddress": unit.shortaddr,
+        "randomAddress": unit.randomaddr.as_integer,
+        "deviceTypes": list(unit.devicetypes),
+        "groups": sorted(unit.groups),
+    }

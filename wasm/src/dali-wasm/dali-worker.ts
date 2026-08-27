@@ -69,7 +69,7 @@ function installFetchShim(assets: Record<string, [Uint8Array, string]>): void {
   };
 }
 
-async function boot(scenario: unknown): Promise<void> {
+async function boot(scenario: unknown, config: string | null): Promise<void> {
   const [wasm, stdlib, lockText, pythonTar, dataTar] = await Promise.all([
     assetBytes('pyodide.asm.wasm'),
     assetBytes('python_stdlib.zip'),
@@ -99,7 +99,17 @@ async function boot(scenario: unknown): Promise<void> {
 
   daliBrowser = pyodide.pyimport('wbdali_browser.browser');
   daliBrowser.configure_logging('INFO');
-  const applied = await daliBrowser.start(scenario ? JSON.stringify(scenario) : undefined);
+  const applied = await daliBrowser.start(
+    scenario ? JSON.stringify(scenario) : undefined,
+    config ?? undefined
+  );
+
+  // The daemon rewrites its config after a scan and on other edits; the page
+  // stores each version so the installation survives a reload.
+  daliBrowser.watch_config((configJson: string) => {
+    post({ type: 'config', config: configJson, scenario: JSON.parse(daliBrowser.snapshot_scenario()) });
+  });
+
   post({ type: 'ready', scenario: JSON.parse(applied) });
 }
 
@@ -110,18 +120,23 @@ self.onmessage = async (event: MessageEvent) => {
       case 'boot':
         baseURI = message.baseURI || baseURI;
         inlineAssets = message.inline ?? null;
-        await boot(message.scenario);
+        await boot(message.scenario, message.config ?? null);
         break;
 
       case 'publish':
         daliBrowser.publish(message.topic, message.payload, message.retain ?? false, message.qos ?? 1);
         break;
 
-      case 'subscribe':
-        daliBrowser.subscribe(message.pattern, (topic: string, payload: string, retained: boolean) => {
-          post({ type: 'message', topic, payload, retained });
+      case 'subscribe': {
+        // The pattern travels back with every message: two filters can match the
+        // same topic (the RPC reply wildcard and a device topic, say), and only
+        // the worker knows which subscription produced this delivery.
+        const { pattern } = message;
+        daliBrowser.subscribe(pattern, (topic: string, payload: string, retained: boolean) => {
+          post({ type: 'message', pattern, topic, payload, retained });
         });
         break;
+      }
 
       case 'unsubscribe':
         daliBrowser.unsubscribe(message.pattern);

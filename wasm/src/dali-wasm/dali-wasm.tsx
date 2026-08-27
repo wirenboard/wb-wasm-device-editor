@@ -3,6 +3,7 @@ import DaliPage from '@/pages/settings/configs/dali';
 import { authStore, UserRole } from '@/stores/auth';
 import { DaliStore } from '@/stores/dali';
 import { BootProgress } from './components/boot-progress';
+import { DaliShell } from './components/dali-shell';
 import { makeDaliProxy } from './dali-proxy';
 import { BrowserMqttClient, makeWhenMqttReady } from './mqtt-client';
 import { PyodideDaliBackend } from './pyodide-backend';
@@ -52,9 +53,13 @@ export const DaliWasm = () => {
     };
   }, [store, backend]);
 
-  if (bootError || !isBooted) {
-    return <BootProgress error={bootError} log={bootLog} />;
-  }
-
-  return <DaliPage store={store} />;
+  return (
+    <DaliShell>
+      {bootError || !isBooted ? (
+        <BootProgress error={bootError} log={bootLog} />
+      ) : (
+        <DaliPage store={store} />
+      )}
+    </DaliShell>
+  );
 };

@@ -7,9 +7,10 @@
  */
 
 import type { DaliBackend, MessageHandler } from './backend';
+import { loadInstallation, saveInstallation } from './persistence';
 
 export interface PyodideBackendOptions {
-  /** The simulated installation to boot over; omitted means the daemon's default. */
+  /** The simulated installation to boot over; omitted means the last one used. */
   scenario?: unknown;
   /** Base64 assets for the offline single-file build. */
   inline?: Record<string, { b64: string; gzip: boolean }>;
@@ -36,13 +37,15 @@ export class PyodideDaliBackend implements DaliBackend {
       this.#rejectReady = reject;
     });
 
+    const stored = loadInstallation();
     this.#worker = new Worker(new URL('./dali-worker.ts', import.meta.url), { type: 'module' });
     this.#worker.onmessage = (event) => this.#onMessage(event.data);
     this.#worker.onerror = (event) => this.#rejectReady(new Error(event.message || 'worker failed'));
     this.#worker.postMessage({
       type: 'boot',
       baseURI: document.baseURI,
-      scenario: options.scenario,
+      scenario: options.scenario ?? stored?.scenario,
+      config: stored?.config,
       inline: options.inline,
     });
   }
@@ -56,9 +59,13 @@ export class PyodideDaliBackend implements DaliBackend {
         break;
 
       case 'message':
-        for (const handler of this.#handlers.get(this.#patternFor(message.topic)) ?? []) {
+        for (const handler of this.#handlers.get(message.pattern) ?? []) {
           handler(message.topic, message.payload, message.retained);
         }
+        break;
+
+      case 'config':
+        saveInstallation({ config: message.config, scenario: message.scenario });
         break;
 
       case 'log':
@@ -75,19 +82,6 @@ export class PyodideDaliBackend implements DaliBackend {
       default:
         break;
     }
-  }
-
-  /**
-   * Which of our filters a delivered topic belongs to. The worker only sends a
-   * message once per subscribed filter, so the first match is the right one.
-   */
-  #patternFor(topic: string): string {
-    for (const pattern of this.#handlers.keys()) {
-      if (topicMatches(pattern, topic)) {
-        return pattern;
-      }
-    }
-    return topic;
   }
 
   publish(topic: string, payload: string, retain = false, qos = 1): void {
@@ -117,22 +111,4 @@ export class PyodideDaliBackend implements DaliBackend {
     this.#worker.terminate();
     this.#handlers.clear();
   }
-}
-
-/** MQTT topic filter matching: `+` is one level, `#` is the rest. */
-export function topicMatches(pattern: string, topic: string): boolean {
-  const patternLevels = pattern.split('/');
-  const topicLevels = topic.split('/');
-  for (let index = 0; index < patternLevels.length; index += 1) {
-    if (patternLevels[index] === '#') {
-      return true;
-    }
-    if (index >= topicLevels.length) {
-      return false;
-    }
-    if (patternLevels[index] !== '+' && patternLevels[index] !== topicLevels[index]) {
-      return false;
-    }
-  }
-  return patternLevels.length === topicLevels.length;
 }

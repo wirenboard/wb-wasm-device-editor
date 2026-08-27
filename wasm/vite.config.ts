@@ -69,6 +69,36 @@ function stripPyodideWasmUrl(): Plugin {
   };
 }
 
+/**
+ * Rebuild the Pyodide bundle when the Python under `python/` changes.
+ *
+ * The worker loads Python from a tarball, not from the source tree, so without
+ * this an edit to the daemon runtime is invisible until the next `npm run
+ * build:python` — and the symptom is a stale-code error deep inside Pyodide
+ * rather than anything pointing at the file that was edited.
+ */
+function rebuildPythonBundle(): Plugin {
+  const pythonDir = path.resolve(__dirname, 'python');
+  const watched = ['runtime', 'shims', 'vendor'].map((dir) => path.join(pythonDir, dir));
+
+  return {
+    name: 'rebuild-python-bundle',
+    apply: 'serve',
+    configureServer(server) {
+      server.watcher.add(watched);
+      server.watcher.on('all', (_event, file) => {
+        if (!file.endsWith('.py') || !watched.some((dir) => file.startsWith(dir))) return;
+        try {
+          execSync('node scripts/build-python-bundle.mjs', { cwd: __dirname, stdio: 'inherit' });
+          server.ws.send({ type: 'full-reload' });
+        } catch (error) {
+          server.config.logger.error(`[python-bundle] rebuild failed: ${error}`);
+        }
+      });
+    },
+  };
+}
+
 function throttleModuleData(): Plugin {
   const RATE = 500 * 1024; // 500 KB/s — ~12s for a 6 MB file
   const CHUNK_INTERVAL = 100; // send a chunk every 100ms
@@ -128,6 +158,7 @@ export default defineConfig(() => {
     svgr({ include: '**/*.svg' }),
     throttleModuleData(),
     stripPyodideWasmUrl(),
+    rebuildPythonBundle(),
   ];
 
   if (offline) {

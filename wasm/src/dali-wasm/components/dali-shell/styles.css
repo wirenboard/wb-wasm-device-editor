@@ -1,0 +1,26 @@
+.daliShell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.daliShell-bar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.daliShell-notice {
+  color: var(--text-secondary-color);
+  font-size: 13px;
+}
+
+/* The DALI page sizes itself against a bounded parent; without min-height its
+   own `overflow: auto` never engages and the tree grows the whole document. */
+.daliShell-page {
+  flex: 1;
+  min-height: 0;
+}
