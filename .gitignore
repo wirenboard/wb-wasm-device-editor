@@ -16,3 +16,13 @@ node_modules
 package-lock.json
 emsdk-docker-image.tar.gz
 .firmware-cache/
+
+# python sources fetched by scripts/fetch-python-sources.sh
+wasm/python/vendor/
+
+# scratch area for the pyodide bring-up experiments
+pyodide-poc/
+
+# python bytecode
+__pycache__/
+*.pyc
