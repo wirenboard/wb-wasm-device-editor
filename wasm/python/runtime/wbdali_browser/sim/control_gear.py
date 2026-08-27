@@ -29,7 +29,7 @@ from __future__ import annotations
 import random
 from typing import Optional
 
-from dali.address import DeviceGroup, DeviceShort, InstanceNumber
+from dali.address import DeviceShort, InstanceNumber
 from dali.device import general as control_device, pushbutton
 from dali.frame import Frame
 from dali.gear import colour, general as control_gear, led

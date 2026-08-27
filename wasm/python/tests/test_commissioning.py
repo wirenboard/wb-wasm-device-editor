@@ -8,13 +8,12 @@ find the simulated gear proves the simulation is faithful where it matters most
 
 import asyncio
 
-import pytest
 from wb.mqtt_dali.commissioning import Commissioning, CommissioningStage
 from wb.mqtt_dali.dali_device import DaliDeviceAddress
 
 from wbdali_browser.sim.control_gear import SimulatedControlGear as simulated_gear
 
-from .conftest import GATEWAY_DEVICE_ID, SimulatedStack
+from .conftest import SimulatedStack
 
 
 async def run_commissioning(stack, logger, old_devices=(), progress_cb=None):

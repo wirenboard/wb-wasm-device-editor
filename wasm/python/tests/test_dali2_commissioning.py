@@ -14,10 +14,9 @@ import pytest
 
 from wbdali_browser.runtime import DaliRuntime, default_config
 from wbdali_browser.scenario import build_network, serial_config
-from wbdali_browser.sim.control_gear import SimulatedControlDevice, SimulatedControlGear
-from wbdali_browser.sim.dali_bus import SimulatedDaliBus
+from wbdali_browser.sim.control_gear import SimulatedControlDevice
 
-from .conftest import GATEWAY_DEVICE_ID, serial_config_with
+from .conftest import GATEWAY_DEVICE_ID
 from .test_runtime_editor_rpc import wait_for_commissioning
 
 VENDOR_DIR = Path(__file__).parent.parent / "vendor"

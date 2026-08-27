@@ -15,12 +15,10 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from .registers import to_registers
-
 logger = logging.getLogger("wbdali_browser.hardware")
 
-MODBUS_READ_HOLDING = 3
 MODBUS_READ_INPUT = 4
+MODBUS_WRITE_SINGLE_HOLDING = 6
 MODBUS_WRITE_MULTIPLE_HOLDING = 16
 
 PortLoad = Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]
@@ -57,30 +55,30 @@ class WasmSerialTransport:
 
     # -- RegisterTransport ------------------------------------------------
 
-    async def read_holding(self, device_id: str, address: int, count: int) -> List[int]:
-        return await self._read(device_id, MODBUS_READ_HOLDING, address, count)
-
     async def read_input(self, device_id: str, address: int, count: int) -> List[int]:
-        return await self._read(device_id, MODBUS_READ_INPUT, address, count)
+        async with self._lock:
+            reply = await self._request(
+                device_id,
+                {"function": MODBUS_READ_INPUT, "address": address, "count": count},
+            )
+        return hex_to_registers(reply.get("response", ""))
 
     async def write_holding(self, device_id: str, address: int, values: List[int]) -> None:
+        # A single register goes out as function 6 — that is what the driver's
+        # queue-pointer reset is, and what a real module expects for it.
+        function = (
+            MODBUS_WRITE_SINGLE_HOLDING if len(values) == 1 else MODBUS_WRITE_MULTIPLE_HOLDING
+        )
         async with self._lock:
             await self._request(
                 device_id,
                 {
-                    "function": MODBUS_WRITE_MULTIPLE_HOLDING,
+                    "function": function,
                     "address": address,
                     "count": len(values),
                     "msg": registers_to_hex(values),
                 },
             )
-
-    async def _read(self, device_id: str, function: int, address: int, count: int) -> List[int]:
-        async with self._lock:
-            reply = await self._request(
-                device_id, {"function": function, "address": address, "count": count}
-            )
-        return hex_to_registers(reply.get("response", ""))
 
     async def _request(self, device_id: str, request: Dict[str, Any]) -> Dict[str, Any]:
         slave_id = self._slave_ids.get(device_id)

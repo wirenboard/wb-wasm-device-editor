@@ -89,6 +89,30 @@ pipeline {
             }
         }
 
+        stage('DALI runtime tests') {
+            when {
+                beforeAgent true
+                expression { env.SKIP_AUTO_RELEASE_BUILD != 'true' }
+            }
+            agent {
+                docker {
+                    image 'python:3.13'
+                    args '--entrypoint="" -u root:root'
+                    reuseNode true
+                }
+            }
+            steps {
+                // The Python that runs inside Pyodide is tested under CPython:
+                // a failure there is a stack trace, not a stack trace inside a
+                // WASM interpreter inside a worker. `wasm/python/vendor` was
+                // already fetched by the configurator build.
+                dir(path: 'wasm/python') {
+                    sh 'pip install --no-cache-dir -r requirements-dev.txt'
+                    sh 'python -m pytest -q'
+                }
+            }
+        }
+
         stage('Build offline single-file') {
             when {
                 beforeAgent true

@@ -114,6 +114,27 @@ CONTROL GEAR PRESENT on a populated bus returns the same byte. Slots are used
 round-robin, so if a real module turns out not to clear them, a stale value is at
 least sixteen commands old rather than one.
 
+The same assumption has a cost on the other side. Status 0 means "not
+transmitted", and the driver reads it as "not transmitted *yet*" — so a frame
+the gateway genuinely failed to send blocks for the full response timeout and
+comes back as `NoResponseFromGateway` rather than `NoTransmission`, which the
+daemon then retries three times. On a real module that would be worth
+distinguishing; there is no way to do it from a register that reports both
+states with the same value.
+
+### 4.3.1 What the blocking driver gives up
+
+Polling a reply register recovers the answer to a frame *we sent*. It cannot
+recover traffic we did not send, which on a real bus arrives through the
+gateway's sporadic bus-monitor ring — registers this driver never reads.
+
+The consequences are worth stating plainly: a DALI-2 pushbutton press produces
+no MQTT event, quiescent-mode requests from another master on the bus are not
+seen, and the page's bus monitor shows only the daemon's own frames. Restoring
+any of that means polling the monitor ring, which is the edge-triggered
+mechanism this design set out to remove — so it is a deliberate trade, not an
+oversight, and the place to revisit if input devices become the point.
+
 ### 4.4 Below the driver: one interface, two implementations
 
 ```python
@@ -254,6 +275,8 @@ sequenceDiagram
 | Persist config *and* simulated bus state | Restoring the config alone would describe addressed devices on a bus that had gone factory-fresh again. |
 | Gate hardware mode on a port | Every DALI command reopens the port, the browser's chooser needs a user gesture it will not get, and the daemon's retries keep coming — the page dies under `ERR_INSUFFICIENT_RESOURCES`. |
 | DALI runtime out of the service worker's eager precache | 13 MB in the bucket whose install must succeed would make every visit to the Modbus editor pay for it, and one failed request would lose offline support for the editor too. |
+| One saved installation per transport | Restoring a simulated installation onto real hardware would have the daemon poll short addresses that only ever existed in the simulation. |
+| No bus monitor ring | See §4.3.1. It is the mechanism the blocking design exists to avoid; the cost is DALI-2 events and foreign bus traffic. |
 
 ## 8. Files
 

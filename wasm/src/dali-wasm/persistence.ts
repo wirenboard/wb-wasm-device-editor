@@ -8,8 +8,17 @@
  * would describe addressed devices on a bus that had gone factory-fresh again.
  */
 
-const STORAGE_KEY = 'wb-dali-installation';
 const MODE_KEY = 'wb-dali-mode';
+
+/**
+ * One slot per transport. A simulated installation restored onto real hardware
+ * would have the daemon poll short addresses that only ever existed in the
+ * simulation; the reverse leaves the config describing devices the simulated
+ * bus does not have.
+ */
+function storageKey(mode: 'simulated' | 'hardware'): string {
+  return `wb-dali-installation-${mode}`;
+}
 
 export interface StoredInstallation {
   /** The daemon's `/etc/wb-mqtt-dali.conf`, verbatim. */
@@ -18,9 +27,9 @@ export interface StoredInstallation {
   scenario: unknown;
 }
 
-export function loadInstallation(): StoredInstallation | null {
+export function loadInstallation(mode: 'simulated' | 'hardware'): StoredInstallation | null {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const stored = window.localStorage.getItem(storageKey(mode));
     return stored ? (JSON.parse(stored) as StoredInstallation) : null;
   } catch {
     // A corrupt or unreadable entry must not stop the page from opening; the
@@ -29,17 +38,20 @@ export function loadInstallation(): StoredInstallation | null {
   }
 }
 
-export function saveInstallation(installation: StoredInstallation): void {
+export function saveInstallation(
+  mode: 'simulated' | 'hardware',
+  installation: StoredInstallation
+): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(installation));
+    window.localStorage.setItem(storageKey(mode), JSON.stringify(installation));
   } catch (error) {
     console.warn('DALI: could not save the installation', error);
   }
 }
 
-export function clearInstallation(): void {
+export function clearInstallation(mode: 'simulated' | 'hardware'): void {
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(storageKey(mode));
   } catch {
     // Nothing to do: the entry is already unreachable.
   }

@@ -38,6 +38,7 @@ from dali.sequences import progress as seq_progress
 from dali.sequences import sleep as seq_sleep
 
 from wb.mqtt_dali.bus_traffic import BusTrafficCallbacks, BusTrafficSource
+from wb.mqtt_dali.overheat_rate_limiter import OverheatRateLimiter
 from wb.mqtt_dali.wbdali import FramePriority, WBDALIConfig, _compute_frame_priorities
 from wb.mqtt_dali.wbdali_error_response import (
     NoPowerOnBus,
@@ -92,6 +93,7 @@ class BlockingDaliDriver:
         self.response_timeout = RESPONSE_TIMEOUT_S
 
         self._transport = transport
+        self._overheat = OverheatRateLimiter()
         # One transaction at a time: the whole point of this driver is that a
         # command and its answer are a single blocking exchange.
         self._lock = asyncio.Lock()
@@ -180,6 +182,10 @@ class BlockingDaliDriver:
         frame = cmd.frame
         value = encode_frame(frame.as_integer, len(frame), cmd.sendtwice, priority.value)
 
+        # A module that has reported overheating needs to be left alone for a
+        # while; the daemon's poll and retry loops would otherwise hammer it.
+        await self._overheat.wait_before_send()
+
         try:
             await self._transport.write_holding(
                 device_id, queue_slot_address(bus, slot), to_registers(value)
@@ -218,6 +224,7 @@ class BlockingDaliDriver:
         if status is TransmissionStatus.NO_POWER_ON_BUS:
             return NoPowerOnBus()
         if status is TransmissionStatus.OVERHEAT:
+            self._overheat.on_overheat()
             return Overheat()
         return NoTransmission()
 

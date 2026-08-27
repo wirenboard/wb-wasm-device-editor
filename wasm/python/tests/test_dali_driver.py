@@ -8,15 +8,16 @@ is unchanged production code, so if this holds, that does too.
 
 import asyncio
 
-import pytest
 from dali.address import GearBroadcast, GearShort
 from dali.gear.general import DAPC, Off, QueryActualLevel, QueryControlGearPresent
 
 from wb.mqtt_dali.wbdali_error_response import NoResponseFromGateway
 
+from wbdali_browser.registers import TransmissionStatus
+
 from wbdali_browser.sim.control_gear import SimulatedControlGear as simulated_gear
 
-from .conftest import GATEWAY_DEVICE_ID, SimulatedStack
+from .conftest import SimulatedStack
 
 
 async def make_driver(stack, logger, bus: int = 1):
@@ -93,8 +94,13 @@ async def test_an_unwired_bus_is_silent(stack, dali_logger):
         await driver.deinitialize()
 
 
-async def test_more_commands_than_the_queue_holds_are_split_into_batches(dali_logger):
-    """The gateway queue is 16 slots deep; a longer batch must still resolve fully."""
+async def test_more_commands_than_the_queue_has_slots_wrap_around(dali_logger):
+    """The queue is 16 slots deep and the driver uses them round-robin.
+
+    The seventeenth command reuses slot 0, whose reply register still holds the
+    first command's answer — and on a populated bus that answer is usually
+    identical, which is why the driver cannot detect freshness by comparison.
+    """
     stack = SimulatedStack(
         gear=[simulated_gear(shortaddr=index, random_address=0x1000 + index) for index in range(20)]
     )
@@ -114,16 +120,32 @@ async def test_more_commands_than_the_queue_holds_are_split_into_batches(dali_lo
         await stack.stop()
 
 
-async def test_a_silent_gateway_times_out_instead_of_hanging(stack, dali_logger):
-    """A module that stops answering Modbus must not leave the caller waiting forever."""
+async def test_a_module_that_stops_answering_modbus_does_not_hang_the_caller(stack, dali_logger):
+    """The Modbus request itself fails, before any reply polling."""
     driver = await make_driver(stack, dali_logger)
-    driver.response_timeout = 0.2
     try:
         stack.gateway.reachable = False
 
         response = await asyncio.wait_for(driver.send(QueryActualLevel(GearShort(0))), timeout=2.0)
 
         assert isinstance(response, NoResponseFromGateway)
+    finally:
+        await driver.deinitialize()
+
+
+async def test_a_gateway_that_never_transmits_gives_up_on_the_frame(stack, dali_logger):
+    """A reply register stuck at "no transmission" must not be polled forever."""
+    driver = await make_driver(stack, dali_logger)
+    driver.response_timeout = 0.2
+    # Accept the write but never transmit, which is what a wedged queue looks like.
+    stack.gateway.buses[1].dali_bus.send_frame = lambda *_: (TransmissionStatus.NO_TRANSMISSION, 0)
+    try:
+        started = asyncio.get_running_loop().time()
+        response = await asyncio.wait_for(driver.send(QueryActualLevel(GearShort(0))), timeout=5.0)
+        elapsed = asyncio.get_running_loop().time() - started
+
+        assert isinstance(response, NoResponseFromGateway)
+        assert 0.2 <= elapsed < 2.0
     finally:
         await driver.deinitialize()
 
@@ -144,9 +166,10 @@ async def test_a_module_that_comes_back_answers_again(stack, dali_logger):
 async def test_repeating_a_query_gets_a_fresh_answer_each_time(stack, dali_logger):
     """Consecutive identical answers must not look like a stale reply register.
 
-    The driver rotates queue slots and remembers what each reply register held
-    before the write, so an answer that happens to equal the previous one is
-    still recognised as this frame's.
+    The driver relies on the gateway clearing a reply register when its queue
+    slot is written, so an answer that happens to equal the previous one is
+    still recognised as this frame's. Without that it would have to compare
+    values, and identical answers are the norm.
     """
     driver = await make_driver(stack, dali_logger)
     try:

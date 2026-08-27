@@ -239,7 +239,13 @@ class DaliRuntime:
         callbacks = self._subscriptions.setdefault(pattern, [])
         callbacks.append(callback)
         if len(callbacks) == 1:
+            # `add_filter` replays retained messages into the client's inbox,
+            # from where `_dispatch_to_ui` fans them out to every matching
+            # pattern — so this new subscriber gets them, and only once.
             self._ui_client.add_filter(pattern)
+            return
+        # A later subscriber to a filter already in place gets its own replay,
+        # because the broker only replays on the first SUBSCRIBE.
         for message in self.broker.retained_matching(pattern):
             callback(message.topic.value, get_payload_str(message), True)
 

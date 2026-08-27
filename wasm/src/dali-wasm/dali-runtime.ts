@@ -140,6 +140,13 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
           dali.unsubscribe(message.pattern);
           break;
 
+        case 'stop':
+          // A worker is thrown away wholesale, but an inline runtime outlives
+          // the page that started it: without this its poll loops keep running,
+          // and its config watcher keeps writing over the next one's.
+          await dali.stop();
+          break;
+
         case 'setReachable':
           dali.set_gateway_reachable(message.gatewayId, message.reachable);
           break;

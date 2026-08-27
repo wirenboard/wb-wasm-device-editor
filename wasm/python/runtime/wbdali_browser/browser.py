@@ -10,7 +10,6 @@ converted before Python touches them.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import sys
@@ -19,7 +18,14 @@ from typing import Any, Callable, Dict, Optional
 
 from .hardware import WasmSerialTransport
 from .runtime import DaliRuntime, default_config
-from .scenario import build_network, default_scenario, export_scenario, serial_config
+from .scenario import (
+    build_network,
+    default_scenario,
+    export_scenario,
+    serial_config,
+    serial_settings,
+    slave_ids,
+)
 
 logger = logging.getLogger("wbdali_browser")
 
@@ -38,7 +44,9 @@ def configure_logging(level: str = "INFO") -> None:
     bus scan would be invisible.
     """
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+    # The level leads the line so the page can tell an error from a warning
+    # without pattern-matching the message.
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
@@ -75,15 +83,17 @@ async def start(
 
     _scenario = json.loads(scenario_json) if scenario_json else default_scenario()
     gateway_ids = [gateway["id"] for gateway in _scenario.get("gateways", [])]
-    transport = _make_transport(mode, port_load)
 
-    _runtime = DaliRuntime(
-        transport=transport,
+    runtime = DaliRuntime(
+        transport=_make_transport(mode, port_load),
         serial_config=serial_config(_scenario),
         config=_restore_config(config_json, gateway_ids) or default_config(gateway_ids),
         root=Path("/"),
     )
-    await _runtime.start()
+    # Only publish the runtime once it is up: a failed start would otherwise
+    # leave a half-built one for the next call to stop().
+    await runtime.start()
+    _runtime = runtime
     return json.dumps(_scenario)
 
 
@@ -96,15 +106,13 @@ def _make_transport(mode: str, port_load: Optional[Callable]):
         raise ValueError("hardware mode needs a port_load callable")
 
     async def call_port_load(request: Dict[str, Any]) -> Dict[str, Any]:
-        # The JS side returns a JsProxy; `to_py` is what makes it a dict.
-        reply = await port_load(json.dumps(request))
-        return json.loads(reply)
+        # JSON both ways: the JS side hands back a string rather than a JsProxy,
+        # so nothing here has to know about Pyodide's conversion rules.
+        return json.loads(await port_load(json.dumps(request)))
 
-    slave_ids = {
-        gateway["id"]: gateway.get("slaveId", index + 1)
-        for index, gateway in enumerate(_scenario.get("gateways", []))
-    }
-    return WasmSerialTransport(call_port_load, slave_ids)
+    return WasmSerialTransport(
+        call_port_load, slave_ids(_scenario), serial_settings(_scenario)
+    )
 
 
 def _restore_config(config_json: Optional[str], gateway_ids: list) -> Optional[dict]:
@@ -181,7 +189,7 @@ def diagnostics() -> str:
                         str(index): {
                             "gear": len(bus.dali_bus.gear),
                             "devices": len(bus.dali_bus.devices),
-                            "framesSeen": len(bus.dali_bus.history),
+                            "framesSeen": bus.dali_bus.frames_seen,
                         }
                         for index, bus in gateway.buses.items()
                     },

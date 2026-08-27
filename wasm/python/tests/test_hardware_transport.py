@@ -41,13 +41,11 @@ def make_port_load(gateway, calls=None):
         assert request["slave_id"] == SLAVE_ID
         assert request["format"] == "HEX"
         function = request["function"]
-        if function == 16:
+        if function in (6, 16):
             gateway.write_holding(request["address"], hex_to_registers(request["msg"]))
             return {"response": ""}
         if function == 4:
             return {"response": registers_to_hex(gateway.read_input(request["address"], request["count"]))}
-        if function == 3:
-            return {"response": registers_to_hex(gateway.read_holding(request["address"], request["count"]))}
         raise AssertionError(f"unexpected Modbus function {function}")
 
     return port_load
@@ -124,3 +122,28 @@ async def test_the_driver_runs_over_this_transport_unchanged(dali_logger):
     response = await driver.send(QueryActualLevel(GearShort(0)))
 
     assert response.value == 128
+
+
+async def test_a_single_register_write_uses_function_6():
+    """The queue-pointer reset is one register, and that is what fc 6 is for."""
+    calls = []
+    transport = WasmSerialTransport(make_port_load(make_gateway(), calls), {GATEWAY_DEVICE_ID: SLAVE_ID})
+
+    await transport.write_holding(GATEWAY_DEVICE_ID, 1432, [0])
+
+    assert calls[-1]["function"] == 6
+    assert calls[-1]["address"] == 1432
+
+
+async def test_line_settings_come_from_the_scenario():
+    calls = []
+    transport = WasmSerialTransport(
+        make_port_load(make_gateway(), calls),
+        {GATEWAY_DEVICE_ID: SLAVE_ID},
+        {"baud_rate": 115200, "data_bits": 8, "parity": "E", "stop_bits": 1},
+    )
+
+    await transport.read_input(GATEWAY_DEVICE_ID, 1500, 1)
+
+    assert calls[-1]["baud_rate"] == 115200
+    assert calls[-1]["parity"] == "E"

@@ -9,8 +9,6 @@ import asyncio
 import json
 from pathlib import Path
 
-import pytest
-
 from wbdali_browser.runtime import DaliRuntime, default_config
 from wbdali_browser.sim.control_gear import SimulatedControlGear
 from wbdali_browser.sim.dali_bus import SimulatedDaliBus

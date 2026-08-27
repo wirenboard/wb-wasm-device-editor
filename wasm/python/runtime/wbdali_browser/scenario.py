@@ -104,6 +104,25 @@ def _make_device(unit: Dict[str, Any]) -> SimulatedControlDevice:
     )
 
 
+DEFAULT_SERIAL_SETTINGS = {"baud_rate": 9600, "data_bits": 8, "parity": "N", "stop_bits": 2}
+
+
+def serial_settings(scenario: Dict[str, Any]) -> Dict[str, Any]:
+    """The RS-485 line settings for hardware mode.
+
+    A WB-DALI module is not necessarily at the factory 9600 8N2, and there is no
+    autodetection here — the Modbus editor's scan is where a port gets probed.
+    """
+    return {**DEFAULT_SERIAL_SETTINGS, **(scenario.get("serialSettings") or {})}
+
+
+def slave_ids(scenario: Dict[str, Any]) -> Dict[str, int]:
+    return {
+        gateway["id"]: gateway.get("slaveId", index + 1)
+        for index, gateway in enumerate(scenario.get("gateways", []))
+    }
+
+
 def serial_config(scenario: Dict[str, Any]) -> Dict[str, Any]:
     """The wb-mqtt-serial config the daemon reads to find WB-DALI modules.
 
@@ -111,13 +130,8 @@ def serial_config(scenario: Dict[str, Any]) -> Dict[str, Any]:
     enabled WB-DALI device, so the two descriptions have to agree.
     """
     devices: List[Dict[str, Any]] = [
-        {
-            "id": gateway["id"],
-            "slave_id": gateway.get("slaveId", index + 1),
-            "device_type": "WB-DALI",
-            "enabled": True,
-        }
-        for index, gateway in enumerate(scenario.get("gateways", []))
+        {"id": device_id, "slave_id": slave_id, "device_type": "WB-DALI", "enabled": True}
+        for device_id, slave_id in slave_ids(scenario).items()
     ]
     return {"ports": [{"path": "/dev/ttyRS485-1", "enabled": True, "devices": devices}]}
 

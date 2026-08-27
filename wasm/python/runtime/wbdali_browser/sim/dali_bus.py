@@ -16,7 +16,8 @@ timeout) live.
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Sequence, Tuple
+from collections import deque
+from typing import Deque, List, Optional, Sequence, Tuple
 
 from dali.command import Command, from_frame
 from dali.device.helpers import DeviceInstanceTypeMapper
@@ -29,6 +30,10 @@ logger = logging.getLogger("wbdali_browser.sim.bus")
 
 GEAR_FRAME_BITS = 16
 DEVICE_FRAME_BITS = 24
+
+# Frames kept for inspection. A bus that has been scanned carries traffic
+# continuously, so this has to be bounded — nothing reads more than the tail.
+HISTORY_LENGTH = 512
 
 
 class SimulatedDaliBus:
@@ -44,8 +49,9 @@ class SimulatedDaliBus:
         self.devices = list(devices)
         self.powered = True
 
-        # Frames sent since the bus was created, for tests and the bus monitor.
-        self.history: List[Tuple[int, int, Optional[int]]] = []
+        # The most recent frames, for tests and the debug view.
+        self.history: Deque[Tuple[int, int, Optional[int]]] = deque(maxlen=HISTORY_LENGTH)
+        self.frames_seen = 0
 
         # A DT-specific command is decodable only in the context of the
         # EnableDeviceType that immediately precedes it, exactly as on a real bus.
@@ -74,6 +80,7 @@ class SimulatedDaliBus:
         answers = self._deliver(command, bit_length)
         self._track_devicetype(command)
         self.history.append((data, bit_length, answers[0] if answers else None))
+        self.frames_seen += 1
 
         if not answers:
             # A frame nobody answers is a successful transmission with no

@@ -66,6 +66,7 @@ export class PyodideDaliBackend implements DaliBackend {
   #onLog?: (text: string) => void;
   #send: (message: any) => void = () => {};
 
+  #mode: DaliMode = 'simulated';
   #worker: WorkerHost | null = null;
   #inlineRuntime: DaliRuntimeHandle | null = null;
   #inlineQueue: any[] = [];
@@ -79,16 +80,22 @@ export class PyodideDaliBackend implements DaliBackend {
       this.#rejectReady = reject;
     });
 
-    const stored = loadInstallation();
+    const mode = options.mode ?? 'simulated';
+    // Per transport: restoring a simulated installation onto real hardware
+    // would have the daemon poll short addresses that only ever existed in the
+    // simulation, and the reverse leaves the config describing devices the
+    // simulated bus does not have.
+    const stored = loadInstallation(mode);
     const inline = readInlineAssets();
     const boot = {
       type: 'boot',
       baseURI: document.baseURI,
-      mode: options.mode ?? 'simulated',
+      mode,
       scenario: options.scenario ?? stored?.scenario,
       config: stored?.config,
       inline,
     };
+    this.#mode = mode;
 
     const worker = canUseWorker()
       ? startWorker(
@@ -153,7 +160,7 @@ export class PyodideDaliBackend implements DaliBackend {
     if (!this.#booted) {
       // A saved installation the runtime cannot rebuild would fail every
       // subsequent load too, with no way out from inside the page.
-      clearInstallation();
+      clearInstallation(this.#mode);
       this.#rejectReady(error instanceof Error ? error : new Error(String(error)));
       return;
     }
@@ -175,15 +182,19 @@ export class PyodideDaliBackend implements DaliBackend {
         break;
 
       case 'config':
-        saveInstallation({ config: message.config, scenario: message.scenario });
+        if (!this.#disposed) {
+          saveInstallation(this.#mode, { config: message.config, scenario: message.scenario });
+        }
         break;
 
       case 'log':
         this.#onLog?.(message.text);
         // The boot panel is unmounted once the page loads, so without this the
         // daemon's own errors — an unsupported feature, a bus fault — would go
-        // nowhere at all.
-        if (/error|traceback|exception/i.test(message.text)) {
+        // nowhere at all. Keyed on the level the log format puts first, and on
+        // the first line of a traceback, rather than on words that also appear
+        // in ordinary output.
+        if (/^(ERROR|CRITICAL) |^Traceback \(most recent call last\)/.test(message.text)) {
           console.error('[dali]', message.text);
         }
         break;
@@ -230,10 +241,21 @@ export class PyodideDaliBackend implements DaliBackend {
 
   dispose(): void {
     this.#disposed = true;
-    this.#worker?.terminate();
-    this.#worker = null;
-    this.#inlineRuntime = null;
     this.#handlers.clear();
+
+    if (this.#worker) {
+      this.#worker.terminate();
+      this.#worker = null;
+    } else if (this.#inlineRuntime) {
+      // Terminating a worker takes its interpreter with it; an inline runtime
+      // has to be told to stop, or it keeps polling the bus for as long as the
+      // page is open.
+      const runtime = this.#inlineRuntime;
+      this.#inlineRuntime = null;
+      runtime.handle({ type: 'stop' }).catch((error) => console.error('[dali]', error));
+    }
+
+    this.#inlineQueue.length = 0;
     this.#send = () => {};
   }
 }
