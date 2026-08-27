@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@cmuav/web-serial-polyfill": "^1.2.0",
-    "date-fns": "^4.1.0"
+    "date-fns": "^4.1.0",
+    "pyodide": "^314.0.6"
   }
 }

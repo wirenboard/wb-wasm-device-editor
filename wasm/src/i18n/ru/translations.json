@@ -70,5 +70,16 @@
          "cancel": "Отмена",
          "switch": "Переключить"
       }
+   },
+   "dali-wasm": {
+      "buttons": {
+         "open": "DALI",
+         "back": "К устройствам Modbus"
+      },
+      "labels": {
+         "starting": "Запуск службы DALI…",
+         "boot-failed": "Не удалось запустить службу DALI.",
+         "simulated": "Симуляция шины DALI — оборудование не подключено."
+      }
    }
 }

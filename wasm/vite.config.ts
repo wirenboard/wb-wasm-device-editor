@@ -48,6 +48,27 @@ function swCachePlugin(): Plugin {
   };
 }
 
+/**
+ * `pyodide.asm.mjs` contains `new URL("pyodide.asm.wasm", import.meta.url).href`
+ * inside `findWasmBinary()`. That branch is dead — the worker always passes
+ * `indexURL`, so pyodide resolves the file through `Module.locateFile` — but
+ * vite still recognises the pattern and emits a second copy of the 9.6 MB wasm.
+ * In the offline build that copy is base64-inlined, adding ~13 MB to a file that
+ * already carries the real one. Rewriting it to a plain string leaves vite
+ * nothing to emit.
+ */
+function stripPyodideWasmUrl(): Plugin {
+  return {
+    name: 'strip-pyodide-wasm-url',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.includes('pyodide.asm.mjs')) return null;
+      const out = code.replace('new URL("pyodide.asm.wasm",import.meta.url).href', '"pyodide.asm.wasm"');
+      return out === code ? null : { code: out, map: null };
+    },
+  };
+}
+
 function throttleModuleData(): Plugin {
   const RATE = 500 * 1024; // 500 KB/s — ~12s for a 6 MB file
   const CHUNK_INTERVAL = 100; // send a chunk every 100ms
@@ -106,6 +127,7 @@ export default defineConfig(() => {
     commonjs(),
     svgr({ include: '**/*.svg' }),
     throttleModuleData(),
+    stripPyodideWasmUrl(),
   ];
 
   if (offline) {
@@ -123,6 +145,18 @@ export default defineConfig(() => {
     build: {
       outDir: path.resolve(__dirname, offline ? 'dist-offline' : 'dist-configurator'),
       emptyOutDir: true,
+    },
+
+    // The DALI worker is a module worker: it statically imports pyodide's glue,
+    // which is code-split, and IIFE output cannot carry that.
+    worker: {
+      format: 'es',
+    },
+
+    optimizeDeps: {
+      // Pyodide ships a large prebuilt ES module that must not be pre-bundled:
+      // esbuild rewrites the `import.meta.url` its wasm loader depends on.
+      exclude: ['pyodide'],
     },
 
     resolve: {

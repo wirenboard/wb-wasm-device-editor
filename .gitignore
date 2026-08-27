@@ -26,3 +26,7 @@ pyodide-poc/
 # python bytecode
 __pycache__/
 *.pyc
+
+# pyodide python bundle, built by wasm/scripts/build-python-bundle.mjs
+wasm/.python-bundle/
+wasm/.python-cache/

@@ -14,6 +14,7 @@ import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { useAsyncAction } from '@/utils/async-action';
 import { setReactLocale } from '~/react-directives/locale';
+import { openDali } from '../navigation';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
@@ -570,6 +571,11 @@ export const DeviceSettingsWasm = observer(() => {
               {t('wasm.sw.update-available')}
             </a>
           )}
+          <Button
+            label={t('dali-wasm.buttons.open')}
+            variant="secondary"
+            onClick={openDali}
+          />
           <Button
             label={t('wasm.buttons.add-device')}
             variant="secondary"

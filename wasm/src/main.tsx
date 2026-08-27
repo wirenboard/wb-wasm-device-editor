@@ -1,6 +1,6 @@
 import { configure } from 'mobx';
 import { createRoot } from 'react-dom/client';
-import { DeviceSettingsWasm } from './device-settings-wasm';
+import { App } from './app';
 import { configI18n } from './i18n/config';
 import '@/assets/styles/animations.css';
 import '@/assets/styles/variables.css';
@@ -15,7 +15,7 @@ configure({
 
 configI18n();
 
-createRoot(document.querySelector('#root')).render(<DeviceSettingsWasm />);
+createRoot(document.querySelector('#root')).render(<App />);
 
 // Update detection: the Vite build plugin (swCachePlugin in vite.config.ts) injects
 // hashed asset filenames into sw.js at build time. Any code change produces different

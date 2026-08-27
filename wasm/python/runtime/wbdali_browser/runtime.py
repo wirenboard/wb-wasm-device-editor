@@ -65,37 +65,48 @@ def default_config(gateway_ids: List[str]) -> dict:
     }
 
 
-def install_data_files(vendor_dir: Path, root: Path, config: Optional[dict] = None) -> None:
-    """Lay out the files the daemon reads from absolute paths.
+def write_config(root: Path, config: dict) -> None:
+    """Put the config where the daemon expects it, in a writable directory.
 
-    Pyodide's MEMFS starts empty, so the package data Debian would have installed
-    has to be written here first. The config's directory must be writable: the
-    daemon rewrites the file after every scan and on every `Editor/GetList`.
+    The daemon rewrites this file after every bus scan and on every
+    `Editor/GetList`, so the directory has to exist and be writable — in the
+    browser that means it must be a real MEMFS directory, not part of the
+    read-only bundle.
     """
     config_path = root / CONFIG_PATH
-    os.makedirs(root / DATA_DIR, exist_ok=True)
     os.makedirs(config_path.parent, exist_ok=True)
+    with open(config_path, "w", encoding="utf-8") as config_file:
+        json.dump(config, config_file, indent=4)
+
+
+def install_data_files(vendor_dir: Path, root: Path) -> None:
+    """Lay out the package data the daemon reads from absolute paths.
+
+    In the browser these arrive as a tarball unpacked straight into `/usr/share`,
+    so this is only used by the tests, which install under a temporary root
+    rather than the developer's real filesystem.
+    """
+    os.makedirs(root / DATA_DIR, exist_ok=True)
     os.makedirs((root / CONFED_SCHEMA_PATH).parent, exist_ok=True)
 
     _copy_if_present(vendor_dir / "schemas", root / DATA_DIR / "schemas")
     _copy_if_present(vendor_dir / "products.csv", root / GTIN_DB_PATH)
     _copy_if_present(vendor_dir / "wb-mqtt-dali.schema.json", root / CONFED_SCHEMA_PATH)
 
-    if config is not None or not config_path.exists():
-        with open(config_path, "w", encoding="utf-8") as config_file:
-            json.dump(config if config is not None else default_config([]), config_file, indent=4)
+    # `common_dali_device.py` opens this one from a hardcoded absolute path
+    # rather than taking it as an argument, so under a shifted root it has to be
+    # placed on the class attribute the daemon caches it in.
+    if root != Path("/"):
+        preload_common_device_schema(vendor_dir / COMMON_DEVICE_SCHEMA)
 
 
-def preload_common_device_schema(vendor_dir: Path) -> None:
-    """Fill in the one data file whose path the daemon hardcodes."""
+def preload_common_device_schema(schema_path: Path) -> None:
     from wb.mqtt_dali.common_dali_device import DaliDeviceBase
 
-    if DaliDeviceBase._common_schema:  # pylint: disable=protected-access
-        return
-    schema = vendor_dir / COMMON_DEVICE_SCHEMA
-    DaliDeviceBase._common_schema = json.loads(  # pylint: disable=protected-access
-        schema.read_text(encoding="utf-8")
-    )
+    if not DaliDeviceBase._common_schema:  # pylint: disable=protected-access
+        DaliDeviceBase._common_schema = json.loads(  # pylint: disable=protected-access
+            schema_path.read_text(encoding="utf-8")
+        )
 
 
 def _copy_if_present(source: Path, target: Path) -> None:
@@ -143,8 +154,8 @@ class DaliRuntime:
         from wb.mqtt_dali.mqtt_dispatcher import MQTTDispatcher
 
         if self.vendor_dir is not None:
-            install_data_files(self.vendor_dir, self.root, self.config)
-            preload_common_device_schema(self.vendor_dir)
+            install_data_files(self.vendor_dir, self.root)
+        write_config(self.root, self.config)
 
         self._client = Client(self.broker, "wb-mqtt-dali")
         await self._client.__aenter__()

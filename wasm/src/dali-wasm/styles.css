@@ -1,0 +1,10 @@
+/*
+ * The DALI page sizes itself against the layout's `max-height: 100%`, which only
+ * works if every ancestor has a height. `wasm/index.html` has a bare `#root`, so
+ * homeui's own `#wrapper { height: 100vh }` never applies here.
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
