@@ -14,6 +14,7 @@ import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { useAsyncAction } from '@/utils/async-action';
 import { setReactLocale } from '~/react-directives/locale';
+import { findDaliGateways, rememberGateways } from '../dali-wasm/gateways';
 import { openDali } from '../navigation';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
@@ -411,6 +412,14 @@ export const DeviceSettingsWasm = observer(() => {
     ).at(0) || device.device_signature;
   };
 
+  // The DALI configurator is only offered once the scan has found something to
+  // configure, and it is pointed at what the scan found: the module's Modbus
+  // address and the line settings it answered on.
+  const daliGateways = useMemo(
+    () => (configDeviceTypesStore ? findDaliGateways(allDevices, getType) : []),
+    [allDevices, configDeviceTypesStore]
+  );
+
   const loadDeviceSettings = useCallback(async (device: Device, deviceTypesStore = configDeviceTypesStore) => {
     setError(null);
     const deviceType = getType(device);
@@ -571,11 +580,17 @@ export const DeviceSettingsWasm = observer(() => {
               {t('wasm.sw.update-available')}
             </a>
           )}
-          <Button
-            label={t('dali-wasm.buttons.open')}
-            variant="secondary"
-            onClick={openDali}
-          />
+          {!!daliGateways.length && (
+            <Button
+              label={t('dali-wasm.buttons.open')}
+              variant="secondary"
+              disabled={isBusy}
+              onClick={() => {
+                rememberGateways(daliGateways);
+                openDali();
+              }}
+            />
+          )}
           <Button
             label={t('wasm.buttons.add-device')}
             variant="secondary"

@@ -3,12 +3,15 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/button';
 import { Dropdown, type Option } from '@/components/dropdown';
 import { closeDali } from '../../../navigation';
+import type { DaliGateway } from '../../gateways';
 import type { DaliMode } from '../../pyodide-backend';
 import './styles.css';
 
 interface DaliShellProps {
   mode: DaliMode;
   onModeChange: (mode: DaliMode) => void;
+  /** The WB-DALI modules the Modbus scan found, if any. */
+  gateways: DaliGateway[];
 }
 
 /**
@@ -18,12 +21,26 @@ interface DaliShellProps {
  * Saying which bus is in use matters: a scan that finds four luminaires on a
  * machine with nothing plugged in is thoroughly misleading otherwise.
  */
-export const DaliShell = ({ mode, onModeChange, children }: PropsWithChildren<DaliShellProps>) => {
+export const DaliShell = ({
+  mode,
+  onModeChange,
+  gateways,
+  children,
+}: PropsWithChildren<DaliShellProps>) => {
   const { t } = useTranslation();
 
+  // Connecting is only on offer once the Modbus scan has found a gateway;
+  // until then the simulated bus is the only thing there is to talk to.
   const options: Option<DaliMode>[] = [
     { value: 'simulated', label: t('dali-wasm.labels.mode-simulated') },
-    { value: 'hardware', label: t('dali-wasm.labels.mode-hardware') },
+    ...(gateways.length
+      ? [{
+        value: 'hardware' as DaliMode,
+        label: gateways.length === 1
+          ? t('dali-wasm.labels.mode-gateway', { name: gateways[0].id })
+          : t('dali-wasm.labels.mode-hardware'),
+      }]
+      : []),
   ];
 
   return (

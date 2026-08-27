@@ -82,7 +82,8 @@
          "mode-simulated": "Симуляция шины",
          "mode-hardware": "Подключённый WB-DALI",
          "mode": "Шина DALI",
-         "select-port-hint": "Выберите последовательный порт, к которому подключён шлюз WB-DALI."
+         "select-port-hint": "Выберите последовательный порт, к которому подключён шлюз WB-DALI.",
+         "mode-gateway": "Подключён: {{name}}"
       }
    }
 }

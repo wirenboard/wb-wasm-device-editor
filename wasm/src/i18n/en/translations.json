@@ -81,7 +81,8 @@
          "mode-simulated": "Simulated bus",
          "mode-hardware": "Connected WB-DALI",
          "mode": "DALI bus",
-         "select-port-hint": "Choose the serial port the WB-DALI gateway is connected to."
+         "select-port-hint": "Choose the serial port the WB-DALI gateway is connected to.",
+         "mode-gateway": "Connected: {{name}}"
       }
    }
 }

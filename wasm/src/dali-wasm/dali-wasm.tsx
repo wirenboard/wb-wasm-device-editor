@@ -7,6 +7,7 @@ import { DaliShell } from './components/dali-shell';
 import { PortGate } from './components/port-gate';
 import { makeDaliProxy } from './dali-proxy';
 import { BrowserMqttClient, makeWhenMqttReady } from './mqtt-client';
+import { loadRememberedGateways, scenarioForGateways } from './gateways';
 import { PyodideDaliBackend, type DaliMode } from './pyodide-backend';
 import { loadMode, saveMode } from './persistence';
 import './styles.css';
@@ -21,7 +22,15 @@ import './styles.css';
  * itself once `whenMqttReady` resolves.
  */
 export const DaliWasm = () => {
-  const [mode, setMode] = useState<DaliMode>(loadMode);
+  // What the Modbus scan found. With a gateway in hand the daemon talks to it;
+  // without one — reached by URL, or with nothing plugged in — there is still
+  // the simulated installation to work against.
+  const gateways = useMemo(loadRememberedGateways, []);
+  // Arriving from a found gateway, that gateway is the point; the simulated
+  // bus is what is left when there is nothing connected.
+  const [mode, setMode] = useState<DaliMode>(
+    () => loadMode() ?? (gateways.length ? 'hardware' : 'simulated')
+  );
   const [hasPort, setHasPort] = useState(false);
   const [bootLog, setBootLog] = useState<string[]>([]);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -30,6 +39,18 @@ export const DaliWasm = () => {
   // On real hardware the daemon must not start before a serial port exists; see
   // PortGate. In simulation there is nothing to choose.
   const needsPort = mode === 'hardware' && !hasPort;
+
+  useEffect(() => {
+    if (mode !== 'hardware' || hasPort) {
+      return;
+    }
+    // The scan that found the gateway already opened a port. Asking for it
+    // again would put a chooser in front of someone who has just chosen.
+    Module.isReady
+      .then(() => Module.serial.select(false))
+      .then(() => setHasPort(true))
+      .catch(() => setHasPort(false));
+  }, [mode, hasPort]);
 
   const { store, backend } = useMemo(() => {
     if (needsPort) {
@@ -43,6 +64,11 @@ export const DaliWasm = () => {
 
     const daliBackend = new PyodideDaliBackend({
       mode,
+      // In hardware mode the installation is the one the scan found; in
+      // simulation the runtime supplies its own.
+      scenario: mode === 'hardware' && gateways.length
+        ? scenarioForGateways(gateways)
+        : undefined,
       onLog: (text) => setBootLog((lines) => [...lines.slice(-200), text]),
     });
     const mqttClient = new BrowserMqttClient(daliBackend);
@@ -50,7 +76,7 @@ export const DaliWasm = () => {
       backend: daliBackend,
       store: new DaliStore(makeWhenMqttReady(mqttClient), makeDaliProxy(daliBackend), mqttClient),
     };
-  }, [mode, needsPort]);
+  }, [mode, needsPort, gateways]);
 
   useEffect(() => {
     if (!backend || !store) {
@@ -83,7 +109,7 @@ export const DaliWasm = () => {
   };
 
   return (
-    <DaliShell mode={mode} onModeChange={changeMode}>
+    <DaliShell mode={mode} onModeChange={changeMode} gateways={gateways}>
       {needsPort && <PortGate onSelected={() => setHasPort(true)} />}
       {!needsPort && (bootError || !isBooted) && <BootProgress error={bootError} log={bootLog} />}
       {!needsPort && !bootError && isBooted && store && <DaliPage store={store} />}

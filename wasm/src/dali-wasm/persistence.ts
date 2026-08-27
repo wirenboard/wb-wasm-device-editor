@@ -57,12 +57,19 @@ export function clearInstallation(mode: 'simulated' | 'hardware'): void {
   }
 }
 
-/** Which transport the daemon last ran on, so a reload keeps the operator's choice. */
-export function loadMode(): 'simulated' | 'hardware' {
+/**
+ * The transport the operator last chose, or null if they never have.
+ *
+ * The difference matters: with no stored choice the default comes from whether
+ * the Modbus scan found a gateway, and "never chose" must not look like
+ * "chose simulated".
+ */
+export function loadMode(): 'simulated' | 'hardware' | null {
   try {
-    return window.localStorage.getItem(MODE_KEY) === 'hardware' ? 'hardware' : 'simulated';
+    const stored = window.localStorage.getItem(MODE_KEY);
+    return stored === 'hardware' || stored === 'simulated' ? stored : null;
   } catch {
-    return 'simulated';
+    return null;
   }
 }
 
