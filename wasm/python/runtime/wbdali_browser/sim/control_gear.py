@@ -31,6 +31,7 @@ from typing import Optional
 
 from dali.address import DeviceShort, InstanceNumber
 from dali.device import general as control_device, pushbutton
+from dali.frame import ForwardFrame
 from dali.frame import Frame
 from dali.gear import colour, general as control_gear, led
 from dali.gear.colour import QueryColourValueDTR
@@ -268,6 +269,23 @@ class SimulatedControlDevice(fakes.Device):
     def short_address(self) -> Optional[int]:
         """The short address as a plain number, or None when unaddressed."""
         return None if self.shortaddr is None else self.shortaddr.address
+
+    def press(self, instance_number: int = 0) -> Optional[ForwardFrame]:
+        """The frame this device puts on the bus when a button is pressed.
+
+        A control device is a bus master in its own right: nobody asked for
+        this frame, and it does not answer anything. It reaches the daemon only
+        through the gateway's bus monitor ring, which is why the ring is worth
+        polling at all.
+        """
+        if self.shortaddr is None or instance_number >= len(self._instances):
+            return None
+        if self._instances[instance_number].inst_type != INSTANCE_TYPE_PUSHBUTTON:
+            return None
+        event = pushbutton.ShortPress(
+            short_address=self.shortaddr, instance_number=instance_number
+        )
+        return event.frame
 
     def send(self, cmd):
         answer = super().send(cmd)

@@ -164,6 +164,7 @@ class DaliRuntime:
         # it constructs is the whole adaptation: the browser talks to the gateway
         # over Modbus registers instead, one blocking request at a time.
         application_controller.WBDALIDriver = make_driver_class(self.transport)
+        install_bus_monitor_polling(application_controller.ApplicationController)
 
         if self.vendor_dir is not None:
             install_data_files(self.vendor_dir, self.root)
@@ -188,6 +189,8 @@ class DaliRuntime:
         return self
 
     async def stop(self) -> None:
+        if hasattr(self.transport, "stop"):
+            self.transport.stop()
         if self.gateway is not None:
             await self.gateway.stop()
             self.gateway = None
@@ -331,3 +334,33 @@ class RpcError(Exception):
     def __init__(self, error: dict) -> None:
         self.error = error
         super().__init__(error.get("data") or error.get("message") or "RPC error")
+
+
+def install_bus_monitor_polling(controller_class) -> None:
+    """Let the bus monitor toggle start and stop the driver's ring polling.
+
+    On a controller the monitor needs nothing from the driver: wb-mqtt-serial
+    streams the ring as sporadic events and the flag only decides whether the
+    daemon republishes them. Here the ring has to be read, which costs serial
+    traffic — so the same flag has to reach the driver.
+
+    Two wrappers rather than a subclass: `Gateway` constructs these itself, from
+    two places, and both would have to be substituted.
+    """
+    if getattr(controller_class, "_bus_monitor_polling_installed", False):
+        return
+
+    original_start = controller_class.start
+    original_set = controller_class.set_bus_monitor_enabled
+
+    async def start(self):
+        await original_start(self)
+        self._dev.set_bus_monitor_enabled(self.bus_monitor_enabled)
+
+    def set_bus_monitor_enabled(self, enabled: bool) -> None:
+        original_set(self, enabled)
+        self._dev.set_bus_monitor_enabled(enabled)
+
+    controller_class.start = start
+    controller_class.set_bus_monitor_enabled = set_bus_monitor_enabled
+    controller_class._bus_monitor_polling_installed = True

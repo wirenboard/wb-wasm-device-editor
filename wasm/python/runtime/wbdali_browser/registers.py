@@ -8,6 +8,7 @@ Taken from the WB-DALI device template shipped with wb-mqtt-serial
 | 1400..1431  | holding | send queue, 16 slots × 2         |
 | 1432        | holding | bulk send pointer / queue reset  |
 | 1500..1515  | input   | per-slot transmission result     |
+| 1900..1915  | input   | bus monitor ring, 4 slots × u64  |
 
 A queue slot holds a 32-bit value in two registers, low word first:
 
@@ -15,6 +16,11 @@ A queue slot holds a 32-bit value in two registers, low word first:
     [28]     send twice                     [31..29] priority (0 = do not send)
 
 A reply register holds `status << 8 | backward_frame`.
+
+A bus monitor slot is 64 bits, `word_order: little_endian`:
+
+    [63..48] frame counter, mod 2^16   [41] broken   [40] backward frame
+    [39..32] frame length in bits      [24..0] frame data      0 = empty slot
 """
 
 from __future__ import annotations
@@ -23,12 +29,18 @@ from enum import IntEnum
 from typing import List, Optional, Tuple
 
 BUS_ADDRESS_OFFSET = 1000
-BUS_NUMBERS = (1, 2, 3)
 
 QUEUE_BASE = 1400
 QUEUE_SIZE = 16
 QUEUE_POINTER = 1432
 REPLY_BASE = 1500
+
+MONITOR_BASE = 1900
+MONITOR_RING_SIZE = 4
+MONITOR_REGISTERS_PER_SLOT = 4
+
+# The frame counter in a monitor slot is 16 bits wide.
+FRAME_COUNTER_MODULO = 1 << 16
 
 FRAME_SIZE_BITS = {0: 16, 1: 24, 2: 25}
 FRAME_SIZE_CODES = {bits: code for code, bits in FRAME_SIZE_BITS.items()}
@@ -100,14 +112,43 @@ def from_registers(registers: List[int]) -> int:
     return (registers[1] << 16) | registers[0]
 
 
-def decode_reply(value: int) -> Tuple[TransmissionStatus, int]:
-    """Split a reply register into its status and backward frame."""
-    status = (value >> 8) & 0xFF
+def decode_reply(value: int) -> Tuple[Optional[TransmissionStatus], int]:
+    """Split a reply register into its status and backward frame.
+
+    A status this enum does not name comes back as ``None`` rather than folded
+    into one of the known ones: "the gateway said something we do not
+    understand" is not the same as "the gateway did not transmit".
+    """
     try:
-        return TransmissionStatus(status), value & 0xFF
+        return TransmissionStatus((value >> 8) & 0xFF), value & 0xFF
     except ValueError:
-        return TransmissionStatus.NO_TRANSMISSION, value & 0xFF
+        return None, value & 0xFF
 
 
 def encode_reply(status: TransmissionStatus, backward: int) -> int:
     return (int(status) << 8) | (backward & 0xFF)
+
+
+def monitor_address(bus: int, slot: int) -> int:
+    return MONITOR_BASE + bus_offset(bus) + slot * MONITOR_REGISTERS_PER_SLOT
+
+
+def encode_monitor_slot(
+    counter: int, bit_length: int, frame: int, backward: bool = False, broken: bool = False
+) -> int:
+    return (
+        ((counter % FRAME_COUNTER_MODULO) << 48)
+        | (int(broken) << 41)
+        | (int(backward) << 40)
+        | ((bit_length & 0xFF) << 32)
+        | (frame & 0x1FFFFFF)
+    )
+
+
+def to_monitor_registers(value: int) -> List[int]:
+    """Split a monitor slot into its four registers, least significant word first."""
+    return [(value >> (16 * word)) & 0xFFFF for word in range(MONITOR_REGISTERS_PER_SLOT)]
+
+
+def from_monitor_registers(registers: List[int]) -> int:
+    return sum(register << (16 * word) for word, register in enumerate(registers))

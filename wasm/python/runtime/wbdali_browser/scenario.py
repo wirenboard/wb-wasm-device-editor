@@ -39,7 +39,14 @@ def default_scenario() -> Dict[str, Any]:
                             {"shortAddress": None, "randomAddress": 0xC1D2E3, "deviceTypes": [6]},
                         ],
                         "devices": [
-                            {"shortAddress": None, "randomAddress": 0x2B3C4D},
+                            # Presses itself now and then: without traffic the
+                            # daemon did not originate, the bus monitor has
+                            # nothing to show.
+                            {
+                                "shortAddress": None,
+                                "randomAddress": 0x2B3C4D,
+                                "pressIntervalSeconds": 3,
+                            },
                         ],
                     },
                     "2": {"gear": [], "devices": []},
@@ -62,7 +69,24 @@ def build_network(scenario: Dict[str, Any]) -> SimulatedModbusNetwork:
             for unit in _control_devices(wiring):
                 bus.add_device(_make_device(unit))
         network.add_module(gateway["id"], buses)
+        _schedule_input_events(network, gateway)
     return network
+
+
+def _schedule_input_events(network: SimulatedModbusNetwork, gateway: Dict[str, Any]) -> None:
+    """Start any simulated switch that presses itself.
+
+    Without traffic from something other than the daemon there is nothing for
+    the bus monitor to show — the reply registers only carry answers to frames
+    the gateway sent.
+    """
+    for bus_key, wiring in (gateway.get("buses") or {}).items():
+        for index, unit in enumerate(_control_devices(wiring)):
+            interval = unit.get("pressIntervalSeconds")
+            if interval:
+                network.schedule_button_presses(
+                    gateway["id"], _bus_number(bus_key), index, float(interval)
+                )
 
 
 def _bus_number(bus_key: Any) -> int:
@@ -156,7 +180,13 @@ def export_scenario(scenario: Dict[str, Any], network: SimulatedModbusNetwork) -
                 "buses": {
                     str(index): {
                         "gear": [_export_gear(unit) for unit in bus.dali_bus.gear],
-                        "devices": [_export_device(unit) for unit in bus.dali_bus.devices],
+                        "devices": [
+                            _export_device(unit, source)
+                            for unit, source in zip(
+                                bus.dali_bus.devices,
+                                _control_devices((gateway.get("buses") or {}).get(str(index))),
+                            )
+                        ],
                     }
                     for index, bus in simulated.buses.items()
                 },
@@ -175,8 +205,11 @@ def _export_gear(unit) -> Dict[str, Any]:
     }
 
 
-def _export_device(unit) -> Dict[str, Any]:
-    return {
+def _export_device(unit, source: Dict[str, Any]) -> Dict[str, Any]:
+    exported = {
         "shortAddress": unit.short_address,
         "randomAddress": unit.randomaddr.as_integer,
     }
+    if source.get("pressIntervalSeconds"):
+        exported["pressIntervalSeconds"] = source["pressIntervalSeconds"]
+    return exported

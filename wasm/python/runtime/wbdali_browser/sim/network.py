@@ -37,11 +37,50 @@ class SimulatedModbusNetwork:
         # A real module has one RS-485 link and serves requests in order.
         self._locks: Dict[str, asyncio.Lock] = {}
         self._yielded_at = 0.0
+        self._event_tasks: List[asyncio.Task] = []
 
     def add_module(self, device_id: str, buses: Dict[int, SimulatedDaliBus]) -> VirtualWbDaliGateway:
         gateway = VirtualWbDaliGateway(buses)
         self.gateways[device_id] = gateway
         return gateway
+
+    def press_button(self, device_id: str, bus: int, device_index: int, instance: int = 0) -> bool:
+        """Press a simulated wall switch.
+
+        The frame goes into the gateway's bus monitor ring and nowhere else: a
+        control device is a bus master in its own right, so nothing answers it
+        and no reply register records it.
+        """
+        gateway = self.gateways.get(device_id)
+        if gateway is None or bus not in gateway.buses:
+            return False
+        devices = gateway.buses[bus].dali_bus.devices
+        if device_index >= len(devices):
+            return False
+        frame = devices[device_index].press(instance)
+        if frame is None:
+            return False
+        gateway.record_bus_frame(bus, len(frame), frame.as_integer)
+        return True
+
+    def schedule_button_presses(
+        self, device_id: str, bus: int, device_index: int, interval_s: float
+    ) -> None:
+        """Have a simulated switch press itself, so there is traffic to watch."""
+
+        async def press_forever() -> None:
+            while True:
+                await asyncio.sleep(interval_s)
+                self.press_button(device_id, bus, device_index)
+
+        self._event_tasks.append(
+            asyncio.create_task(press_forever(), name=f"dali-switch-{device_id}-{bus}")
+        )
+
+    def stop(self) -> None:
+        for task in self._event_tasks:
+            task.cancel()
+        self._event_tasks.clear()
 
     # -- RegisterTransport ------------------------------------------------
 

@@ -15,13 +15,19 @@ from typing import Dict, Iterable, List, Optional
 
 from ..registers import (
     BUS_ADDRESS_OFFSET,
+    FRAME_COUNTER_MODULO,
+    MONITOR_BASE,
+    MONITOR_REGISTERS_PER_SLOT,
+    MONITOR_RING_SIZE,
     QUEUE_BASE,
     QUEUE_POINTER,
     QUEUE_SIZE,
     REPLY_BASE,
     decode_frame,
+    encode_monitor_slot,
     encode_reply,
     from_registers,
+    to_monitor_registers,
 )
 from .dali_bus import SimulatedDaliBus
 
@@ -36,6 +42,9 @@ class VirtualBus:
         self.dali_bus = dali_bus
         self.queue: List[int] = [0] * (QUEUE_SIZE * 2)
         self.replies: List[int] = [0] * QUEUE_SIZE
+        self.monitor: List[int] = [0] * MONITOR_RING_SIZE
+        self.monitor_write_index = 0
+        self.frame_counter = 0
 
     @property
     def address_offset(self) -> int:
@@ -102,6 +111,9 @@ class VirtualWbDaliGateway:
     def _read_input_register(self, bus: VirtualBus, local: int) -> int:
         if REPLY_BASE <= local < REPLY_BASE + QUEUE_SIZE:
             return bus.replies[local - REPLY_BASE]
+        if MONITOR_BASE <= local < MONITOR_BASE + MONITOR_RING_SIZE * MONITOR_REGISTERS_PER_SLOT:
+            slot, word = divmod(local - MONITOR_BASE, MONITOR_REGISTERS_PER_SLOT)
+            return to_monitor_registers(bus.monitor[slot])[word]
         return 0
 
     def _bus_for(self, address: int) -> Optional[VirtualBus]:
@@ -121,6 +133,31 @@ class VirtualWbDaliGateway:
             if decoded is None:
                 continue
             self._send_one(bus, slot, decoded)
+
+    # -- bus monitor ------------------------------------------------------
+
+    def record_bus_frame(
+        self, bus_index: int, bit_length: int, frame: int, backward: bool = False
+    ) -> None:
+        """Put a frame the gateway did not send into the monitor ring.
+
+        Only traffic from elsewhere on the bus belongs here — a control device's
+        event, another master's command. The gateway's own frames and their
+        answers already reach the daemon through the reply registers, and
+        recording them again would double every line in the monitor.
+
+        The ring is four slots deep, so a burst faster than the driver polls it
+        overwrites the oldest. The daemon notices: it tracks the frame counter
+        and reports a gap.
+        """
+        bus = self.buses.get(bus_index)
+        if bus is None:
+            return
+        bus.frame_counter = (bus.frame_counter + 1) % FRAME_COUNTER_MODULO
+        bus.monitor[bus.monitor_write_index] = encode_monitor_slot(
+            bus.frame_counter, bit_length, frame, backward=backward
+        )
+        bus.monitor_write_index = (bus.monitor_write_index + 1) % MONITOR_RING_SIZE
 
     def _send_one(self, bus: VirtualBus, slot: int, decoded) -> None:
         frame, bit_length, sendtwice, _priority = decoded

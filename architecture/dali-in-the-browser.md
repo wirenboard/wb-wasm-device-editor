@@ -122,18 +122,30 @@ daemon then retries three times. On a real module that would be worth
 distinguishing; there is no way to do it from a register that reports both
 states with the same value.
 
-### 4.3.1 What the blocking driver gives up
+### 4.3.1 The bus monitor, also polled
 
-Polling a reply register recovers the answer to a frame *we sent*. It cannot
-recover traffic we did not send, which on a real bus arrives through the
-gateway's sporadic bus-monitor ring — registers this driver never reads.
+A reply register answers a frame *we sent*. Traffic we did not send — a DALI-2
+pushbutton press, another master's command — reaches the gateway's four-slot
+bus-monitor ring instead, and that ring is polled too, on the same principle:
+read registers `1900 + bus_off + 4r` and hand each new slot to the daemon's own
+`BusMonitorFrameHandler`, which does the decoding, the reordering by frame
+counter and the gap reporting exactly as it does on a controller.
 
-The consequences are worth stating plainly: a DALI-2 pushbutton press produces
-no MQTT event, quiescent-mode requests from another master on the bus are not
-seen, and the page's bus monitor shows only the daemon's own frames. Restoring
-any of that means polling the monitor ring, which is the edge-triggered
-mechanism this design set out to remove — so it is a deliberate trade, not an
-oversight, and the place to revisit if input devices become the point.
+Two things follow from polling rather than being pushed.
+
+The ring is four frames deep, so a burst arriving faster than the poll interval
+overwrites the oldest. That is not silent: the handler tracks the frame counter
+and reports the gap. The interval is 100 ms, which is about four frames' worth
+of DALI at 1200 baud.
+
+Reading it competes with DALI traffic for the one serial link, so it is off
+unless asked for — wired to the `bus_monitor_enabled` flag the bus tab already
+exposes, which on a controller only decides whether the daemon republishes what
+wb-mqtt-serial pushes at it.
+
+The simulated installation includes a wall switch that presses itself every few
+seconds, because otherwise there is no traffic the daemon did not originate and
+nothing for the monitor to show.
 
 ### 4.4 Below the driver: one interface, two implementations
 
@@ -276,7 +288,7 @@ sequenceDiagram
 | Gate hardware mode on a port | Every DALI command reopens the port, the browser's chooser needs a user gesture it will not get, and the daemon's retries keep coming — the page dies under `ERR_INSUFFICIENT_RESOURCES`. |
 | DALI runtime out of the service worker's eager precache | 13 MB in the bucket whose install must succeed would make every visit to the Modbus editor pay for it, and one failed request would lose offline support for the editor too. |
 | One saved installation per transport | Restoring a simulated installation onto real hardware would have the daemon poll short addresses that only ever existed in the simulation. |
-| No bus monitor ring | See §4.3.1. It is the mechanism the blocking design exists to avoid; the cost is DALI-2 events and foreign bus traffic. |
+| Bus monitor polled, and only on request | Four slots deep, so a burst outruns it — but the gap is reported, not silent. Reading it competes with DALI traffic for the one link. |
 
 ## 8. Files
 

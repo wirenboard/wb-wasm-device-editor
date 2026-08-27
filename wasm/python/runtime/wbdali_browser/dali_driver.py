@@ -20,8 +20,13 @@ gateway models it, and it is the only reading under which a reply register is
 usable at all — a register that kept its previous value would be
 indistinguishable from a fresh identical answer, and answers repeat constantly
 (every QUERY CONTROL GEAR PRESENT on a populated bus returns the same byte).
-Slots are still used round-robin, so if a real module turns out not to clear
-them, a stale value is at least sixteen commands old rather than one.
+
+Slots are used round-robin rather than always slot 0, because the gateway owns a
+consume pointer: it transmits pending slots in increasing index order and wraps
+15 → 0, and the driver only ever rewinds that pointer at `initialize()`. Writing
+slot 0 every time would leave the gateway waiting to come back round to it.
+Rewinding the pointer before each frame would work instead, at the cost of a
+third Modbus transaction per frame — and rotation costs nothing.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ from dali.sequences import sleep as seq_sleep
 
 from wb.mqtt_dali.bus_traffic import BusTrafficCallbacks, BusTrafficSource
 from wb.mqtt_dali.overheat_rate_limiter import OverheatRateLimiter
+from wb.mqtt_dali.wbdali import BusMonitorFrameHandler
 from wb.mqtt_dali.wbdali import FramePriority, WBDALIConfig, _compute_frame_priorities
 from wb.mqtt_dali.wbdali_error_response import (
     NoPowerOnBus,
@@ -48,10 +54,14 @@ from wb.mqtt_dali.wbdali_error_response import (
 )
 
 from .registers import (
+    MONITOR_REGISTERS_PER_SLOT,
+    MONITOR_RING_SIZE,
     QUEUE_SIZE,
     TransmissionStatus,
     decode_reply,
     encode_frame,
+    from_monitor_registers,
+    monitor_address,
     queue_pointer_address,
     queue_slot_address,
     reply_address,
@@ -64,6 +74,14 @@ from .registers import (
 RESPONSE_TIMEOUT_S = 1.0
 POLL_INTERVAL_S = 0.005
 
+# How often to read the bus monitor ring while it is switched on.
+#
+# The ring holds four frames, so anything arriving faster than this is
+# overwritten before it can be read — the daemon spots the gap in the frame
+# counter and says so. Reading it competes with DALI traffic for the one serial
+# link, which is why it is off unless the operator asks for it.
+MONITOR_POLL_INTERVAL_S = 0.1
+
 
 class RegisterTransport(Protocol):
     """Reads and writes a WB-DALI module's Modbus registers."""
@@ -71,6 +89,22 @@ class RegisterTransport(Protocol):
     async def read_input(self, device_id: str, address: int, count: int) -> List[int]: ...
 
     async def write_holding(self, device_id: str, address: int, values: List[int]) -> None: ...
+
+
+class _MonitorSlotMessage:  # pylint: disable=too-few-public-methods
+    """One monitor ring slot, shaped the way `BusMonitorFrameHandler` reads it.
+
+    On a controller these reach the handler as MQTT messages published by
+    wb-mqtt-serial; here they come off a register read, and only `topic`,
+    `payload` and `retain` are ever looked at.
+    """
+
+    __slots__ = ("topic", "payload", "retain")
+
+    def __init__(self, bus: int, slot: int, raw: int) -> None:
+        self.topic = f"bus_{bus}_monitor_sporadic_frame_{slot + 1}"
+        self.payload = str(raw).encode()
+        self.retain = False
 
 
 class BlockingDaliDriver:
@@ -99,6 +133,7 @@ class BlockingDaliDriver:
         self._lock = asyncio.Lock()
         self._slot = 0
         self._sequence_id = 0
+        self._monitor_task: Optional[asyncio.Task] = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -106,7 +141,7 @@ class BlockingDaliDriver:
         await self._reset_queue()
 
     async def deinitialize(self) -> None:
-        return None
+        self.set_bus_monitor_enabled(False)
 
     async def _reset_queue(self) -> None:
         """Point the gateway back at slot 0 and drop anything not yet sent."""
@@ -114,6 +149,59 @@ class BlockingDaliDriver:
             self.config.device_name, queue_pointer_address(self.config.bus), [0]
         )
         self._slot = 0
+
+    # -- bus monitor ------------------------------------------------------
+
+    def set_bus_monitor_enabled(self, enabled: bool) -> None:
+        """Start or stop reading the gateway's bus monitor ring.
+
+        This is the only way traffic the gateway did not send — a DALI-2 button
+        press, another master's command — reaches the daemon: the reply
+        registers only ever answer our own frames.
+        """
+        if enabled == (self._monitor_task is not None):
+            return
+        if enabled:
+            self._monitor_task = asyncio.create_task(
+                self._poll_bus_monitor(), name=f"dali-monitor-{self.config.device_name}"
+            )
+            return
+        self._monitor_task.cancel()
+        self._monitor_task = None
+
+    async def _poll_bus_monitor(self) -> None:
+        handler = BusMonitorFrameHandler(self.bus_traffic, self.logger, self.dev_inst_map)
+        # A slot keeps its value until the ring wraps onto it again, so the
+        # previous read is what tells a new frame from one already reported.
+        seen: List[Optional[int]] = [None] * MONITOR_RING_SIZE
+        base = monitor_address(self.config.bus, 0)
+        count = MONITOR_RING_SIZE * MONITOR_REGISTERS_PER_SLOT
+
+        while True:
+            await asyncio.sleep(MONITOR_POLL_INTERVAL_S)
+            try:
+                async with self._lock:
+                    registers = await self._transport.read_input(
+                        self.config.device_name, base, count
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                self.logger.warning("Reading the bus monitor failed: %s", error)
+                continue
+
+            for slot in range(MONITOR_RING_SIZE):
+                words = registers[
+                    slot * MONITOR_REGISTERS_PER_SLOT : (slot + 1) * MONITOR_REGISTERS_PER_SLOT
+                ]
+                raw = from_monitor_registers(words)
+                if raw == 0 or raw == seen[slot]:
+                    continue
+                seen[slot] = raw
+                # The daemon's own handler does the decoding, the reordering by
+                # frame counter and the gap reporting; it wants a message-shaped
+                # carrier because on a controller these arrive over MQTT.
+                handler.handle(_MonitorSlotMessage(self.config.bus, slot, raw))
 
     # -- sending ----------------------------------------------------------
 
