@@ -427,7 +427,7 @@ pre-seeded devices on a fully silent bus.
 | device init retries | inside `_poll_step` (`:1348-1368`) | `DeviceInitScheduler`: first attempt immediately, then 5 s × 2ⁿ capped at 60 s (`device_init_scheduler.py:4-6`) |
 | control polling | `PollScheduler.poll` (`:296-322`) | only over **initialized** gear, ≤3 commands per tick, each control's own interval (periodic params 120 s per README) |
 | background settings fetch | `SettingsFetchScheduler.fetch_step` (`:1384`) | one param per idle tick, only for initialized devices |
-| `run_websocket` (Lunatone) | `gateway.py:132-136` | only when `websocket_enabled` |
+| `run_websocket` (Lunatone) | `gateway.py:130-136` | only when `websocket_enabled` |
 | `OneShotTasks` | `asyncio_utils` | per RPC request / per on-topic write |
 
 ### Silent-bus behaviour with pre-seeded devices
@@ -578,3 +578,107 @@ For the browser build: the fake gateway must answer within
 `WAIT_DALI_RESPONSE_TIMEOUT_S`; if it just stays silent, `send_with_retry`
 returns a transmission-error response 3× per command and the scan takes
 `3 × 1.5 s` per command — a 64-frame poll alone becomes ~4.8 s per batch of 16.
+
+---
+
+## 6. Filesystem
+
+`grep -rn "open(\|Path(\|/usr/share\|/etc/" wb/` returns **exactly five** call
+sites. There are no other runtime file accesses (no state file, no cache, no
+`__file__`-relative resource loading).
+
+| path | constant / code | when touched | pre-seed? |
+|---|---|---|---|
+| `/etc/wb-mqtt-dali.conf` | `main.py:31` `CONFIG_FILEPATH`; read `main.py:117`; written `gateway.py:721-759` | read once at boot; **written on every boot and on every `Editor/GetList`**, plus SetBus/SetGateway/ResetDevice/commissioning-completed | **yes** — seed the file, and make its directory writable |
+| `/usr/share/wb-mqtt-confed/schemas/wb-mqtt-dali.schema.json` | `main.py:32` `WB_SCHEMA_FILEPATH`, tried first | `load_config` only | yes (or skip `load_config`) |
+| `./wb-mqtt-dali.schema.json` | `main.py:33` `DEV_SCHEMA_FILEPATH`, fallback if the `/usr/share` one is absent | `load_config` only | yes — cwd-relative, already vendored at `wasm/python/vendor/wb-mqtt-dali.schema.json` |
+| `/usr/share/wb-mqtt-dali/products.csv` | `main.py:34` `GTIN_DB_FILEPATH`; `gtin_db.py:14` | **read fully into two dicts in `DaliDatabase.__init__`**, i.e. at boot, before `Gateway` is built | yes — 761 KB, already vendored at `wasm/python/vendor/products.csv`. Only used to resolve brand/product name by GTIN (`get_info_by_gtin` / `get_info_by_product_id`); a stub object with those two methods returning `None` works if size matters |
+| `/usr/share/wb-mqtt-dali/schemas/common_device.schema.json` | `common_dali_device.py:697-699` | lazily, in `DaliDeviceBase.__init__`, cached on the **class** attribute `_common_schema` — so it is read the first time *any* `DaliDevice`/`Dali2Device` is constructed, i.e. inside `bus_from_json` during `Gateway.__init__` when the config has devices, or on the first commissioning otherwise | **yes, mandatory** — copy `schemas/common_device.schema.json` there. (Alternative for tests: pre-set `DaliDeviceBase._common_schema` before constructing any device — that is what the probe below does.) |
+
+Everything is pre-seedable into MEMFS. Directories needed:
+`/etc`, `/usr/share/wb-mqtt-dali/schemas`, and (optionally)
+`/usr/share/wb-mqtt-confed/schemas`.
+
+Writes: only `save_configuration`. It creates
+`/etc/wb-mqtt-dali<random>.cfg.tmp` and `os.replace`s it over the config —
+so `/etc` must be a writable MEMFS directory, not a read-only mount.
+
+---
+
+## 7. What to skip
+
+### Safe to drop entirely
+
+* **`main.py` itself.** `wait_for_cancel` (`main.py:85-95`) uses
+  `loop.add_signal_handler`, unavailable in Pyodide; `_make_log_handler`
+  (`main.py:63-82`) probes `$JOURNAL_STREAM`/`systemd.journal`;
+  `_serve_connection`/`default_service` implement broker reconnect with
+  `asyncio.sleep(1)` backoff, meaningless against a loopback broker. Build
+  `Gateway` directly (§1).
+* **`load_config`** — feed the parsed dict straight to `Gateway`; keep
+  `validate_config` if you want the duplicate-mqtt_id check.
+* **Lunatone websocket emulator** (`fake_lunatone_iot.run_websocket`,
+  `gateway.py:130-136`). Started **only** when the gateway's
+  `websocket_enabled` is true; the default is `False`
+  (`gateway.py:240`). Leave the key out of the config and
+  `websockets.asyncio.server.serve` is never called. It also puts the buses into
+  quiescent mode while a Cockpit client is attached
+  (`gateway.py:102-104`, `application_controller.py:1615-1633`), which would freeze
+  the polling loop — another reason to keep it off. `Editor/SetGateway` can turn
+  it on from the UI; the UI should hide that control in the browser build.
+* **Bus monitor** (`_handle_bus_traffic_frame`, `application_controller.py:1634-1728`,
+  topic `/wb-dali/<uid>/bus_monitor`). Gated by `bus_monitor_enabled` /
+  `bus_monitor_syslog_enabled`, default false. The `bus_traffic` callback is
+  always registered (`:444`) but returns immediately when disabled.
+
+### Runs anyway; harmless against a silent bus
+
+* **MQTT virtual-device publishing.** Not switchable. `start()` always publishes
+  the broadcast virtual device per bus (`:519`), and every device that fails to
+  initialize is still published in error state (`:381-382`). Against the
+  loopback broker this is pure local traffic — measured ~17 retained topics per
+  bus for the broadcast device alone. It costs memory in the broker's retained
+  map, nothing else. Group virtual devices only appear once real gear reports
+  group membership, so on a silent bus there are none.
+* **The polling loop.** Not switchable. With zero devices it wakes at most once
+  a second (`:1380`) and does nothing. With un-initializable devices it burns
+  3 × 1.5 s per device per retry, backing off 5 s → 60 s
+  (`device_init_scheduler.py:4-6`) — a bounded, logged, never-fatal drip of
+  `ERROR: Timeout waiting for response …` lines. If that log noise matters,
+  either have the fake gateway answer, or ship a config with empty `devices` and
+  let the UI populate it through `ScanBus`.
+* **Event sync** (`EventSyncCoordinator`, `application_controller.py:479-484`).
+  Purely reactive: it is driven from `_handle_bus_traffic_frame` (`:1677`) and
+  from poll results (`:1568`). With no bus traffic it never runs.
+* **`SettingsFetchScheduler`** (`:1384`) — its entry list is populated only by
+  `add_device` on successful init (`:1265`), so it is empty and `fetch_step`
+  returns `False` immediately.
+* **`remove_topics_by_driver`** at the top of `Gateway.start()`
+  (`gateway.py:259`). Needed only to clean stale retained topics from a previous
+  run; on a fresh in-memory broker it finds nothing. **But** it blocks on
+  `retain_hack` for up to **120 s** if the broker does not echo a client's own
+  publish back to that client (`wbmqtt.py:284-329` -> `wbmqtt.py:263-281`). The
+  loopback broker does echo (`broker.py`, `Broker.publish` delivers to every
+  subscribed client including the publisher), so this completes in one tick.
+
+### Must not be skipped
+
+* `wait_for_rpc_endpoint` (`gateway.py:263-272`) — hard-fails `Gateway.start()`
+  after 5 s. Retained `"1"` on `/rpc/v1/wb-mqtt-serial/config/Load` before boot.
+* `_update_gateways` (`gateway.py:697-733`) — it runs on boot **and on every
+  `GetList`**, and will silently delete every configured gateway if the fake
+  serial answers with a config that does not list it. Either answer correctly,
+  or let the RPC time out (2 s per `GetList`, which the UI would feel).
+* `MQTTDispatcher.run()` must be a running task before anything subscribes;
+  every `await` in `Gateway.start()` depends on it delivering messages.
+
+---
+
+## Reproducing
+
+The probe used for the measurements above lives in the session scratchpad
+(`boot_probe.py`, `boot_probe2.py`, `bs_count.py`, `conf-min.json`,
+`conf-devs.json`). It puts `wasm/python/{shims,runtime,vendor}` on `sys.path`,
+pre-sets `DaliDeviceBase._common_schema`, runs a fake wb-mqtt-serial client on
+the loopback broker, boots the real `Gateway`, and issues `Editor/*` over MQTT
+exactly as the UI would.

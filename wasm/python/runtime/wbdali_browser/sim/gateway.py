@@ -16,6 +16,11 @@ wb-mqtt-serial (`config-wb-dali.json`). Bus 2 and 3 repeat it at +1000 and
 | 1500..1515  | input   | `bus_1_bulk_send_reply_<0..15>`   | per-slot transmission result|
 | 1900..1915  | input   | `bus_1_monitor_sporadic_frame_<1..4>` | bus monitor ring, 4 × u64 |
 
+A bus monitor slot is a 64-bit value, `word_order: little_endian`:
+
+    [63..48] frame counter, mod 2^16   [41] broken   [40] backward frame
+    [39..32] frame length in bits      [24..0] frame data      0 = empty slot
+
 Queue slots hold a 32-bit value in two registers, low word first:
 
     [24..0]  frame data, right-aligned      [27..25] frame size (0=FF16, 1=FF24, 2=FF25)
@@ -209,34 +214,41 @@ class VirtualWbDaliGateway:
         # bus monitor see both frames.
         status, backward = bus.dali_bus.send_frame(decoded.frame, decoded.bit_length)
         self.frames_sent += 2 if decoded.sendtwice else 1
-        self._record_monitor(bus, decoded, status, backward)
-        if decoded.sendtwice:
-            self._record_monitor(bus, decoded, status, backward)
 
         value = (int(status) << 8) | (backward & 0xFF)
         bus.replies[slot] = value
         if self.on_reply is not None:
             self.on_reply(bus.index, slot, value)
 
-    def _record_monitor(
+    def push_monitor_frame(
         self,
-        bus: VirtualBus,
-        decoded: DecodedSlot,
-        status: TransmissionStatus,
-        backward: int,
+        bus_index: int,
+        bit_length: int,
+        frame: int,
+        backward: bool = False,
+        broken: bool = False,
     ) -> None:
-        if not self.monitor_enabled.get(bus.index):
+        """Record one frame in the bus monitor ring.
+
+        Only traffic the gateway did not originate belongs here — the control
+        name is `monitor_sporadic_frame`, and the driver already sees its own
+        commands and their answers through the reply registers. Echoing them
+        would double every line in the monitor.
+        """
+        bus = self.buses.get(bus_index)
+        if bus is None or not self.monitor_enabled.get(bus_index):
             return
 
-        self._push_monitor(bus, decoded.bit_length, decoded.frame)
-        if status is TransmissionStatus.WITH_BACKWARD_RESPONSE:
-            self._push_monitor(bus, 8, backward)
-
-    def _push_monitor(self, bus: VirtualBus, bit_length: int, frame: int) -> None:
         bus.frame_counter = (bus.frame_counter + 1) % FRAME_COUNTER_MODULO
-        value = (bus.frame_counter << 32) | (bit_length << 25) | (frame & 0x1FFFFFF)
-        bus.monitor[bus.monitor_write_index] = value
+        value = (
+            (bus.frame_counter << 48)
+            | (int(broken) << 41)
+            | (int(backward) << 40)
+            | ((bit_length & 0xFF) << 32)
+            | (frame & 0x1FFFFFF)
+        )
         slot = bus.monitor_write_index
-        bus.monitor_write_index = (bus.monitor_write_index + 1) % MONITOR_RING_SIZE
+        bus.monitor[slot] = value
+        bus.monitor_write_index = (slot + 1) % MONITOR_RING_SIZE
         if self.on_monitor is not None:
-            self.on_monitor(bus.index, slot, value)
+            self.on_monitor(bus_index, slot, value)

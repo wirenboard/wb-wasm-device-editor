@@ -475,3 +475,286 @@ batching* exact:
 * Never make a single reply take longer than 1.5 s unless you *want*
   `NoResponseFromGateway`.
 
+---
+
+## 8. Emulator contract
+
+### 8.1 Modbus surface
+
+The requested signature is not quite enough: **replies and monitor slots are
+`input` registers (fc 4), only the send queue and the pointer are `holding`**.
+
+```python
+class VirtualWbDaliGateway:
+    def __init__(self, buses: dict[int, "VirtualDaliBus"], *, queue_size: int = 16,
+                 slow_factor: float = 0.1) -> None: ...
+
+    # --- Modbus ---
+    def read_holding(self, address: int, count: int) -> list[int]: ...   # fc 3
+    def write_holding(self, address: int, values: list[int]) -> None: ...# fc 6 / fc 16
+    def read_input(self, address: int, count: int) -> list[int]: ...     # fc 4
+    def read_discrete(self, address: int, count: int) -> list[bool]: ... # fc 2 (bus state/overheat/powered)
+    def write_coil(self, address: int, value: bool) -> None: ...         # fc 5 (bus power supply)
+
+    # --- driven by the host event loop ---
+    async def run(self) -> None: ...        # transmit pending slots, honouring frame timing
+    def drain_dirty(self) -> list[tuple[int, int]]: ...  # (input-register address, value) written since last call
+
+    # --- test hooks ---
+    def inject_bus_frame(self, bus: int, frame: Frame) -> None: ...  # 3rd-party frame → monitor ring
+    def set_bus_powered(self, bus: int, powered: bool) -> None: ...
+    def set_overheat(self, bus: int, overheat: bool) -> None: ...
+```
+
+Address decode (`bus = address // 1000`, `off = address % 1000`, bus ∈ 1..3):
+
+```
+400 <= off <= 431  →  send-queue slot (off-400)//2, word (off-400)%2   [holding, write]
+off == 432         →  bulk-send pointer                                 [holding, r/w]
+500 <= off <= 515  →  reply slot off-500                                [input]
+900 <= off <= 915  →  monitor ring slot (off-900)//4, word (off-900)%4  [input]
+```
+
+Both the queue slots and the monitor slots use **little-endian word order**
+(lowest address = least significant 16 bits).
+
+### 8.2 Gateway state machine (per bus)
+
+```
+pending[16]: bool      # slot has an unconsumed command word
+words[16]:   int       # 32-bit encoded frame
+reply[16]:   int       # last published reply value
+ptr:         int       # consume pointer, 0..15
+fc:          int       # 16-bit bus-monitor frame counter
+ring[4]:     int       # monitor slot values
+dt:          int       # device type armed by the last EnableDeviceType (0 = none)
+```
+
+* `write_holding(1432+bus_off, [0])` → `ptr = 0`, clear all `pending`
+  (this is the driver's `_reset_queue_in_gateway`).
+* `write_holding(1400+bus_off+2i, [lo, hi])` → `words[i] = (hi<<16)|lo`,
+  `pending[i] = True`. The driver always writes whole slots starting at an even
+  offset, so a simple pairwise assembly is safe.
+* Transmit loop: while `pending[ptr]`, transmit `words[ptr]`, write
+  `reply[ptr]`, mark that input address dirty, `pending[ptr] = False`,
+  `ptr = (ptr+1) % 16`. Consume strictly in pointer order — the driver's
+  positional correlation depends on it.
+
+Transmitting one word:
+
+```python
+prio     = (w >> 29) & 0x7          # 0 → do not transmit (leave the slot silent)
+twice    = bool((w >> 28) & 0x1)
+size     = {0: 16, 1: 24, 2: 25}[(w >> 25) & 0x7]
+data     = w & ((1 << size) - 1)
+frame    = ForwardFrame(size, data)
+```
+
+Then:
+
+1. if the bus is not powered → `reply = 0x0400` (status 4), stop;
+   if overheat is simulated → `reply = 0x0500` (status 5), stop;
+2. `cmd = from_frame(frame, devicetype=dt, dev_inst_map=dev_inst_map)`;
+   then `dt = cmd.param if isinstance(cmd, EnableDeviceType) else 0`
+   — this is mandatory: `fakes.Gear` explicitly assumes "device type decoding
+   has already been handled" (fakes.py:376-381), so `QueryColourValue` decodes
+   as `UnknownGearCommand` without it (verified);
+3. deliver to the bus model **once** even when `twice` is set — `fakes.Gear`
+   applies configuration commands on a single `send()` and has no `sendtwice`
+   notion; account the extra frame only in the timing;
+4. collect responders, build the status word.
+
+### 8.3 Driving the DALI bus model
+
+`fakes.Gear.send(cmd)` / `fakes.Device.send(cmd)` take a **decoded `Command`
+object** and return `None` or an `int` in 0..255 (fakes.py:98-103, 460-466).
+`fakes.Bus.send()` (fakes.py:645-655) is *not* directly reusable — it returns
+`cmd.response(rf)`, a `Response`, and swallows the raw byte we need. Replicate
+its arbitration instead:
+
+```python
+def transmit(self, frame, cmd):
+    if len(frame) == 16:
+        targets = self.gear          # control gear answer only 16-bit frames
+    elif len(frame) == 24:
+        targets = self.devices       # control devices answer only 24-bit frames
+    else:
+        targets = []                 # FF25 — nothing decodes or answers it
+    answers = [r for r in (t.send(cmd) for t in targets) if r is not None]
+    if len(answers) > 1:
+        return 3, answers[0] & 0xFF          # collision → broken response
+    if len(answers) == 1:
+        return 1, answers[0] & 0xFF          # backward frame
+    return 2, 0                              # transmitted, no answer
+```
+
+`fakes.Gear.valid_address` already rejects non-16-bit frames and
+`fakes.Device.valid_address` non-24-bit ones (fakes.py:147-163, 507-522), so
+passing everything to everything also works; the split above just avoids the
+`dt_gap` bookkeeping in `Gear.send` being disturbed by 24-bit traffic.
+
+Status 0 (`no transmission`) and dropped replies are the fault-injection knobs;
+the honest bus model never produces them.
+
+### 8.4 Bus monitor ring
+
+Do **not** put the gateway's own transmissions into the ring: `_log_frame`
+(wbdali.py:375-388) labels every non-event forward frame "Unexpected", and
+`BusTrafficCallbacks` already receives those frames through the reply path — so
+echoing them would double every command in bus traffic. (This also matches
+`e2e/on_latency` needing a *second* WB-DALI on the bus to observe the first
+one's DAPC frames.) Use the ring for third-party traffic: DALI-2 input-device
+events, other masters, and anything `inject_bus_frame()` is given.
+
+```python
+def push_monitor(bus, frame, *, broken=False):
+    st = bus.ring_index                      # 0..3, round-robin
+    value = ((bus.fc & 0xFFFF) << 48) | (broken << 41) | \
+            ((len(frame) == 8) << 40) | (len(frame) << 32) | frame.as_integer
+    bus.ring[st] = value
+    bus.fc = (bus.fc + 1) & 0xFFFF
+    bus.ring_index = (st + 1) % 4
+    mark_dirty(1900 + bus_off + 4*st)
+```
+
+### 8.5 What the emulated wb-mqtt-serial poller must do
+
+**Subscribe** to `/rpc/v1/wb-mqtt-serial/port/Load/+` (the driver appends a
+random per-driver suffix to the client id, so a wildcard is required); parse
+`params.device_id / function / address / count / msg` and apply:
+`function 6` → `write_holding(address, [int(msg,16)])`,
+`function 16` → `write_holding(address, [int(msg[4i:4i+4],16) for i in range(count)])`.
+No RPC reply is needed.
+
+**Publish** (topic prefix `/devices/<device_id>/`):
+
+| topic | payload | when |
+|---|---|---|
+| `meta/error` | `""` (retained) | at start-up, and whenever the gateway becomes reachable again |
+| `meta/error` | `"r"` (retained) | while simulating an unreachable gateway |
+| `controls/bus_<N>_bulk_send_reply_<i>` | decimal `(status<<8)\|byte` | **once per gateway write of that slot** — never on a bare re-read |
+| `controls/bus_<N>_monitor_sporadic_frame_<r>` | decimal u64 | once per ring write |
+| `controls/bus_<N>_bulk_send_pointer` | decimal `ptr` | optional; nothing in the driver reads it |
+
+Registers a literal poller would read (per bus, `bus_off = (bus-1)*1000`):
+
+```
+fc 4  input   1500+bus_off .. 1515+bus_off   (16 regs)  → bulk_send_reply_0..15
+fc 4  input   1900+bus_off .. 1915+bus_off   (16 regs)  → monitor_sporadic_frame_1..4
+fc 3  holding 1432+bus_off                   (1 reg)    → bulk_send_pointer
+optional realism: fc 2 discrete 1000/1010/1020/1030+ch, fc 4 input 4020+ch (temperature)
+```
+
+**Cadence:** a 10-20 ms tick is right. It must be far below
+`WAIT_DALI_RESPONSE_TIMEOUT_S = 1.5 s`, and the driver's 10 ms batch-coalescing
+window means anything slower starts to distort batching. Publish the reply for a
+slot as soon as the gateway has written it; keep the publishes for one batch in
+slot order so `BusTrafficCallbacks` does not have to reorder. Do not publish a
+reply register for a slot the gateway has not consumed since the last write —
+that is the one way to make the driver resolve a future with the wrong answer.
+
+### 8.6 Minimal happy-path trace
+
+```
+driver  → RPC fc6  addr 1432  msg "0000"                      # initialize()
+gateway   ptr = 0, pending cleared
+driver  → RPC fc16 addr 1400  count 2  msg "fefe4000"         # DAPC(broadcast, 254)
+gateway   words[0] = 0x4000FEFE → prio 2, FF16, data 0x00FEFE
+          from_frame → DAPC(<broadcast>, 254); Gear.send → None
+          reply[0] = 0x0200
+poller  → /devices/wb-dali_1/controls/bus_1_bulk_send_reply_0  "512"
+driver    future resolved with Response(None)
+driver  → RPC fc16 addr 1402  count 2  msg "01994000"         # QueryDeviceType(A0)
+gateway   words[1] = 0x40000199 → FF16 0x000199
+          from_frame → QueryDeviceType(A0); Gear(0).send → 8
+          reply[1] = 0x0108
+poller  → /devices/wb-dali_1/controls/bus_1_bulk_send_reply_1  "264"
+driver    future resolved with QueryDeviceTypeResponse(BackwardFrame(8)) → value 8
+```
+
+### 8.7 Verified end-to-end
+
+A ~60-line prototype of §8.2/§8.3 (Appendix A) wired to the **real**
+`WBDALIDriver` and two `fakes.Gear` (short 0 with `devicetypes=[8]`, short 1
+with none) produced, unmodified:
+
+```
+slot decoded command                          prio twice raw32       reply
+ 0   ArcPower(<broadcast>,254)                  2   False 0x4000fefe  0x0200
+ 1   QueryActualLevel(<gear 0>)                 2   False 0x400001a0  0x01fe
+ 2   QueryDeviceType(<gear 0>)                  2   False 0x40000199  0x0108
+ 3   QueryDeviceType(<gear 1>)                  2   False 0x40000399  0x01fe
+ 4   QueryActualLevel(<broadcast>)              2   False 0x4000ffa0  0x03fe   <- collision
+ 5   EnableDeviceType(8)                        2   False 0x4000c108  0x0200
+ 6   QueryColourValue(<gear 0>)                 1   False 0x200001fa  0x0100   <- prio auto-promoted
+```
+
+and the driver returned `254`, `BackwardFrame(8)`, `BackwardFrame(254)`,
+a `BackwardFrameError(254)` for the broadcast collision, and a decoded DT8
+`QueryColourValue` response. Note slot 5/6: the driver inserted
+`EnableDeviceType(8)` on its own and promoted the following frame to
+`TRANSACTION_CONTINUATION` (priority 1, `0x2000...`), exactly as §3 describes.
+
+---
+
+## Appendix A — working prototype (verified against the real driver)
+
+Synchronous, no timing model; enough to prove the wire contract. Run with
+`PYTHONPATH=/tmp/wb-mqtt-dali`.
+
+```python
+from dali.command import from_frame
+from dali.frame import ForwardFrame
+from dali.gear.general import EnableDeviceType
+
+class Gateway:
+    """One DALI bus of a WB-DALI gateway. bus_off = (bus-1)*1000."""
+    def __init__(self, gear, bus=1):
+        self.gear, self.bus_off = gear, (bus - 1) * 1000
+        self.words = [0] * 16; self.pending = [False] * 16; self.reply = [0] * 16
+        self.ptr = 0; self.dt = 0; self.dirty = []
+
+    def write_holding(self, address, values):
+        off = address % 1000
+        if off == 432:                       # bulk send pointer: only 0 is ever written
+            self.ptr = 0; self.pending = [False] * 16; return
+        assert 400 <= off <= 431 and (off - 400) % 2 == 0 and len(values) % 2 == 0
+        slot = (off - 400) // 2
+        for k in range(0, len(values), 2):
+            i = (slot + k // 2) % 16
+            self.words[i] = (values[k + 1] << 16) | values[k]   # little-endian word order
+            self.pending[i] = True
+
+    def step(self):
+        while self.pending[self.ptr]:
+            i, w = self.ptr, self.words[self.ptr]
+            size = {0: 16, 1: 24, 2: 25}[(w >> 25) & 7]
+            frame = ForwardFrame(size, w & ((1 << size) - 1))
+            # (w >> 29) & 7 == priority, 0 would mean "do not send"; (w >> 28) & 1 == sendtwice
+            cmd = from_frame(frame, devicetype=self.dt)
+            self.dt = cmd.param if isinstance(cmd, EnableDeviceType) else 0
+            answers = [r for r in (g.send(cmd) for g in self.gear) if r is not None] \
+                      if size == 16 else []
+            if len(answers) > 1:   status, byte = 3, answers[0] & 0xFF   # collision
+            elif len(answers) == 1: status, byte = 1, answers[0] & 0xFF  # backward frame
+            else:                   status, byte = 2, 0                  # sent, no answer
+            self.reply[i] = (status << 8) | byte
+            self.dirty.append((1500 + self.bus_off + i, self.reply[i]))
+            self.pending[i] = False
+            self.ptr = (self.ptr + 1) % 16
+```
+
+Fake wb-mqtt-serial side (on every `/rpc/v1/wb-mqtt-serial/port/Load/+` publish):
+
+```python
+p = json.loads(payload)["params"]
+if p["function"] == 6:
+    gw.write_holding(p["address"], [int(p["msg"], 16)])
+else:  # 16
+    gw.write_holding(p["address"], [int(p["msg"][4*i:4*i+4], 16) for i in range(p["count"])])
+gw.step()
+for addr, val in gw.dirty:                       # publish only freshly written slots
+    i = addr - 1500 - bus_off
+    publish(f"/devices/{DEV}/controls/bus_{BUS}_bulk_send_reply_{i}", str(val), retain=False)
+gw.dirty.clear()
+```

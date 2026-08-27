@@ -27,9 +27,19 @@ fetch()
     local REF=$2
     local NAME=$3
 
+    local ARCHIVE=$FETCH_DIR/$NAME.tar.gz
+    local ATTEMPT
+
     mkdir -p $FETCH_DIR/$NAME
-    curl -sfL "https://github.com/$REPO/archive/refs/heads/$REF.tar.gz" \
-        | tar -xz -C $FETCH_DIR/$NAME --strip-components 1
+    for ATTEMPT in 1 2 3; do
+        if curl -sfL --retry 3 --retry-all-errors -o $ARCHIVE \
+            "https://github.com/$REPO/archive/refs/heads/$REF.tar.gz"; then
+            break
+        fi
+        [ $ATTEMPT -eq 3 ] && { echo "failed to fetch $REPO@$REF" >&2; exit 1; }
+        sleep 2
+    done
+    tar -xzf $ARCHIVE -C $FETCH_DIR/$NAME --strip-components 1
     echo "$REPO@$REF -> $FETCH_DIR/$NAME"
 }
 
@@ -46,6 +56,7 @@ mkdir -p $DST
 cp -r $FETCH_DIR/wb-mqtt-dali/wb $DST/
 cp $FETCH_DIR/wb-mqtt-dali/wb-mqtt-dali.schema.json $DST/
 cp $FETCH_DIR/wb-mqtt-dali/products.csv $DST/
+cp -r $FETCH_DIR/wb-mqtt-dali/schemas $DST/
 
 # python-dali: the DALI protocol library. dali/tests/fakes.py is the model of
 # real control gear the bus simulator drives, so the tests package is kept.
