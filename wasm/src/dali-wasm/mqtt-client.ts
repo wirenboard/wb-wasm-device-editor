@@ -1,16 +1,16 @@
 /**
- * homeui's `mqttClient` service, reimplemented over the in-browser broker.
+ * homeui's `services/mqtt-client`, backed by the in-browser broker.
  *
- * The DALI stores use only four of its methods — `addStickySubscription` and
- * `unsubscribe`, for the commissioning progress and bus monitor topics — but
- * `MqttRpc` needs `send`, `getID`, `isConnected`, `timeout` and `cancel`, so the
- * shim covers both. The semantics that matter are copied from
- * `app/scripts/services/mqttService.js`:
+ * homeui builds its DALI page on module singletons now: `daliProxy` and the
+ * stores import `mqttClient` rather than taking it injected. Substituting this
+ * one module (see `redirectHomeuiMqttClient` in vite.config.ts) is therefore
+ * the whole seam — homeui's own RPC proxy and stores run unchanged, talking
+ * MQTT-RPC to the wb-mqtt-dali instance in the Pyodide worker instead of to a
+ * broker over websockets.
  *
- * - `send` defaults to qos 1 and retained true when the flag is left undefined;
- * - `unsubscribe(topic)` drops *every* callback registered for that topic, which
- *   is what keeps `MonitorStore.toggleLogsReception` balanced;
- * - callbacks receive `{topic, payload, qos, retained}` with a string payload.
+ * The surface is the one homeui's `rpc.ts` and DALI stores actually use. What
+ * they do not use is left out rather than faked: `connect`, `reconnect` and
+ * `disconnect` have no meaning for a loopback client that is always up.
  */
 
 import type { DaliBackend } from './backend';
@@ -24,33 +24,66 @@ export interface MqttMessage {
 
 export type MqttCallback = (message: MqttMessage) => void;
 
-export class BrowserMqttClient {
-  #backend: DaliBackend;
-  #callbacks = new Map<string, MqttCallback[]>();
-  #connected = false;
+interface CancellablePromise extends Promise<void> {
+  _cancel: () => void;
+}
 
-  constructor(backend: DaliBackend) {
+class BrowserMqttClient {
+  #backend: DaliBackend | null = null;
+  #callbacks = new Map<string, MqttCallback[]>();
+  #pending: Array<() => void> = [];
+  #connected = false;
+  #clientId = `wb-dali-editor-${Math.random().toString(36).slice(2, 10)}`;
+
+  /**
+   * Point the client at a running DALI runtime.
+   *
+   * The module is a singleton because homeui's is, but the runtime it talks to
+   * comes and goes with the DALI view — so anything published before one exists
+   * is held rather than dropped.
+   */
+  attach(backend: DaliBackend): void {
     this.#backend = backend;
-    // The caller reports a boot failure; swallowing it here only keeps it from
-    // surfacing a second time as an unhandled rejection.
+    this.#clientId = backend.clientId;
+    for (const [pattern] of this.#callbacks) {
+      backend.subscribe(pattern, (topic, payload, retained) => this.#deliver(pattern, topic, payload, retained));
+    }
     backend.ready.then(
       () => {
         this.#connected = true;
+        this.#pending.splice(0).forEach((send) => send());
       },
-      () => {}
+      () => {
+        this.#connected = false;
+      }
     );
   }
 
+  detach(backend: DaliBackend): void {
+    if (this.#backend !== backend) {
+      return;
+    }
+    this.#backend = null;
+    this.#connected = false;
+    this.#pending.length = 0;
+  }
+
   getID(): string {
-    return this.#backend.clientId;
+    return this.#clientId;
   }
 
   isConnected(): boolean {
     return this.#connected;
   }
 
-  send(topic: string, payload: string, retained?: boolean, qos?: number): void {
-    this.#backend.publish(topic, payload, retained === undefined ? true : retained, qos ?? 1);
+  send(destination: string, payload?: string | null, retained?: boolean, qos?: 0 | 1 | 2): void {
+    const publish = () =>
+      this.#backend?.publish(destination, payload ?? '', retained === undefined ? true : retained, qos ?? 1);
+    if (this.#connected) {
+      publish();
+      return;
+    }
+    this.#pending.push(publish);
   }
 
   subscribe(topic: string, callback: MqttCallback): void {
@@ -60,40 +93,67 @@ export class BrowserMqttClient {
       return;
     }
     this.#callbacks.set(topic, [callback]);
-    this.#backend.subscribe(topic, (messageTopic, payload, retained) => {
-      for (const handler of this.#callbacks.get(topic) ?? []) {
-        handler({ topic: messageTopic, payload, qos: 1, retained });
-      }
-    });
+    this.#backend?.subscribe(topic, (messageTopic, payload, retained) =>
+      this.#deliver(topic, messageTopic, payload, retained));
   }
 
   /**
-   * Same as `subscribe` here. In homeui the distinction is that sticky
-   * subscriptions survive a broker reconnect; a loopback broker never drops.
+   * Same as `subscribe` here.
+   *
+   * In homeui the distinction is that sticky subscriptions are re-established
+   * after a broker reconnect; a loopback client never drops.
    */
   addStickySubscription(topic: string, callback: MqttCallback): void {
     this.subscribe(topic, callback);
   }
 
+  /** Drops every callback for the topic, as homeui's does. */
   unsubscribe(topic: string): void {
     this.#callbacks.delete(topic);
-    this.#backend.unsubscribe(topic);
-  }
-
-  timeout(callback: () => void, delayMs: number): number {
-    return window.setTimeout(callback, delayMs);
-  }
-
-  cancel(handle: number): void {
-    window.clearTimeout(handle);
+    this.#backend?.unsubscribe(topic);
   }
 
   whenReady(): Promise<void> {
-    return this.#backend.ready;
+    return this.whenConnected();
+  }
+
+  whenConnected(): Promise<void> {
+    return this.#backend ? this.#backend.ready : new Promise<void>(() => {});
+  }
+
+  timeout(callback: () => void, delay: number): CancellablePromise {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const promise = this.whenReady().then(() => {
+      if (cancelled) {
+        return undefined;
+      }
+      return new Promise<void>((resolve) => {
+        timeoutId = setTimeout(() => {
+          resolve();
+          callback();
+        }, delay);
+      });
+    }) as CancellablePromise;
+    promise._cancel = () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+    };
+    return promise;
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  cancel(promise: CancellablePromise): void {
+    promise?._cancel?.();
+  }
+
+  #deliver(pattern: string, topic: string, payload: string, retained: boolean): void {
+    for (const callback of this.#callbacks.get(pattern) ?? []) {
+      callback({ topic, payload, qos: 1, retained });
+    }
   }
 }
 
-/** The `whenMqttReady` callback `DaliStore` awaits before its first RPC. */
-export function makeWhenMqttReady(client: BrowserMqttClient): () => Promise<void> {
-  return () => client.whenReady();
-}
+export const mqttClient = new BrowserMqttClient();

@@ -13,8 +13,8 @@ import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { useAsyncAction } from '@/utils/async-action';
-import { setReactLocale } from '~/react-directives/locale';
 import { findDaliGateways, rememberGateways } from '../dali-wasm/gateways';
+import { setLanguage } from '../i18n/config';
 import { openDali } from '../navigation';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
@@ -235,10 +235,6 @@ export const DeviceSettingsWasm = observer(() => {
       return deviceTypesStore;
     });
   };
-
-  useEffect(() => {
-    setReactLocale();
-  }, []);
 
   useEffect(() => {
     if (moduleInitialized) {
@@ -621,7 +617,6 @@ export const DeviceSettingsWasm = observer(() => {
             onChange={(option: Option<string>) => {
               localStorage.setItem('language', option.value);
               setLanguage(option.value);
-              setReactLocale();
             }}
           />
         </>

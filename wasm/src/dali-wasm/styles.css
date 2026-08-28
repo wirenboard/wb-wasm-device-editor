@@ -8,3 +8,25 @@ body,
 #root {
   height: 100%;
 }
+
+/*
+ * The console panel the bus monitor docks into is app chrome in homeui, laid
+ * out beside or below the page. This editor has no such chrome, so the DALI
+ * view provides it.
+ */
+.daliWasm {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.daliWasm-consoleRight {
+  flex-direction: row;
+}
+
+.daliWasm-page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}

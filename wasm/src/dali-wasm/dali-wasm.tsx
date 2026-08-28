@@ -1,33 +1,39 @@
+import classNames from 'classnames';
+import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useState } from 'react';
+import { MemoryRouter } from 'react-router-dom';
+import { ConsolePanel } from '@/components/console-panel';
 import DaliPage from '@/pages/settings/configs/dali';
 import { authStore, UserRole } from '@/stores/auth';
-import { DaliStore } from '@/stores/dali';
+import { consolePanelStore } from '@/stores/console-panel';
 import { BootProgress } from './components/boot-progress';
 import { DaliShell } from './components/dali-shell';
 import { PortGate } from './components/port-gate';
-import { makeDaliProxy } from './dali-proxy';
-import { BrowserMqttClient, makeWhenMqttReady } from './mqtt-client';
 import { loadRememberedGateways, scenarioForGateways } from './gateways';
-import { PyodideDaliBackend, type DaliMode } from './pyodide-backend';
+import { mqttClient } from './mqtt-client';
 import { loadMode, saveMode } from './persistence';
+import { PyodideDaliBackend, type DaliMode } from './pyodide-backend';
 import './styles.css';
 
 /**
  * The homeui DALI configuration page, backed by wb-mqtt-dali running in a
  * Pyodide worker instead of on a controller.
  *
- * `DaliPage` needs one prop and no React context: a `DaliStore` built from a
- * `whenMqttReady` promise, an RPC proxy and an MQTT client. All three are shims
- * over the in-browser broker, so the page itself is used unmodified — it loads
- * itself once `whenMqttReady` resolves.
+ * The page takes no props: it reaches its transport through homeui's own module
+ * singletons, and the one that matters — `mqttClient` — is substituted at build
+ * time for a loopback client (see `redirectHomeuiMqttClient` in
+ * vite.config.ts). So the page, its stores and its RPC proxy are used
+ * unmodified. What this component does is start the runtime, point the client
+ * at it, and supply the two pieces of app chrome the page expects around it: a
+ * router, and the console panel its bus monitor docks into.
  */
-export const DaliWasm = () => {
+export const DaliWasm = observer(() => {
   // What the Modbus scan found. With a gateway in hand the daemon talks to it;
   // without one — reached by URL, or with nothing plugged in — there is still
   // the simulated installation to work against.
   const gateways = useMemo(loadRememberedGateways, []);
-  // Arriving from a found gateway, that gateway is the point; the simulated
-  // bus is what is left when there is nothing connected.
+  // Arriving from a found gateway, that gateway is the point; the simulated bus
+  // is what is left when there is nothing connected.
   const [mode, setMode] = useState<DaliMode>(
     () => loadMode() ?? (gateways.length ? 'hardware' : 'simulated')
   );
@@ -52,9 +58,9 @@ export const DaliWasm = () => {
       .catch(() => setHasPort(false));
   }, [mode, hasPort]);
 
-  const { store, backend } = useMemo(() => {
+  const backend = useMemo(() => {
     if (needsPort) {
-      return { store: null, backend: null };
+      return null;
     }
 
     // `PageLayout` hides its children behind an access check, and the standalone
@@ -62,7 +68,7 @@ export const DaliWasm = () => {
     // the administrator.
     authStore.userRole = UserRole.Admin;
 
-    const daliBackend = new PyodideDaliBackend({
+    return new PyodideDaliBackend({
       mode,
       // In hardware mode the installation is the one the scan found; in
       // simulation the runtime supplies its own.
@@ -71,18 +77,14 @@ export const DaliWasm = () => {
         : undefined,
       onLog: (text) => setBootLog((lines) => [...lines.slice(-200), text]),
     });
-    const mqttClient = new BrowserMqttClient(daliBackend);
-    return {
-      backend: daliBackend,
-      store: new DaliStore(makeWhenMqttReady(mqttClient), makeDaliProxy(daliBackend), mqttClient),
-    };
   }, [mode, needsPort, gateways]);
 
   useEffect(() => {
-    if (!backend || !store) {
+    if (!backend) {
       return undefined;
     }
     let cancelled = false;
+    mqttClient.attach(backend);
     backend.ready.then(
       () => !cancelled && setBooted(true),
       (error) => !cancelled && setBootError(String(error?.message ?? error))
@@ -90,10 +92,10 @@ export const DaliWasm = () => {
 
     return () => {
       cancelled = true;
-      store.destroy();
+      mqttClient.detach(backend);
       backend.dispose();
     };
-  }, [store, backend]);
+  }, [backend]);
 
   const changeMode = (next: DaliMode) => {
     if (next === mode) {
@@ -112,7 +114,20 @@ export const DaliWasm = () => {
     <DaliShell mode={mode} onModeChange={changeMode} gateways={gateways}>
       {needsPort && <PortGate onSelected={() => setHasPort(true)} />}
       {!needsPort && (bootError || !isBooted) && <BootProgress error={bootError} log={bootLog} />}
-      {!needsPort && !bootError && isBooted && store && <DaliPage store={store} />}
+      {!needsPort && !bootError && isBooted && (
+        <MemoryRouter>
+          <div
+            className={classNames('daliWasm', {
+              'daliWasm-consoleRight': consolePanelStore.position === 'right',
+            })}
+          >
+            <div className="daliWasm-page">
+              <DaliPage />
+            </div>
+            {consolePanelStore.isVisible && <ConsolePanel />}
+          </div>
+        </MemoryRouter>
+      )}
     </DaliShell>
   );
-};
+});

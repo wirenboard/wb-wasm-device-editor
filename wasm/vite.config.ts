@@ -113,6 +113,32 @@ function rebuildPythonBundle(): Plugin {
   };
 }
 
+/**
+ * Point homeui's MQTT client at the in-browser broker.
+ *
+ * homeui's DALI page reaches its transport through module singletons —
+ * `daliProxy` and the stores import `mqttClient` rather than taking it
+ * injected — so substituting that one module is the whole seam, and homeui's
+ * own RPC proxy and stores run unchanged on top of it. It has to be done by
+ * resolved path rather than by alias, because the imports of it are relative
+ * from inside homeui's own tree.
+ */
+function redirectHomeuiMqttClient(): Plugin {
+  const homeuiClient = path.resolve(
+    __dirname, '../submodule/homeui/frontend/src/services/mqtt-client.ts');
+  const ourClient = path.resolve(__dirname, 'src/dali-wasm/mqtt-client.ts');
+
+  return {
+    name: 'redirect-homeui-mqtt-client',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      if (!source.includes('mqtt-client') || importer === ourClient) return null;
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+      return resolved?.id === homeuiClient ? ourClient : null;
+    },
+  };
+}
+
 function throttleModuleData(): Plugin {
   const RATE = 500 * 1024; // 500 KB/s — ~12s for a 6 MB file
   const CHUNK_INTERVAL = 100; // send a chunk every 100ms
@@ -173,6 +199,7 @@ export default defineConfig(() => {
     throttleModuleData(),
     stripPyodideWasmUrl(),
     rebuildPythonBundle(),
+    redirectHomeuiMqttClient(),
   ];
 
   if (offline) {
@@ -190,6 +217,14 @@ export default defineConfig(() => {
     build: {
       outDir: path.resolve(__dirname, offline ? 'dist-offline' : 'dist-configurator'),
       emptyOutDir: true,
+    },
+
+    server: {
+      fs: {
+        // homeui's own assets — its fonts, now that its styles live in src —
+        // are a sibling of this app rather than inside it.
+        allow: [__dirname, path.resolve(__dirname, '../submodule/homeui/frontend')],
+      },
     },
 
     // The DALI worker is a module worker: it statically imports pyodide's glue,
@@ -217,10 +252,10 @@ export default defineConfig(() => {
           : {}),
 
         '@': path.resolve(__dirname, '../submodule/homeui/frontend/src'),
-        '~': path.resolve(__dirname, '../submodule/homeui/frontend/app/scripts'),
-        '~scripts': path.resolve(__dirname, '../submodule/homeui/frontend/app/scripts'),
-        '~styles': path.resolve(__dirname, '../submodule/homeui/frontend/app/styles'),
 
+        // homeui's dependencies, resolved from its own node_modules: this app
+        // is a sibling of that tree, not inside it, so nothing walks up to
+        // find them.
         react: path.resolve(homeuiNodeModules, 'react'),
         'react-dom': path.resolve(homeuiNodeModules, 'react-dom'),
         'react-dom/client': path.resolve(homeuiNodeModules, 'react-dom/client'),
@@ -229,6 +264,10 @@ export default defineConfig(() => {
         classnames: path.resolve(homeuiNodeModules, 'classnames'),
         mobx: path.resolve(homeuiNodeModules, 'mobx'),
         'mobx-react-lite': path.resolve(homeuiNodeModules, 'mobx-react-lite'),
+        'react-router-dom': path.resolve(homeuiNodeModules, 'react-router-dom'),
+        'react-responsive': path.resolve(homeuiNodeModules, 'react-responsive'),
+        bootstrap: path.resolve(homeuiNodeModules, 'bootstrap'),
+        'glyphicons-only-bootstrap': path.resolve(homeuiNodeModules, 'glyphicons-only-bootstrap'),
       },
     },
     dedupe: ['react', 'react-dom'],
