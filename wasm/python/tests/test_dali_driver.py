@@ -13,7 +13,12 @@ from dali.gear.general import DAPC, Off, QueryActualLevel, QueryControlGearPrese
 
 from wb.mqtt_dali.wbdali_error_response import NoResponseFromGateway
 
-from wbdali_browser.registers import TransmissionStatus
+from wbdali_browser.registers import (
+    TransmissionStatus,
+    encode_frame,
+    queue_slot_address,
+    to_registers,
+)
 
 from wbdali_browser.sim.control_gear import SimulatedControlGear as simulated_gear
 
@@ -53,8 +58,8 @@ async def test_command_without_an_answer_completes(stack, dali_logger):
         await driver.deinitialize()
 
 
-async def test_batch_of_commands_maps_to_reply_slots_in_order(stack, dali_logger):
-    """A batch fills consecutive queue slots; each answer must land on its own command."""
+async def test_each_answer_in_a_batch_lands_on_its_own_command(stack, dali_logger):
+    """A batch goes out one frame at a time; the answers must not get crossed."""
     driver = await make_driver(stack, dali_logger)
     try:
         await driver.send_commands(
@@ -94,12 +99,12 @@ async def test_an_unwired_bus_is_silent(stack, dali_logger):
         await driver.deinitialize()
 
 
-async def test_more_commands_than_the_queue_has_slots_wrap_around(dali_logger):
-    """The queue is 16 slots deep and the driver uses them round-robin.
+async def test_a_long_run_of_commands_keeps_answering(dali_logger):
+    """Twenty commands through the one slot the driver reuses for every frame.
 
-    The seventeenth command reuses slot 0, whose reply register still holds the
-    first command's answer — and on a populated bus that answer is usually
-    identical, which is why the driver cannot detect freshness by comparison.
+    Each reuses slot 0, whose reply register still holds the previous answer
+    until the write clears it — and on a populated bus that answer is usually
+    identical, so nothing here could be caught by comparing values.
     """
     stack = SimulatedStack(
         gear=[simulated_gear(shortaddr=index, random_address=0x1000 + index) for index in range(20)]
@@ -176,5 +181,45 @@ async def test_repeating_a_query_gets_a_fresh_answer_each_time(stack, dali_logge
         await driver.send(DAPC(GearShort(0), 42))
         for _ in range(4):
             assert (await driver.send(QueryActualLevel(GearShort(0)))).value == 42
+    finally:
+        await driver.deinitialize()
+
+
+async def test_the_gateway_will_not_reach_past_its_pointer(stack, dali_logger):
+    """A frame armed beyond the consume pointer stays put.
+
+    Measured on a real WB-DALI: with the pointer at 0, a frame written into
+    slot 5 sat there unsent and the pointer never moved. The simulator models
+    that, so the stall a slot-counting driver eventually walks into is
+    reproducible here rather than only against hardware.
+    """
+    driver = await make_driver(stack, dali_logger)
+    try:
+        bus = stack.gateway.buses[1]
+        assert bus.pointer == 0
+        # Arm slot 5 directly, the way a driver whose counter had drifted would.
+        frame = encode_frame(QueryControlGearPresent(GearBroadcast()).frame.as_integer, 16, False, 2)
+        stack.gateway.write_holding(queue_slot_address(1, 5), to_registers(frame))
+
+        assert bus.pointer == 0, "the gateway must wait at its pointer"
+        assert bus.replies[5] == 0, "and report nothing for the slot it has not reached"
+    finally:
+        await driver.deinitialize()
+
+
+async def test_a_frame_goes_out_whatever_the_pointer_was(stack, dali_logger):
+    """The driver rewinds, so no earlier state can leave it stalled.
+
+    This is the property that made the round-robin version fail on hardware:
+    once its counter ran ahead of the firmware's pointer, every later frame was
+    parked out of reach until the counter wrapped, which showed up as bursts of
+    consecutive one-second timeouts.
+    """
+    driver = await make_driver(stack, dali_logger)
+    try:
+        for stale_pointer in (0, 5, 15):
+            stack.gateway.buses[1].pointer = stale_pointer
+            response = await driver.send(QueryControlGearPresent(GearShort(0)))
+            assert response.value is True, f"stalled with the pointer at {stale_pointer}"
     finally:
         await driver.deinitialize()

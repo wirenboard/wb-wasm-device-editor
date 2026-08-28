@@ -42,6 +42,10 @@ class VirtualBus:
         self.dali_bus = dali_bus
         self.queue: List[int] = [0] * (QUEUE_SIZE * 2)
         self.replies: List[int] = [0] * QUEUE_SIZE
+        # Where the gateway will take its next frame from. It only ever
+        # transmits the slot it is on, so a frame armed further along the queue
+        # waits here until everything before it has gone out.
+        self.pointer = 0
         self.monitor: List[int] = [0] * MONITOR_RING_SIZE
         self.monitor_write_index = 0
         self.frame_counter = 0
@@ -75,10 +79,12 @@ class VirtualWbDaliGateway:
 
         local = address - bus.address_offset
         if local == QUEUE_POINTER:
-            # The driver writes 0 here to resynchronise: anything not yet
-            # transmitted is dropped, and its answers become meaningless.
-            bus.queue = [0] * (QUEUE_SIZE * 2)
-            bus.replies = [0] * QUEUE_SIZE
+            # Rewinding the pointer does not disturb what is already in the
+            # queue or the reply registers — measured on a real module, where
+            # rewinding onto a consumed slot transmits nothing and leaves its
+            # answer standing.
+            bus.pointer = (values[0] if values else 0) % QUEUE_SIZE
+            self._drain(bus)
             return
 
         if QUEUE_BASE <= local < QUEUE_BASE + QUEUE_SIZE * 2:
@@ -86,7 +92,13 @@ class VirtualWbDaliGateway:
             for offset, value in enumerate(values):
                 if first_register + offset < len(bus.queue):
                     bus.queue[first_register + offset] = value & 0xFFFF
-            self._transmit(bus, first_register // 2, max(1, len(values) // 2))
+            # Writing a slot invalidates its previous answer straight away,
+            # before the frame goes out: that is what makes a non-zero status
+            # mean "this frame's answer" rather than the last one's.
+            first_slot = first_register // 2
+            for slot in range(first_slot, min(first_slot + max(1, len(values) // 2), QUEUE_SIZE)):
+                bus.replies[slot] = 0
+            self._drain(bus)
             return
 
         logger.debug("Write to unhandled holding register %d", address)
@@ -99,6 +111,8 @@ class VirtualWbDaliGateway:
         if QUEUE_BASE <= local < QUEUE_BASE + QUEUE_SIZE * 2:
             start = local - QUEUE_BASE
             return (bus.queue + [0] * count)[start : start + count]
+        if local == QUEUE_POINTER:
+            return [bus.pointer] + [0] * (count - 1)
         return [0] * count
 
     def read_input(self, address: int, count: int) -> List[int]:
@@ -121,17 +135,25 @@ class VirtualWbDaliGateway:
 
     # -- transmission -----------------------------------------------------
 
-    def _transmit(self, bus: VirtualBus, first_slot: int, slot_count: int) -> None:
-        for offset in range(slot_count):
-            slot = first_slot + offset
-            if slot >= QUEUE_SIZE:
-                break
-            # Writing a slot invalidates its previous answer: until the frame
-            # goes out there is nothing to report for it.
-            bus.replies[slot] = 0
+    def _drain(self, bus: VirtualBus) -> None:
+        """Send armed slots from the pointer forward, as the firmware does.
+
+        It stops at the first slot that holds no frame rather than looking
+        further along the queue, so a caller that writes a slot the pointer has
+        already passed gets no answer until the pointer comes round again. That
+        is the real module's behaviour, and modelling it is the point: a driver
+        keeping its own slot counter drifts out of step with this sooner or
+        later, and the resulting stall is invisible against a gateway that
+        transmits whatever it is handed.
+        """
+        for _ in range(QUEUE_SIZE):
+            slot = bus.pointer
             decoded = decode_frame(from_registers(bus.queue[slot * 2 : slot * 2 + 2]))
             if decoded is None:
-                continue
+                return
+            # The firmware clears a slot as it consumes it.
+            bus.queue[slot * 2 : slot * 2 + 2] = [0, 0]
+            bus.pointer = (slot + 1) % QUEUE_SIZE
             self._send_one(bus, slot, decoded)
 
     # -- bus monitor ------------------------------------------------------

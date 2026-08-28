@@ -13,20 +13,32 @@ The interface is the one the daemon uses (`initialize`, `deinitialize`, `send`,
 `send_commands`, `run_sequence`, `bus_traffic`), so `ApplicationController`,
 commissioning and every device class run unmodified on top of it.
 
-One firmware behaviour is assumed and could not be checked without hardware:
-**writing a queue slot clears its reply register until the frame has been
-transmitted**, so a non-zero status means "this frame's answer". The simulated
-gateway models it, and it is the only reading under which a reply register is
-usable at all — a register that kept its previous value would be
-indistinguishable from a fresh identical answer, and answers repeat constantly
-(every QUERY CONTROL GEAR PRESENT on a populated bus returns the same byte).
+The protocol rests on one firmware behaviour: **writing a queue slot clears its
+reply register until the frame has been transmitted**, so a non-zero status
+means "this frame's answer" rather than the previous one's. Measured on a real
+WB-DALI: the slot reads back 0 immediately after the write and takes its status
+a few milliseconds later, before the consume pointer has necessarily advanced.
+Nothing else clears it — not a pointer reset, and not the passage of time — so a
+slot that was never written keeps a stale status indefinitely, and the driver
+must not read a reply it did not just arm by writing that slot.
 
-Slots are used round-robin rather than always slot 0, because the gateway owns a
-consume pointer: it transmits pending slots in increasing index order and wraps
-15 → 0, and the driver only ever rewinds that pointer at `initialize()`. Writing
-slot 0 every time would leave the gateway waiting to come back round to it.
-Rewinding the pointer before each frame would work instead, at the cost of a
-third Modbus transaction per frame — and rotation costs nothing.
+Every frame goes into slot 0, after rewinding the gateway's consume pointer to
+it. The gateway transmits armed slots strictly in index order and stops at the
+pointer: measured on hardware, arming slot 5 while the pointer sits at 0 leaves
+the frame there indefinitely, and it only goes out once slots 0..4 have been
+consumed in turn. So a driver that picks slots by its own counter has to keep
+that counter in lockstep with the firmware's pointer forever, and nothing
+restores the invariant once it breaks — one dropped frame leaves every later
+write parked ahead of the pointer, stalling until the counter wraps all the way
+round. That failure is not hypothetical: it showed up on real hardware as bursts
+of consecutive one-second timeouts that healed after roughly sixteen frames.
+
+Rewinding before each frame is self-synchronising instead — the invariant is
+re-established rather than assumed, so no earlier failure can persist. It is
+safe because the firmware clears a slot as it consumes it, so a rewind cannot
+re-send anything: rewinding onto an already-consumed slot transmits nothing and
+leaves the reply register untouched. The cost is a third Modbus transaction per
+frame, about a millisecond against a DALI frame's thirty-five.
 """
 
 from __future__ import annotations
@@ -73,6 +85,9 @@ from .registers import (
 # the rest is headroom for a slow serial link.
 RESPONSE_TIMEOUT_S = 1.0
 POLL_INTERVAL_S = 0.005
+
+# The queue slot every frame is written to, after rewinding the pointer onto it.
+SEND_SLOT = 0
 
 # How often to read the bus monitor ring while it is switched on.
 #
@@ -131,7 +146,6 @@ class BlockingDaliDriver:
         # One transaction at a time: the whole point of this driver is that a
         # command and its answer are a single blocking exchange.
         self._lock = asyncio.Lock()
-        self._slot = 0
         self._sequence_id = 0
         self._monitor_task: Optional[asyncio.Task] = None
 
@@ -144,11 +158,10 @@ class BlockingDaliDriver:
         self.set_bus_monitor_enabled(False)
 
     async def _reset_queue(self) -> None:
-        """Point the gateway back at slot 0 and drop anything not yet sent."""
+        """Point the gateway back at slot 0."""
         await self._transport.write_holding(
             self.config.device_name, queue_pointer_address(self.config.bus), [0]
         )
-        self._slot = 0
 
     # -- bus monitor ------------------------------------------------------
 
@@ -264,9 +277,6 @@ class BlockingDaliDriver:
     async def _exchange(self, cmd: Command, priority: FramePriority) -> Response:
         device_id = self.config.device_name
         bus = self.config.bus
-        slot = self._slot
-        self._slot = (slot + 1) % QUEUE_SIZE
-
         frame = cmd.frame
         value = encode_frame(frame.as_integer, len(frame), cmd.sendtwice, priority.value)
 
@@ -275,16 +285,19 @@ class BlockingDaliDriver:
         await self._overheat.wait_before_send()
 
         try:
+            # Rewind first: the gateway only ever transmits the slot its pointer
+            # is on, so this is what guarantees the frame goes out at all.
+            await self._reset_queue()
             await self._transport.write_holding(
-                device_id, queue_slot_address(bus, slot), to_registers(value)
+                device_id, queue_slot_address(bus, SEND_SLOT), to_registers(value)
             )
-            reply = await self._poll_reply(device_id, bus, slot)
+            reply = await self._poll_reply(device_id, bus, SEND_SLOT)
         except Exception as error:  # pylint: disable=broad-exception-caught
             self.logger.error("DALI transaction failed: %s", error)
             return NoResponseFromGateway()
 
         if reply is None:
-            self.logger.error("No reply for %s in slot %d", cmd, slot)
+            self.logger.error("No reply for %s", cmd)
             return NoResponseFromGateway()
         return self._to_response(cmd, *decode_reply(reply))
 

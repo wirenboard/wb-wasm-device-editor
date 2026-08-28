@@ -96,8 +96,9 @@ transport that has one link and one request in flight at a time.
 `BlockingDaliDriver` is what is left when that is taken away:
 
 ```
-write the encoded frame into queue slot k   (function 16, holding 1400 + 2k)
-poll reply register k until it reports a transmission   (function 4, input 1500 + k)
+rewind the gateway's consume pointer to slot 0   (function 6, holding 1432)
+write the encoded frame into queue slot 0        (function 16, holding 1400)
+poll reply register 0 until it reports a transmission   (function 4, input 1500)
 turn status + backward frame into a python-dali Response
 ```
 
@@ -111,14 +112,32 @@ application_controller.WBDALIDriver = make_driver_class(transport)
 Everything above — commissioning's binary search, DT parameter reads, the whole
 Editor RPC — is unchanged production code.
 
-**Assumption that needs hardware to confirm:** writing a queue slot clears its
-reply register until the frame has been transmitted, so a non-zero status means
-"this frame's answer". It is the only reading under which a reply register is
-usable at all: one that kept its previous value would be indistinguishable from
-a fresh identical answer, and identical answers are the norm — every QUERY
-CONTROL GEAR PRESENT on a populated bus returns the same byte. Slots are used
-round-robin, so if a real module turns out not to clear them, a stale value is at
-least sixteen commands old rather than one.
+**Confirmed against a real module** (WB-DALI, firmware 1.0.0, five Skydance
+devices on bus 1). Four behaviours were measured, and the protocol above is
+shaped by them:
+
+| Behaviour | Measured |
+| --------- | -------- |
+| Writing a queue slot clears its reply register | Yes — the slot reads back status 0 immediately after the write and takes its real status a few ms later. This is what makes a non-zero status mean *this* frame's answer. |
+| Anything else clears a reply register | No. Not a pointer rewind, not elapsed time. A slot never written keeps a stale status indefinitely. |
+| The gateway consumes slots strictly in order | Yes. With the pointer at 0, a frame armed in slot 5 sat unsent indefinitely and the pointer never moved; arming slot 0 sent it at once. The gateway waits at its pointer and never skips ahead. |
+| A consumed slot is cleared by the firmware | Yes — which is why rewinding the pointer is safe: it cannot re-send anything. |
+
+The third row is why every frame goes into slot 0 behind a pointer rewind rather
+than into a slot chosen by a counter. A driver that picks slots itself has to
+keep its counter in lockstep with the firmware's pointer forever, and nothing
+restores that invariant once it breaks: one dropped frame leaves every later
+write parked ahead of the pointer, stalling until the counter wraps all the way
+round. That is not hypothetical — the first hardware run did exactly this, in
+bursts of consecutive one-second timeouts that healed after roughly sixteen
+frames, at a 4% frame loss rate overall. Rewinding first re-establishes the
+invariant on every frame instead of assuming it; the cost is a third Modbus
+transaction, about a millisecond against a DALI frame'"'"'s thirty-five. After the
+change, 665 frames across an idle period and a full bus rescan lost none.
+
+The simulator models all four behaviours, including the in-order pointer, so
+this class of stall is reproducible in the test suite. It did not model the
+pointer at first, which is precisely why the bug reached hardware.
 
 The same assumption has a cost on the other side. Status 0 means "not
 transmitted", and the driver reads it as "not transmitted *yet*" — so a frame
@@ -169,6 +188,14 @@ class RegisterTransport(Protocol):
 
 A dropdown in the DALI header picks between them; the daemon is restarted on the
 chosen transport and cannot tell the difference.
+
+`port/Load` answers in a JSON-RPC envelope — `{error, result}` — with the register
+payload one level down under `result.response`. Reading it at the top level is
+not an error but an empty string, so every register read yields no registers and
+the driver reports "no response from gateway" a long way from the cause. The
+transport'"'"'s test double returns the full envelope for that reason; an earlier
+one returned the inner object, which is why the suite passed against a mistake
+that made real hardware unusable.
 
 ## 5. Building Block View
 
@@ -273,8 +300,8 @@ sequenceDiagram
 
     loop binary search over random addresses
         GW->>Drv: send_commands([SetSearchAddr…, Compare])
-        Drv->>Mod: write queue slot k
-        Drv->>Mod: poll reply register k
+        Drv->>Mod: rewind pointer, write queue slot 0
+        Drv->>Mod: poll reply register 0
         Mod-->>Drv: status + backward frame
     end
 

@@ -61,7 +61,12 @@ class WasmSerialTransport:
                 device_id,
                 {"function": MODBUS_READ_INPUT, "address": address, "count": count},
             )
-        return hex_to_registers(reply.get("response", ""))
+        registers = hex_to_registers(reply.get("response", ""))
+        if len(registers) != count:
+            raise ModbusError(
+                f"asked {device_id!r} for {count} registers at {address}, got {len(registers)}"
+            )
+        return registers
 
     async def write_holding(self, device_id: str, address: int, values: List[int]) -> None:
         # A single register goes out as function 6 — that is what the driver's
@@ -96,7 +101,11 @@ class WasmSerialTransport:
         reply = dict(reply) if reply is not None else {}
         if reply.get("error"):
             raise ModbusError(str(reply["error"]))
-        return reply
+        # `Module.request` answers in a JSON-RPC envelope — `{error, result}` —
+        # and the payload we want is one level down. Reading the top level
+        # instead silently yields no registers at all, which reaches the driver
+        # as "no response from gateway" long after the mistake.
+        return dict(reply.get("result") or {})
 
 
 def registers_to_hex(registers: List[int]) -> str:

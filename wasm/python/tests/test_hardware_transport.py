@@ -32,7 +32,14 @@ def make_gateway():
 
 
 def make_port_load(gateway, calls=None):
-    """Stand in for `Module.request('portLoad', ...)` over WebSerial."""
+    """Stand in for `Module.request('portLoad', ...)` over WebSerial.
+
+    Answers in the same JSON-RPC envelope the real one does — `{error, result}`
+    with the payload one level down. An earlier version of this double returned
+    the inner object directly, so the transport read the wrong field and every
+    register read came back empty. Against the simulator that is invisible;
+    against a real gateway it is every command timing out.
+    """
 
     async def port_load(request):
         if calls is not None:
@@ -43,9 +50,10 @@ def make_port_load(gateway, calls=None):
         function = request["function"]
         if function in (6, 16):
             gateway.write_holding(request["address"], hex_to_registers(request["msg"]))
-            return {"response": ""}
+            return {"error": None, "result": {"response": ""}}
         if function == 4:
-            return {"response": registers_to_hex(gateway.read_input(request["address"], request["count"]))}
+            registers = gateway.read_input(request["address"], request["count"])
+            return {"error": None, "result": {"response": registers_to_hex(registers)}}
         raise AssertionError(f"unexpected Modbus function {function}")
 
     return port_load
@@ -97,7 +105,7 @@ async def test_an_unknown_module_is_an_error():
 
 async def test_a_modbus_error_reply_is_raised():
     async def failing_port_load(_request):
-        return {"error": {"code": -32000, "message": "Request timed out"}}
+        return {"error": {"code": -32000, "message": "Request timed out"}, "result": None}
 
     transport = WasmSerialTransport(failing_port_load, {GATEWAY_DEVICE_ID: SLAVE_ID})
 
@@ -147,3 +155,18 @@ async def test_line_settings_come_from_the_scenario():
 
     assert calls[-1]["baud_rate"] == 115200
     assert calls[-1]["parity"] == "E"
+
+
+async def test_a_short_read_is_an_error_not_an_empty_list():
+    """An envelope read at the wrong depth yields no registers, not a failure.
+
+    That is how a wrong field goes unnoticed: the driver sees an empty list,
+    indexes it, and reports "no response from gateway" — nowhere near the cause.
+    """
+    async def truncating_port_load(_request):
+        return {"error": None, "result": {"response": ""}}
+
+    transport = WasmSerialTransport(truncating_port_load, {GATEWAY_DEVICE_ID: SLAVE_ID})
+
+    with pytest.raises(ModbusError, match="got 0"):
+        await transport.read_input(GATEWAY_DEVICE_ID, 1500, 2)
