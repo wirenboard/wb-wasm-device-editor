@@ -53,13 +53,19 @@ graph TD
 Three seams, each chosen because it is the narrowest interface the code above it
 already depends on.
 
-### 4.1 The UI's seam: `DaliStore(whenMqttReady, daliProxy, mqttClient)`
+### 4.1 The UI's seam: homeui's `mqttClient` module
 
-The DALI page takes one prop and needs no React context. Its three dependencies
-are a promise, an RPC proxy and an MQTT client — so the page is reused as-is and
-the work is three shims over an in-browser broker. Even the wire format is the
-real one: `{id, params}` published to
+The DALI page takes no props. It reaches its transport through homeui's own
+module singletons — `daliProxy`, built on `createRpcProxy`, and `mqttClient` —
+so substituting that one module at build time (`redirectHomeuiMqttClient` in
+vite.config.ts, by resolved path, because homeui imports it relatively) puts
+homeui's own RPC proxy and every DALI store on the in-browser broker unchanged.
+Even the wire format is the real one: `{id, params}` published to
 `/rpc/v1/wb-mqtt-dali/Editor/<Method>/<clientId>`, reply on `.../reply`.
+
+What the page does expect around it is app chrome the standalone editor does not
+have: a router, and the console panel its bus monitor docks into. The DALI view
+supplies both.
 
 The one thing the page needs that a standalone tool cannot answer is
 `authStore.hasRights(UserRole.Admin)`, which gates `PageLayout` behind an
@@ -145,7 +151,8 @@ wb-mqtt-serial pushes at it.
 
 The simulated installation includes a wall switch that presses itself every few
 seconds, because otherwise there is no traffic the daemon did not originate and
-nothing for the monitor to show.
+nothing for the monitor to show. In homeui's console panel those arrive tagged
+`foreign`, which is exactly what they are.
 
 ### 4.4 Below the driver: one interface, two implementations
 
@@ -237,8 +244,9 @@ Running on the main thread also changes what "yield to the event loop" costs.
 The simulator used to yield on every register operation; under Pyodide each
 yield is a `setTimeout`, which browsers clamp to about 4 ms once nested, and a
 scan that took seconds in a worker took minutes inline. Yielding by *elapsed
-time* — at most one animation frame of uninterrupted work — fixed it: measured
-2.3 s at 59 fps in the worker, 2.8 s at 47 fps inline.
+time* — at most one animation frame of uninterrupted work — fixed it. Measured
+on the default installation, four luminaires and a wall switch: **1.5 s in the
+worker, 1.7 s inline**, the page at ~55 fps throughout.
 
 ## 6. Runtime View — opening the page and scanning a bus
 
