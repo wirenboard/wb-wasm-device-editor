@@ -122,19 +122,38 @@ function rebuildPythonBundle(): Plugin {
  * own RPC proxy and stores run unchanged on top of it. It has to be done by
  * resolved path rather than by alias, because the imports of it are relative
  * from inside homeui's own tree.
+ *
+ * The gateway tab is substituted the same way, for the opposite reason: not to
+ * connect homeui to this app, but to take away a page that cannot work in it.
+ * homeui's gateway tab is the Lunatone DALI-2 IoT Gateway emulator — a toggle
+ * that starts a WebSocket *server*, which a browser page cannot be — and it is
+ * the first page shown, because homeui selects the gateway node on entry.
  */
-function redirectHomeuiMqttClient(): Plugin {
-  const homeuiClient = path.resolve(
-    __dirname, '../submodule/homeui/frontend/src/services/mqtt-client.ts');
-  const ourClient = path.resolve(__dirname, 'src/dali-wasm/mqtt-client.ts');
+function redirectHomeuiModules(): Plugin {
+  const homeuiSrc = path.resolve(__dirname, '../submodule/homeui/frontend/src');
+  const redirects: Array<{ match: string; from: string; to: string }> = [
+    {
+      match: 'mqtt-client',
+      from: path.join(homeuiSrc, 'services/mqtt-client.ts'),
+      to: path.resolve(__dirname, 'src/dali-wasm/mqtt-client.ts'),
+    },
+    {
+      match: 'gateway-tab-content',
+      from: path.join(homeuiSrc, 'pages/settings/configs/dali/components/gateway-tab-content/index.ts'),
+      to: path.resolve(__dirname, 'src/dali-wasm/components/gateway-tab/index.ts'),
+    },
+  ];
 
   return {
-    name: 'redirect-homeui-mqtt-client',
+    name: 'redirect-homeui-modules',
     enforce: 'pre',
     async resolveId(source, importer, options) {
-      if (!source.includes('mqtt-client') || importer === ourClient) return null;
+      const redirect = redirects.find((entry) => source.includes(entry.match));
+      if (!redirect || importer === redirect.to || (importer && importer.startsWith(path.dirname(redirect.to)))) {
+        return null;
+      }
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
-      return resolved?.id === homeuiClient ? ourClient : null;
+      return resolved?.id === redirect.from ? redirect.to : null;
     },
   };
 }
@@ -199,7 +218,7 @@ export default defineConfig(() => {
     throttleModuleData(),
     stripPyodideWasmUrl(),
     rebuildPythonBundle(),
-    redirectHomeuiMqttClient(),
+    redirectHomeuiModules(),
   ];
 
   if (offline) {

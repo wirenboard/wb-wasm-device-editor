@@ -18,19 +18,9 @@ from typing import Any, Callable, Dict, Optional
 
 from .hardware import WasmSerialTransport
 from .runtime import DaliRuntime, default_config
-from .scenario import (
-    build_network,
-    default_scenario,
-    export_scenario,
-    serial_config,
-    serial_settings,
-    slave_ids,
-)
+from .scenario import serial_config, serial_settings, slave_ids
 
 logger = logging.getLogger("wbdali_browser")
-
-SIMULATED = "simulated"
-HARDWARE = "hardware"
 
 _runtime: Optional[DaliRuntime] = None
 _scenario: Dict[str, Any] = {}
@@ -56,17 +46,15 @@ def configure_logging(level: str = "INFO") -> None:
 
 
 async def start(
-    scenario_json: Optional[str] = None,
+    scenario_json: str,
     config_json: Optional[str] = None,
-    mode: str = SIMULATED,
     port_load: Optional[Callable] = None,
 ) -> str:
-    """Boot wb-mqtt-dali over a simulated installation or real hardware.
+    """Boot wb-mqtt-dali against the WB-DALI modules the Modbus scan found.
 
-    `mode` picks which `RegisterTransport` sits under the DALI driver: the
-    simulated WB-DALI modules described by the scenario, or real ones reached
-    through the C++ WASM module's `port/Load` RPC over WebSerial. Everything
-    above the transport is identical either way.
+    The scenario names the gateways and the line settings they answered on;
+    they are reached through the C++ WASM module's `port/Load` RPC over
+    WebSerial.
 
     `config_json` restores a previously saved daemon config, so an installation
     commissioned before a page reload comes back instead of looking untouched.
@@ -80,12 +68,21 @@ async def start(
 
     if _runtime is not None:
         await stop()
+    if port_load is None:
+        raise ValueError("start() needs a port_load callable")
 
-    _scenario = json.loads(scenario_json) if scenario_json else default_scenario()
+    _scenario = json.loads(scenario_json)
     gateway_ids = [gateway["id"] for gateway in _scenario.get("gateways", [])]
 
+    async def call_port_load(request: Dict[str, Any]) -> Dict[str, Any]:
+        # JSON both ways: the JS side hands back a string rather than a JsProxy,
+        # so nothing here has to know about Pyodide's conversion rules.
+        return json.loads(await port_load(json.dumps(request)))
+
     runtime = DaliRuntime(
-        transport=_make_transport(mode, port_load),
+        transport=WasmSerialTransport(
+            call_port_load, slave_ids(_scenario), serial_settings(_scenario)
+        ),
         serial_config=serial_config(_scenario),
         config=_restore_config(config_json, gateway_ids) or default_config(gateway_ids),
         root=Path("/"),
@@ -95,24 +92,6 @@ async def start(
     await runtime.start()
     _runtime = runtime
     return json.dumps(_scenario)
-
-
-def _make_transport(mode: str, port_load: Optional[Callable]):
-    if mode == SIMULATED:
-        return build_network(_scenario)
-    if mode != HARDWARE:
-        raise ValueError(f"unknown transport mode {mode!r}")
-    if port_load is None:
-        raise ValueError("hardware mode needs a port_load callable")
-
-    async def call_port_load(request: Dict[str, Any]) -> Dict[str, Any]:
-        # JSON both ways: the JS side hands back a string rather than a JsProxy,
-        # so nothing here has to know about Pyodide's conversion rules.
-        return json.loads(await port_load(json.dumps(request)))
-
-    return WasmSerialTransport(
-        call_port_load, slave_ids(_scenario), serial_settings(_scenario)
-    )
 
 
 def _restore_config(config_json: Optional[str], gateway_ids: list) -> Optional[dict]:
@@ -136,15 +115,14 @@ def watch_config(callback: Callable[[str], None]) -> None:
 
 
 def snapshot_scenario() -> str:
-    """The simulated installation as it stands now, short addresses included.
+    """The scenario the runtime was started with.
 
-    Returns the scenario unchanged in hardware mode: the state that matters
-    lives in the modules themselves, and the daemon's config already records it.
+    Stored alongside the config so a reload can tell whether the saved config
+    still belongs to the gateways it will boot against. Nothing in it changes at
+    runtime: the state that matters lives in the modules themselves, and the
+    daemon's config already records it.
     """
-    transport = _require().transport
-    if not hasattr(transport, "gateways"):
-        return json.dumps(_scenario)
-    return json.dumps(export_scenario(_scenario, transport))
+    return json.dumps(_scenario)
 
 
 async def stop() -> None:
@@ -174,38 +152,9 @@ async def rpc(service: str, method: str, params_json: Optional[str] = None) -> s
 
 
 def diagnostics() -> str:
-    """A snapshot of what the simulation is doing, for the page's debug panel."""
+    """A snapshot of what the runtime is doing, for the page's debug console."""
     runtime = _require()
-    network = runtime.transport
-    return json.dumps(
-        {
-            "messagesPublished": runtime.broker.published_count,
-            "mode": SIMULATED if hasattr(network, "gateways") else HARDWARE,
-            "gateways": {
-                device_id: {
-                    "framesSent": gateway.frames_sent,
-                    "reachable": gateway.reachable,
-                    "buses": {
-                        str(index): {
-                            "gear": len(bus.dali_bus.gear),
-                            "devices": len(bus.dali_bus.devices),
-                            "framesSeen": bus.dali_bus.frames_seen,
-                        }
-                        for index, bus in gateway.buses.items()
-                    },
-                }
-                for device_id, gateway in getattr(network, "gateways", {}).items()
-            },
-        }
-    )
-
-
-def set_gateway_reachable(device_id: str, reachable: bool) -> None:
-    """Pull the plug on a simulated module, so the UI's error paths can be seen."""
-    gateways = getattr(_require().transport, "gateways", None)
-    if gateways is None:
-        raise RuntimeError("only a simulated module can be unplugged from here")
-    gateways[device_id].reachable = reachable
+    return json.dumps({"messagesPublished": runtime.broker.published_count})
 
 
 def _require() -> DaliRuntime:

@@ -105,9 +105,8 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
       switch (message.type) {
         case 'boot': {
           const applied = await dali.start(
-            message.scenario ? JSON.stringify(message.scenario) : undefined,
+            JSON.stringify(message.scenario),
             message.config ?? undefined,
-            message.mode ?? 'simulated',
             (request: string) => host.portLoad(request)
           );
 
@@ -145,10 +144,6 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
           // the page that started it: without this its poll loops keep running,
           // and its config watcher keeps writing over the next one's.
           await dali.stop();
-          break;
-
-        case 'setReachable':
-          dali.set_gateway_reachable(message.gatewayId, message.reachable);
           break;
 
         default:

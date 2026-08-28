@@ -12,6 +12,17 @@ configure({
 
 configI18n();
 
+// homeui's CSS variables are scoped to [data-theme='light'|'dark'] on the root
+// element, and in homeui it is uiStore that puts the attribute there. This app
+// never runs that store, and without the attribute every var(--...) inside the
+// homeui components it embeds resolves to nothing — most visibly the console
+// panel, whose background simply disappears.
+const applyTheme = (dark: boolean) =>
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+applyTheme(colorScheme.matches);
+colorScheme.addEventListener('change', (event) => applyTheme(event.matches));
+
 createRoot(document.querySelector('#root')).render(<App />);
 
 // Update detection: the Vite build plugin (swCachePlugin in vite.config.ts) injects

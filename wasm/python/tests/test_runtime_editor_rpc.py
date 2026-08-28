@@ -136,3 +136,61 @@ async def wait_for_commissioning(progress, timeout: float = 120.0) -> None:
             return
         await asyncio.sleep(0.05)
     raise TimeoutError(f"commissioning did not finish; last state {progress[-1:]}")
+
+
+class _SerialPacedTransport:
+    """A register transport that takes real time, like a serial link does.
+
+    The simulated network answers within one task step, which lets the daemon
+    finish initializing its devices before anything else gets to run — so a
+    boot-order race that shows on hardware every time can never show against
+    it. A small sleep per operation is enough to lose that race reliably.
+    """
+
+    def __init__(self, network):
+        self._network = network
+
+    async def read_input(self, device_id, address, count):
+        await asyncio.sleep(0.002)
+        return await self._network.read_input(device_id, address, count)
+
+    async def write_holding(self, device_id, address, values):
+        await asyncio.sleep(0.002)
+        await self._network.write_holding(device_id, address, values)
+
+
+async def test_groups_survive_a_restart_without_a_rescan(tmp_path):
+    """The first GetList of a fresh boot already carries group membership.
+
+    The web UI takes its device tree from one GetList when the page mounts and
+    only rebuilds it from a commissioning run. Group membership is not in the
+    config file — it lives on the gear, read during device initialization — so
+    boot must not report ready before that read has happened, or every session
+    opens showing the installation without its groups until someone rescans.
+    """
+    config = default_config([GATEWAY_DEVICE_ID])
+    config["gateways"][0]["buses"][0]["devices"] = [
+        {"short": 0, "random": 0x100000, "name": "grouped lamp"},
+    ]
+
+    network = SimulatedModbusNetwork()
+    buses = {index: SimulatedDaliBus() for index in (1, 2, 3)}
+    buses[1].add_gear(SimulatedControlGear(shortaddr=0, random_address=0x100000, groups={1, 5}))
+    network.add_module(GATEWAY_DEVICE_ID, buses)
+
+    runtime = DaliRuntime(
+        transport=_SerialPacedTransport(network),
+        serial_config=serial_config_with(GATEWAY_DEVICE_ID),
+        config=config,
+        vendor_dir=VENDOR_DIR,
+        root=tmp_path,
+    )
+    await runtime.start()
+    try:
+        gateways = await runtime.rpc("Editor", "GetList")
+
+        devices = gateways[0]["buses"][0]["devices"]
+        assert [device["name"] for device in devices] == ["grouped lamp"]
+        assert devices[0]["groups"] == [1, 5]
+    finally:
+        await runtime.stop()

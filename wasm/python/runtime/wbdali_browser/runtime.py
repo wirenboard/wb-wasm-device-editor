@@ -185,8 +185,54 @@ class DaliRuntime:
             DaliDatabase(str(self.root / GTIN_DB_PATH)),
         )
         await self.gateway.start()
+        await self._wait_for_configured_devices()
         logger.info("wb-mqtt-dali is running")
         return self
+
+    async def _wait_for_configured_devices(self) -> None:
+        """Hold "ready" until the devices already in the config have initialized.
+
+        The web UI reads the device tree exactly once, when its page mounts, and
+        only rebuilds it from a commissioning run. On a controller that snapshot
+        is taken from a daemon that has been running for weeks; here the daemon
+        starts *with* the page, so the snapshot races the polling loop's first
+        init pass — which is what reads each device's group membership off the
+        bus. Losing that race shows the same installation without its groups,
+        and nothing short of a rescan brings them back.
+
+        A device that does not answer must not hold the page hostage, so this
+        gives up after a deadline and boots with whatever has come up; the
+        stragglers keep initializing behind the page as they would have anyway.
+        """
+        devices = [
+            device
+            for wb_dali_gateway in self.gateway.wb_dali_gateways
+            for controller in wb_dali_gateway.buses
+            for device in controller.dali_devices + controller.dali2_devices
+        ]
+        if not devices:
+            return
+        # Reading five devices' worth of identity and groups takes tens of
+        # seconds at DALI speed, and the boot screen shows this log as it
+        # happens — so say what the time is being spent on, one line per device.
+        logger.info("Reading %d configured DALI device(s) from the bus...", len(devices))
+        deadline = asyncio.get_running_loop().time() + 30.0
+        reported: set = set()
+        while True:
+            for device in devices:
+                if device.is_initialized and device.name not in reported:
+                    reported.add(device.name)
+                    logger.info("  %s is up (%d/%d)", device.name, len(reported), len(devices))
+            if len(reported) == len(devices):
+                return
+            if asyncio.get_running_loop().time() > deadline:
+                logger.warning(
+                    "Booting with %d device(s) still initializing: %s",
+                    len(devices) - len(reported),
+                    ", ".join(device.name for device in devices if device.name not in reported),
+                )
+                return
+            await asyncio.sleep(0.1)
 
     async def stop(self) -> None:
         if hasattr(self.transport, "stop"):

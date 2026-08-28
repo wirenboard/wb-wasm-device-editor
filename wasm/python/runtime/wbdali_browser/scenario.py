@@ -1,9 +1,14 @@
-"""Builds a simulated DALI installation from a plain description.
+"""Reads the scenario: the plain description of a DALI installation.
 
 The description comes from JavaScript, so it is JSON-shaped: no classes, no
-Python objects. It says which WB-DALI modules exist and what is wired to their
-buses, and this module turns that into a `SimulatedModbusNetwork` plus the
+Python objects. It names the WB-DALI modules the Modbus scan found — their
+Modbus addresses and line settings — and this module turns that into the
 wb-mqtt-serial config that makes the daemon discover them.
+
+`build_network` additionally builds a `SimulatedModbusNetwork` from the same
+description, with control gear and DALI-2 devices wired to the buses. The app
+itself only ever talks to real hardware now; the network is what the test
+suite runs the whole stack against.
 """
 
 from __future__ import annotations
@@ -158,58 +163,3 @@ def serial_config(scenario: Dict[str, Any]) -> Dict[str, Any]:
         for device_id, slave_id in slave_ids(scenario).items()
     ]
     return {"ports": [{"path": "/dev/ttyRS485-1", "enabled": True, "devices": devices}]}
-
-
-def export_scenario(scenario: Dict[str, Any], network: SimulatedModbusNetwork) -> Dict[str, Any]:
-    """Read the simulated installation back out, short addresses included.
-
-    Commissioning writes short addresses into the control gear, and the daemon
-    records them in its config. Persisting one without the other would make a
-    reload look like a bus whose devices had all been swapped: the config would
-    claim addressed devices where the simulation had factory-fresh ones.
-    """
-    exported = {**scenario, "gateways": []}
-    for gateway in scenario.get("gateways", []):
-        simulated = network.gateways.get(gateway["id"])
-        if simulated is None:
-            exported["gateways"].append(gateway)
-            continue
-        exported["gateways"].append(
-            {
-                **gateway,
-                "buses": {
-                    str(index): {
-                        "gear": [_export_gear(unit) for unit in bus.dali_bus.gear],
-                        "devices": [
-                            _export_device(unit, source)
-                            for unit, source in zip(
-                                bus.dali_bus.devices,
-                                _control_devices((gateway.get("buses") or {}).get(str(index))),
-                            )
-                        ],
-                    }
-                    for index, bus in simulated.buses.items()
-                },
-            }
-        )
-    return exported
-
-
-def _export_gear(unit) -> Dict[str, Any]:
-    return {
-        "shortAddress": unit.shortaddr,
-        "randomAddress": unit.randomaddr.as_integer,
-        "deviceTypes": list(unit.devicetypes),
-        "colourTemperature": unit.actual_ct,
-        "groups": sorted(unit.groups),
-    }
-
-
-def _export_device(unit, source: Dict[str, Any]) -> Dict[str, Any]:
-    exported = {
-        "shortAddress": unit.short_address,
-        "randomAddress": unit.randomaddr.as_integer,
-    }
-    if source.get("pressIntervalSeconds"):
-        exported["pressIntervalSeconds"] = source["pressIntervalSeconds"]
-    return exported

@@ -44,8 +44,8 @@ graph TD
         end
         UI --> Shims --> Broker --> Daemon --> Driver
     end
-    Driver -->|"simulated"| Sim["virtual WB-DALI module<br/>+ DALI bus of fake gear"]
-    Driver -->|"hardware"| Wasm["C++ WASM module<br/>port/Load"] --> Serial["WebSerial → RS-485 → WB-DALI"]
+    Driver --> Wasm["C++ WASM module<br/>port/Load"] --> Serial["WebSerial → RS-485 → WB-DALI"]
+    Driver -.->|"in the test suite"| Sim["virtual WB-DALI module<br/>+ DALI bus of fake gear"]
 ```
 
 ## 4. Solution Strategy
@@ -168,10 +168,10 @@ unless asked for — wired to the `bus_monitor_enabled` flag the bus tab already
 exposes, which on a controller only decides whether the daemon republishes what
 wb-mqtt-serial pushes at it.
 
-The simulated installation includes a wall switch that presses itself every few
-seconds, because otherwise there is no traffic the daemon did not originate and
-nothing for the monitor to show. In homeui's console panel those arrive tagged
-`foreign`, which is exactly what they are.
+The simulated installation the test suite runs against includes a wall switch
+that presses itself every few seconds, because otherwise there is no traffic
+the daemon did not originate and nothing for the monitor to show. In homeui's
+console panel those arrive tagged `foreign`, which is exactly what they are.
 
 ### 4.4 Below the driver: one interface, two implementations
 
@@ -183,11 +183,13 @@ class RegisterTransport(Protocol):
 
 | Implementation | What it is |
 |---|---|
-| `sim.network.SimulatedModbusNetwork` | Virtual WB-DALI modules over simulated DALI buses |
-| `hardware.WasmSerialTransport` | The C++ WASM module's `port/Load` RPC over WebSerial |
+| `hardware.WasmSerialTransport` | The C++ WASM module's `port/Load` RPC over WebSerial — what the page runs on |
+| `sim.network.SimulatedModbusNetwork` | Virtual WB-DALI modules over simulated DALI buses — what the test suite runs on |
 
-A dropdown in the DALI header picks between them; the daemon is restarted on the
-chosen transport and cannot tell the difference.
+The simulated network started life as a user-facing mode, from before there was
+hardware to develop against; the page now boots exclusively against real
+gateways, and the simulator remains as the rig the whole stack is tested on.
+The daemon cannot tell the two apart.
 
 `port/Load` answers in a JSON-RPC envelope — `{error, result}` — with the register
 payload one level down under `result.response`. Reading it at the top level is
@@ -319,11 +321,13 @@ sequenceDiagram
 | Reuse python-dali's fakes, extend by subclass | Memory banks, DT8 and the gear commissioning machine already existed. Patching the vendored copy would have made it un-refetchable. |
 | Keep the loopback broker for the daemon's own bus | `Gateway` and `MQTTRPCServer` publish for a living. Removing MQTT there means forking the daemon. |
 | Substitute `WBDALIDriver` by name | `ApplicationController` constructs it directly. One assignment beats a fork. |
-| Persist config *and* simulated bus state | Restoring the config alone would describe addressed devices on a bus that had gone factory-fresh again. |
-| Gate hardware mode on a port | Every DALI command reopens the port, the browser's chooser needs a user gesture it will not get, and the daemon's retries keep coming — the page dies under `ERR_INSUFFICIENT_RESOURCES`. |
+| Gate the page on a serial port | Every DALI command reopens the port, the browser's chooser needs a user gesture it will not get, and the daemon's retries keep coming — the page dies under `ERR_INSUFFICIENT_RESOURCES`. Probing for an already-granted port shows a loader, not the ask. |
+| Gate the page on a found gateway | The configurator means nothing without a WB-DALI to configure; without one remembered from a Modbus scan the page says so and points back. |
+| Hold "ready" until configured devices initialize | The page reads its device tree once, at mount, and only a commissioning run rebuilds it. Group membership lives on the gear, read during device init — report ready before that and every session opens groupless until a rescan. |
 | DALI runtime out of the service worker's eager precache | 13 MB in the bucket whose install must succeed would make every visit to the Modbus editor pay for it, and one failed request would lose offline support for the editor too. |
-| One saved installation per transport | Restoring a simulated installation onto real hardware would have the daemon poll short addresses that only ever existed in the simulation. |
 | Bus monitor polled, and only on request | Four slots deep, so a burst outruns it — but the gap is reported, not silent. Reading it competes with DALI traffic for the one link. |
+| Drop a saved installation only after two failed boots | Most boot failures are transient (a busy port, an interrupted fetch), and the config carries operator-given names; but one that fails every boot would lock the page shut with no way out from inside it. |
+| Replace homeui's gateway tab | Its only content is the Lunatone DALI-2 IoT Gateway emulator — a WebSocket *server*, which a browser page cannot be — and homeui lands on it. The substitute shows the module's address and line settings instead. |
 
 ## 8. Files
 
@@ -336,7 +340,7 @@ sequenceDiagram
 | `wasm/python/runtime/wbdali_browser/broker.py` | The loopback MQTT broker |
 | `wasm/python/runtime/wbdali_browser/serial_service.py` | The one wb-mqtt-serial RPC the daemon's boot needs |
 | `wasm/python/runtime/wbdali_browser/runtime.py` | Boots the daemon; config persistence |
-| `wasm/python/runtime/wbdali_browser/scenario.py` | Builds a simulated installation from a JSON description |
+| `wasm/python/runtime/wbdali_browser/scenario.py` | Reads the installation description; builds the test suite's simulated network |
 | `wasm/python/runtime/wbdali_browser/hardware.py` | Registers over the C++ module's `port/Load` |
 | `wasm/python/runtime/wbdali_browser/browser.py` | The API the JavaScript side calls |
 | `wasm/python/runtime/wbdali_browser/sim/` | The virtual module, bus and units |

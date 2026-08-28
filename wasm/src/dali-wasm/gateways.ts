@@ -7,7 +7,7 @@
  * address and the line settings it answered on, rather than a guess.
  */
 
-import type { SimulationScenario } from './backend';
+import type { InstallationScenario } from './backend';
 
 /**
  * Device types that are a DALI gateway.
@@ -69,7 +69,7 @@ export function findDaliGateways<T extends { cfg: DaliGateway['serial'] & { slav
  * No buses are listed: on real hardware the devices on them are whatever a bus
  * scan finds, and the daemon writes them into its own config afterwards.
  */
-export function scenarioForGateways(gateways: DaliGateway[]): SimulationScenario {
+export function scenarioForGateways(gateways: DaliGateway[]): InstallationScenario {
   return {
     gateways: gateways.map((gateway) => ({
       id: gateway.id,
@@ -77,7 +77,7 @@ export function scenarioForGateways(gateways: DaliGateway[]): SimulationScenario
       buses: { 1: {}, 2: {}, 3: {} },
     })),
     serialSettings: gateways[0]?.serial,
-  } as SimulationScenario;
+  };
 }
 
 /**

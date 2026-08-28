@@ -28,46 +28,27 @@ export interface DaliBackend {
 }
 
 /**
- * What the simulated DALI installation looks like.
+ * The installation the runtime boots against.
  *
  * Mirrors `wbdali_browser.scenario`, which is the authority: it is what parses
- * this, and what writes it back with the short addresses a scan assigned.
+ * this into the wb-mqtt-serial config the daemon discovers its gateways from.
  */
-export interface SimulationScenario {
-  gateways: SimulatedGateway[];
-  /** Seconds of simulated bus time charged per DALI frame; 0 keeps the UI instant. */
-  frameDelaySeconds?: number;
+export interface InstallationScenario {
+  gateways: ScenarioGateway[];
+  /** The line settings the modules answered the Modbus scan on. */
+  serialSettings?: {
+    baud_rate: number;
+    data_bits: number;
+    parity: string;
+    stop_bits: number;
+  };
 }
 
-export interface SimulatedGateway {
+export interface ScenarioGateway {
   /** MQTT device id of the WB-DALI module. */
   id: string;
   /** Its Modbus address. */
   slaveId?: number;
-  /** What is wired to each bus, keyed by bus number "1".."3". */
-  buses: Record<string, SimulatedBus>;
-}
-
-export interface SimulatedBus {
-  /** Luminaires: control gear, on 16-bit frames. */
-  gear?: SimulatedGear[];
-  /** Wall switches and sensors: DALI-2 control devices, on 24-bit frames. */
-  devices?: SimulatedDevice[];
-}
-
-export interface SimulatedGear {
-  /** Short address 0..63, or null for a factory-fresh unit awaiting commissioning. */
-  shortAddress: number | null;
-  /** 24-bit random address, unique per unit. */
-  randomAddress: number;
-  /** DALI device types the unit reports, e.g. [6] for an LED driver, [8] for colour. */
-  deviceTypes?: number[];
-  /** Colour temperature in mireds, for a DT8 unit. */
-  colourTemperature?: number;
-  groups?: number[];
-}
-
-export interface SimulatedDevice {
-  shortAddress: number | null;
-  randomAddress: number;
+  /** The buses the module has, keyed by bus number "1".."3". */
+  buses: Record<string, object>;
 }

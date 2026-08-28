@@ -19,20 +19,38 @@ import { clearInstallation, loadInstallation, saveInstallation } from './persist
 import { ASSET_URL } from './pyodide-assets';
 import { startWorker, type WorkerHost } from './worker-host';
 
-/** Where the DALI bus is: simulated in the browser, or a real module on WebSerial. */
-export type DaliMode = 'simulated' | 'hardware';
+const BOOT_FAILURE_KEY = 'wb-dali-boot-failed';
+
+function readBootFailureFlag(): boolean {
+  try {
+    return window.sessionStorage.getItem(BOOT_FAILURE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeBootFailureFlag(failed: boolean): void {
+  try {
+    if (failed) {
+      window.sessionStorage.setItem(BOOT_FAILURE_KEY, '1');
+    } else {
+      window.sessionStorage.removeItem(BOOT_FAILURE_KEY);
+    }
+  } catch {
+    // Session storage being unavailable only costs the two-strike memory.
+  }
+}
 
 export interface PyodideBackendOptions {
-  mode?: DaliMode;
-  /** The simulated installation to boot over; omitted means the last one used. */
-  scenario?: unknown;
+  /** The gateways the daemon talks to — what the Modbus scan found. */
+  scenario: unknown;
   onLog?: (text: string) => void;
 }
 
 /**
  * Run one Modbus request through the C++ WASM module over WebSerial.
  *
- * This is the same `port/Load` RPC the Modbus editor uses, so hardware mode
+ * This is the same `port/Load` RPC the Modbus editor uses, so the DALI page
  * shares its serial port, its framing and its port-selection flow.
  */
 async function portLoad(request: string): Promise<string> {
@@ -66,36 +84,28 @@ export class PyodideDaliBackend implements DaliBackend {
   #onLog?: (text: string) => void;
   #send: (message: any) => void = () => {};
 
-  #mode: DaliMode = 'simulated';
   #worker: WorkerHost | null = null;
   #inlineRuntime: DaliRuntimeHandle | null = null;
   #inlineQueue: any[] = [];
 
   scenario: unknown = null;
 
-  constructor(options: PyodideBackendOptions = {}) {
+  constructor(options: PyodideBackendOptions) {
     this.#onLog = options.onLog;
     this.ready = new Promise<void>((resolve, reject) => {
       this.#resolveReady = resolve;
       this.#rejectReady = reject;
     });
 
-    const mode = options.mode ?? 'simulated';
-    // Per transport: restoring a simulated installation onto real hardware
-    // would have the daemon poll short addresses that only ever existed in the
-    // simulation, and the reverse leaves the config describing devices the
-    // simulated bus does not have.
-    const stored = loadInstallation(mode);
+    const stored = loadInstallation();
     const inline = readInlineAssets();
     const boot = {
       type: 'boot',
       baseURI: document.baseURI,
-      mode,
-      scenario: options.scenario ?? stored?.scenario,
+      scenario: options.scenario,
       config: stored?.config,
       inline,
     };
-    this.#mode = mode;
 
     const worker = canUseWorker()
       ? startWorker(
@@ -158,9 +168,16 @@ export class PyodideDaliBackend implements DaliBackend {
       return;
     }
     if (!this.#booted) {
-      // A saved installation the runtime cannot rebuild would fail every
-      // subsequent load too, with no way out from inside the page.
-      clearInstallation(this.#mode);
+      // A saved installation the runtime cannot rebuild would fail every load
+      // with no way out from inside the page — but most boot failures are
+      // transient (a busy port, an interrupted asset fetch), and the saved
+      // config carries state worth keeping, like the names the operator gave
+      // devices. So the installation is only dropped when it fails twice in a
+      // row, not on the first stumble.
+      if (readBootFailureFlag()) {
+        clearInstallation();
+      }
+      writeBootFailureFlag(true);
       this.#rejectReady(error instanceof Error ? error : new Error(String(error)));
       return;
     }
@@ -172,6 +189,7 @@ export class PyodideDaliBackend implements DaliBackend {
       case 'ready':
         this.#booted = true;
         this.scenario = message.scenario;
+        writeBootFailureFlag(false);
         this.#resolveReady();
         break;
 
@@ -183,7 +201,7 @@ export class PyodideDaliBackend implements DaliBackend {
 
       case 'config':
         if (!this.#disposed) {
-          saveInstallation(this.#mode, { config: message.config, scenario: message.scenario });
+          saveInstallation({ config: message.config, scenario: message.scenario });
         }
         break;
 
@@ -232,11 +250,6 @@ export class PyodideDaliBackend implements DaliBackend {
   unsubscribe(pattern: string): void {
     this.#handlers.delete(pattern);
     this.#send({ type: 'unsubscribe', pattern });
-  }
-
-  /** Pull the plug on a simulated module, so the UI's error paths can be seen. */
-  setGatewayReachable(gatewayId: string, reachable: boolean): void {
-    this.#send({ type: 'setReachable', gatewayId, reachable });
   }
 
   dispose(): void {

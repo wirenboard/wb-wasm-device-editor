@@ -1,18 +1,20 @@
 import classNames from 'classnames';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MemoryRouter } from 'react-router-dom';
 import { ConsolePanel } from '@/components/console-panel';
 import DaliPage from '@/pages/settings/configs/dali';
 import { authStore, UserRole } from '@/stores/auth';
 import { consolePanelStore } from '@/stores/console-panel';
+import { Alert } from '@/components/alert';
+import { PageLayout } from '@/layouts/page';
 import { BootProgress } from './components/boot-progress';
 import { DaliShell } from './components/dali-shell';
 import { PortGate } from './components/port-gate';
 import { loadRememberedGateways, scenarioForGateways } from './gateways';
 import { mqttClient } from './mqtt-client';
-import { loadMode, saveMode } from './persistence';
-import { PyodideDaliBackend, type DaliMode } from './pyodide-backend';
+import { PyodideDaliBackend } from './pyodide-backend';
 import './styles.css';
 
 /**
@@ -28,26 +30,28 @@ import './styles.css';
  * router, and the console panel its bus monitor docks into.
  */
 export const DaliWasm = observer(() => {
-  // What the Modbus scan found. With a gateway in hand the daemon talks to it;
-  // without one — reached by URL, or with nothing plugged in — there is still
-  // the simulated installation to work against.
+  const { t } = useTranslation();
+  // What the Modbus scan found. The daemon has nothing to talk to without a
+  // gateway, so with none remembered — reached by URL, or with nothing plugged
+  // in — the page explains itself instead of booting.
   const gateways = useMemo(loadRememberedGateways, []);
-  // Arriving from a found gateway, that gateway is the point; the simulated bus
-  // is what is left when there is nothing connected.
-  const [mode, setMode] = useState<DaliMode>(
-    () => loadMode() ?? (gateways.length ? 'hardware' : 'simulated')
-  );
-  const [hasPort, setHasPort] = useState(false);
+  // `null` while the silently-granted port is still being probed for — which
+  // waits on the WASM module download, seconds on a slow link. Showing the
+  // "choose a port" ask during that wait would put a request to act in front
+  // of someone whose port is, in the common case, already granted.
+  const [hasPort, setHasPort] = useState<boolean | null>(null);
   const [bootLog, setBootLog] = useState<string[]>([]);
   const [bootError, setBootError] = useState<string | null>(null);
   const [isBooted, setBooted] = useState(false);
 
-  // On real hardware the daemon must not start before a serial port exists; see
-  // PortGate. In simulation there is nothing to choose.
-  const needsPort = mode === 'hardware' && !hasPort;
+  const hasGateway = gateways.length > 0;
+
+  // The daemon must not start before a serial port exists; see PortGate.
+  const needsPort = hasPort !== true;
+  const asksForPort = hasPort === false;
 
   useEffect(() => {
-    if (mode !== 'hardware' || hasPort) {
+    if (!hasGateway || hasPort) {
       return;
     }
     // The scan that found the gateway already opened a port. Asking for it
@@ -56,10 +60,10 @@ export const DaliWasm = observer(() => {
       .then(() => Module.serial.select(false))
       .then(() => setHasPort(true))
       .catch(() => setHasPort(false));
-  }, [mode, hasPort]);
+  }, [hasGateway, hasPort]);
 
   const backend = useMemo(() => {
-    if (needsPort) {
+    if (!hasGateway || needsPort) {
       return null;
     }
 
@@ -69,15 +73,10 @@ export const DaliWasm = observer(() => {
     authStore.userRole = UserRole.Admin;
 
     return new PyodideDaliBackend({
-      mode,
-      // In hardware mode the installation is the one the scan found; in
-      // simulation the runtime supplies its own.
-      scenario: mode === 'hardware' && gateways.length
-        ? scenarioForGateways(gateways)
-        : undefined,
+      scenario: scenarioForGateways(gateways),
       onLog: (text) => setBootLog((lines) => [...lines.slice(-200), text]),
     });
-  }, [mode, needsPort, gateways]);
+  }, [hasGateway, needsPort, gateways]);
 
   useEffect(() => {
     if (!backend) {
@@ -97,24 +96,18 @@ export const DaliWasm = observer(() => {
     };
   }, [backend]);
 
-  const changeMode = (next: DaliMode) => {
-    if (next === mode) {
-      return;
-    }
-    // The transport is chosen when the daemon boots, so switching restarts it.
-    saveMode(next);
-    setBooted(false);
-    setBootError(null);
-    setBootLog([]);
-    setHasPort(false);
-    setMode(next);
-  };
-
   return (
-    <DaliShell mode={mode} onModeChange={changeMode} gateways={gateways}>
-      {needsPort && <PortGate onSelected={() => setHasPort(true)} />}
-      {!needsPort && (bootError || !isBooted) && <BootProgress error={bootError} log={bootLog} />}
-      {!needsPort && !bootError && isBooted && (
+    <DaliShell gateways={gateways}>
+      {!hasGateway && (
+        <PageLayout title={t('dali.title')} hasRights>
+          <Alert variant="info">{t('dali-wasm.labels.no-gateway')}</Alert>
+        </PageLayout>
+      )}
+      {hasGateway && asksForPort && <PortGate onSelected={() => setHasPort(true)} />}
+      {hasGateway && !asksForPort && (needsPort || bootError || !isBooted) && (
+        <BootProgress error={bootError} log={bootLog} />
+      )}
+      {hasGateway && !needsPort && !bootError && isBooted && (
         <MemoryRouter>
           <div
             className={classNames('daliWasm', {

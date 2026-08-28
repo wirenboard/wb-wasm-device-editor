@@ -13,7 +13,7 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.daliShell-notice {
+.daliShell-gateway {
   color: var(--text-secondary-color);
   font-size: 13px;
 }
