@@ -78,21 +78,43 @@ promised does not exist.** Corrected findings, in order of impact:
    The earlier draft's ~3 ms twin gap remains invalid — the receiver-side
    2.4 ms is not a transmitter permission.
 
-4. **`WAIT_BACKWARD_TIMEOUT_US = 10000` is a receiver-compliance bug, not
-   just "marginally tight".** Table 20: a frame starting 2.4–12.4 ms after the
-   forward frame "shall be interpreted as backward frame"; §8.2.5: reception
-   of a backward frame starts with the first active state "within a maximum
-   of 13.4 ms"; 12.4–13.4 ms is the grey area where the decision point may
-   sit. The timeout check runs on the 416 µs UIF tick, so today's effective
-   cut-off is 10.0–10.4 ms, and a gear answering between there and 12.4 ms
-   (legal for a gear whose 10.5 ms max the wiring/threshold stretches; slow
-   drivers do this) is reported `NO_ANSWER`, with its real answer arriving as
-   `DALI_RX_SPORADIC` with `is_backward = 0` (`wait_bf` and `tx_wait_notify`
-   already cleared by the scheduler). Set it to **12 800 µs** (effective
-   12.8–13.2 ms, inside the grey area). Zero pace cost: in the no-answer case
-   the next forward is still gated by the ≥ 13.5 ms window from the same last
-   edge, and the `NO_ANSWER → dali_rx_process → dali_next_send` hop completes
-   well inside that. (The 100 ms `DALI_TIMEOUT_MS` backstop is unaffected.)
+4. **`WAIT_BACKWARD_TIMEOUT_US = 10000` makes the receiver fail the
+   Table 20 acceptance window** (independently re-verified 2026-08-30 from
+   source + 101/103). §8.2.4 "a receiver shall accept frame sequences with
+   the settling times given in Table 20"; Table 20: a frame starting
+   2.4–12.4 ms after the forward frame's last rising edge "shall be
+   interpreted as backward frame", 12.4–13.4 ms is the grey area, ≥ 13.4 ms
+   "shall not" (§8.2.5). Clause 8.2 binds every receiver; a controller that
+   sends queries has one (§4.6.4 NOTE, Table 2 note c). The check runs on the
+   416 µs UIF tick, so today's cut-off is 10.0–10.4 ms (+IRQ latency) — short
+   even of a gear's *legal* transmit maximum of 10.5 ms (Table 17), so a fully
+   compliant gear answering at 10.4–10.5 ms is misreported today. A late
+   answer is reported `NO_ANSWER` (single: `fail=0, len=0`; bulk:
+   `SENDED_WITHOUT_ANSWER`) and then surfaces as `DALI_RX_SPORADIC` with
+   `is_backward = 0`, `len = 8` in the sporadic ring (`wait_bf` and
+   `tx_wait_notify` already cleared by the scheduler). No published 103
+   conformance sequence exercises this window, which is why it went unnoticed.
+
+   Fix: **12 500 µs** (effective 12.5–12.9 ms). 12 800 also sits in the grey
+   area but leaves < 200 µs to the 13.4 ms "shall not" limit and to a foreign
+   priority-1 forward frame (13.5 ms, Table 22) — which, caught with
+   `wait_bf = 1`, would be delivered as our REPLY with `is_backward = 1`
+   (`stop_condition_handler` does not check frame length).
+
+   Pace cost: none in the normal case, but with less slack than the first
+   draft said. The next forward is gated on `priority_window_us[].max` from
+   the same last edge — 14.7 ms at priority 1, not 13.5 — and the
+   NO_ANSWER → `dali_rx_process` → `dali_next_send` hop takes two main-loop
+   passes (task index order), which must fit in 14.7 − 12.9 ≈ 1.5–2.2 ms
+   (4.3 ms today). A main-loop stall (flashfs erase) would overrun; the cost is
+   then only the overrun, since `tx_priority_timeout` stays set until 25 ms
+   and `dali_schedule_tx` fires `tx_now`. **Interaction with finding 2:** with
+   the gate moved to `.min` (13.5 ms at priority 1) the slack drops to
+   0.3–0.7 ms, so expect occasional sub-ms TX delays on unanswered
+   priority-1 frames — acceptable, but do findings 2 and 4 together and
+   re-measure. Send-twice is unaffected (`wait_bf` is armed only after the
+   second copy); the 100 ms `DALI_TIMEOUT_MS` backstop stays armed after
+   NO_ANSWER and fires harmlessly, as today.
 
 5. **Transactions / priority 1 for bursts — legal but not worth it.** §9.3
    lets a controller run a transaction's follow-up frames at priority 1

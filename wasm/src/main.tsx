@@ -1,6 +1,7 @@
 import { configure } from 'mobx';
 import { createRoot } from 'react-dom/client';
 import { App } from './app';
+import { topicCopyPolicy } from '@/components/cell/topic-copy-policy';
 import { configI18n } from './i18n/config';
 import 'glyphicons-only-bootstrap/css/bootstrap.min.css';
 import 'bootstrap/dist/css/bootstrap-grid.min.css';
@@ -11,6 +12,13 @@ configure({
 });
 
 configI18n();
+
+// Clicking a cell's name in homeui copies its MQTT topic — useful on a
+// controller, where rules and dashboards take topics. This editor has no
+// broker; the runtime view and the DALI controls drive cells locally, and
+// "wb-dali_17_bus_1_0/error_status copied to clipboard" is a toast with no
+// possible next step.
+topicCopyPolicy.enabled = false;
 
 // homeui's CSS variables are scoped to [data-theme='light'|'dark'] on the root
 // element, and in homeui it is uiStore that puts the attribute there. This app
