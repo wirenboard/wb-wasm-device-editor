@@ -2,6 +2,7 @@ import { lazy, Suspense, useSyncExternalStore } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { DeviceSettingsWasm } from './device-settings-wasm';
 import { DALI_HASH } from './navigation';
+import './app.css';
 
 // The DALI view pulls in Pyodide's glue and the homeui schema editors; loading
 // it lazily keeps all of that out of the Modbus editor's startup path.
@@ -18,7 +19,10 @@ export const App = () => {
 
   if (hash === DALI_HASH) {
     return (
-      <Suspense fallback={null}>
+      // The DALI chunk is megabytes; a null fallback means seconds of blank
+      // white page on a cold load before anything paints. A bare spinner is
+      // the floor of feedback while the chunk itself arrives.
+      <Suspense fallback={<div className="daliChunkLoader" aria-label="Loading" />}>
         <DaliWasm />
       </Suspense>
     );

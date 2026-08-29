@@ -14,7 +14,6 @@ import asyncio
 import json
 import logging
 import sys
-import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -36,10 +35,6 @@ def configure_logging(level: str = "INFO") -> None:
     to the console — but at WARNING and above only, so the interesting parts of a
     bus scan would be invisible.
     """
-    # CPython 3.14 warns about `continue`/`return` inside `finally`, and the
-    # vendored daemon and mqttrpc both do it. The warnings fire at import — so
-    # they land in the boot pane, where a user can do nothing about them.
-    warnings.filterwarnings("ignore", category=SyntaxWarning)
     handler = logging.StreamHandler(sys.stdout)
     # The level leads the line so the page can tell an error from a warning
     # without pattern-matching the message.
