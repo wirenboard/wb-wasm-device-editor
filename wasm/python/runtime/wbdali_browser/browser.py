@@ -48,6 +48,7 @@ def configure_logging(level: str = "INFO") -> None:
 async def start(
     scenario_json: str,
     config_json: Optional[str] = None,
+    groups_json: Optional[str] = None,
     port_load: Optional[Callable] = None,
 ) -> str:
     """Boot wb-mqtt-dali against the WB-DALI modules the Modbus scan found.
@@ -86,6 +87,7 @@ async def start(
         serial_config=serial_config(_scenario),
         config=_restore_config(config_json, gateway_ids) or default_config(gateway_ids),
         root=Path("/"),
+        groups=_restore_groups(groups_json),
     )
     # Only publish the runtime once it is up: a failed start would otherwise
     # leave a half-built one for the next call to stop().
@@ -109,8 +111,30 @@ def _restore_config(config_json: Optional[str], gateway_ids: list) -> Optional[d
     return config
 
 
-def watch_config(callback: Callable[[str], None]) -> None:
-    """Report the daemon's config whenever it changes, so the page can keep it."""
+def _restore_groups(groups_json: Optional[str]) -> Optional[dict]:
+    if not groups_json:
+        return None
+    try:
+        groups = json.loads(groups_json)
+    except ValueError:
+        logger.warning("Saved DALI group state is not valid JSON; ignoring it")
+        return None
+    if not isinstance(groups, dict):
+        return None
+    return {
+        str(mqtt_id): [int(index) for index in indexes]
+        for mqtt_id, indexes in groups.items()
+        if isinstance(indexes, list)
+    }
+
+
+def watch_config(callback: Callable[[str, str], None]) -> None:
+    """Report the daemon's config whenever it changes, so the page can keep it.
+
+    The callback also receives the group-membership snapshot as JSON: groups are
+    not in the config file, and losing them across a reload is what makes a
+    restored installation open groupless.
+    """
     _require().watch_config(callback)
 
 

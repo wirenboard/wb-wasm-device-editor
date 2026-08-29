@@ -194,3 +194,49 @@ async def test_groups_survive_a_restart_without_a_rescan(tmp_path):
         assert devices[0]["groups"] == [1, 5]
     finally:
         await runtime.stop()
+
+
+async def test_seeded_groups_show_without_waiting_for_the_bus(tmp_path):
+    """A groups seed makes the first GetList correct with no init wait at all.
+
+    The seed is what the previous session saw; boot applies it before the page
+    can ask, then skips the init wait for seeded devices — so opening the page
+    is fast, and initialization corrects the state from the bus behind it.
+    """
+    config = default_config([GATEWAY_DEVICE_ID])
+    config["gateways"][0]["buses"][0]["devices"] = [
+        {"short": 0, "random": 0x100000, "name": "grouped lamp"},
+    ]
+
+    network = SimulatedModbusNetwork()
+    buses = {index: SimulatedDaliBus() for index in (1, 2, 3)}
+    # The bus says groups {1, 5}; the seed deliberately says {2} so the test
+    # can tell which one the first snapshot came from.
+    buses[1].add_gear(SimulatedControlGear(shortaddr=0, random_address=0x100000, groups={1, 5}))
+    network.add_module(GATEWAY_DEVICE_ID, buses)
+
+    runtime = DaliRuntime(
+        transport=_SerialPacedTransport(network),
+        serial_config=serial_config_with(GATEWAY_DEVICE_ID),
+        config=config,
+        vendor_dir=VENDOR_DIR,
+        root=tmp_path,
+        groups={f"{GATEWAY_DEVICE_ID}_bus_1_0": [2]},
+    )
+    await runtime.start()
+    try:
+        gateways = await runtime.rpc("Editor", "GetList")
+        devices = gateways[0]["buses"][0]["devices"]
+        assert devices[0]["groups"] == [2], "the first snapshot must come from the seed"
+
+        # And the bus remains the authority: once initialization has read the
+        # gear, the daemon's state is the measured membership, not the seed.
+        for _ in range(200):
+            await asyncio.sleep(0.05)
+            snapshot = runtime.snapshot_groups()
+            if snapshot.get(f"{GATEWAY_DEVICE_ID}_bus_1_0") == [1, 5]:
+                break
+        else:
+            raise AssertionError(f"init never corrected the seed: {runtime.snapshot_groups()}")
+    finally:
+        await runtime.stop()

@@ -30,9 +30,37 @@ import './styles.css';
 export const DeviceSettingsWasm = observer(() => {
   const { t } = useTranslation();
   const [language, setLanguage] = useState(localStorage.getItem('language') || 'en');
-  const [devices, setDevices] = useState<Device[]>([]);
+  // The scan result outlives this component: opening the DALI view unmounts the
+  // whole editor, and coming back to an empty list — with a fourteen-second
+  // rescan as the only way to refill it — makes the round trip painful. Session
+  // storage matches the lifetime of the result: a scan is a snapshot of what is
+  // on the wire right now, not something to keep across days.
+  const [devices, setDevices] = useState<Device[]>(() => {
+    try {
+      return JSON.parse(window.sessionStorage.getItem('wb-scan-results') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const [tabstore, setTabstore] = useState(null);
-  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [selectedDevice, setSelectedDevice] = useState(() => {
+    const restored = (() => {
+      try {
+        return JSON.parse(window.sessionStorage.getItem('wb-scan-results') || '[]');
+      } catch {
+        return [];
+      }
+    })();
+    return restored.at(0)?.cfg.slave_id ?? null;
+  });
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem('wb-scan-results', JSON.stringify(devices));
+    } catch {
+      // Losing the cache only costs the next visitor a rescan.
+    }
+  }, [devices]);
   const [isConfigLoading, setIsConfigLoading] = useState(false);
   const [isModalOpened, setIsModalOpened] = useState(false);
   const [configDeviceTypesStore, setConfigDeviceTypesStore] = useState(null);

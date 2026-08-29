@@ -104,6 +104,7 @@ export class PyodideDaliBackend implements DaliBackend {
       baseURI: document.baseURI,
       scenario: options.scenario,
       config: stored?.config,
+      groups: stored?.groups,
       inline,
     };
 
@@ -201,7 +202,11 @@ export class PyodideDaliBackend implements DaliBackend {
 
       case 'config':
         if (!this.#disposed) {
-          saveInstallation({ config: message.config, scenario: message.scenario });
+          saveInstallation({
+            config: message.config,
+            scenario: message.scenario,
+            groups: message.groups,
+          });
         }
         break;
 

@@ -135,10 +135,12 @@ class DaliRuntime:
         config: Optional[dict] = None,
         vendor_dir: Optional[Path] = None,
         root: Path = Path("/"),
+        groups: Optional[Dict[str, List[int]]] = None,
     ) -> None:
         self.broker = Broker()
         self.transport = transport
         self.serial = WbMqttSerialConfigService(self.broker, serial_config)
+        self.groups_seed = groups
         self.config = config if config is not None else default_config(self.serial.device_ids)
         self.vendor_dir = vendor_dir
         self.root = Path(root)
@@ -185,30 +187,68 @@ class DaliRuntime:
             DaliDatabase(str(self.root / GTIN_DB_PATH)),
         )
         await self.gateway.start()
-        await self._wait_for_configured_devices()
+        seeded = self._seed_groups(self.groups_seed or {})
+        await self._wait_for_configured_devices(already_seeded=seeded)
         logger.info("wb-mqtt-dali is running")
         return self
 
-    async def _wait_for_configured_devices(self) -> None:
-        """Hold "ready" until the devices already in the config have initialized.
+    def _all_devices(self):
+        return [
+            device
+            for wb_dali_gateway in self.gateway.wb_dali_gateways
+            for controller in wb_dali_gateway.buses
+            for device in controller.dali_devices + controller.dali2_devices
+        ]
+
+    def _seed_groups(self, groups_by_mqtt_id: Dict[str, List[int]]) -> set:
+        """Give devices last session's group membership before anyone reads it.
+
+        Groups are not in the config file — they live on the gear, and the
+        daemon reads them during device initialization, tens of seconds of bus
+        traffic after boot. The page reads its device tree once, as soon as the
+        daemon answers, so without this it would show the installation
+        groupless. The seed is what the previous session saw; initialization
+        still reads the truth off the bus afterwards and corrects the daemon's
+        state, exactly as it would have.
+
+        Returns the mqtt ids that were seeded.
+        """
+        seeded = set()
+        for device in self._all_devices():
+            seed = groups_by_mqtt_id.get(device.mqtt_id)
+            parameter = getattr(device, "_groups_parameter", None)
+            if seed is None or parameter is None:
+                continue
+            indexes = {index for index in seed if 0 <= index < len(parameter._groups)}
+            parameter._group_indexes = indexes
+            parameter._groups = [index in indexes for index in range(len(parameter._groups))]
+            seeded.add(device.mqtt_id)
+        return seeded
+
+    def snapshot_groups(self) -> Dict[str, List[int]]:
+        """Each device's group membership, for the page to keep across reloads."""
+        return {
+            device.mqtt_id: sorted(device.groups)
+            for device in self._all_devices()
+            if hasattr(device, "groups")
+        }
+
+    async def _wait_for_configured_devices(self, already_seeded: set = frozenset()) -> None:
+        """Hold "ready" until unseeded configured devices have initialized.
 
         The web UI reads the device tree exactly once, when its page mounts, and
-        only rebuilds it from a commissioning run. On a controller that snapshot
-        is taken from a daemon that has been running for weeks; here the daemon
-        starts *with* the page, so the snapshot races the polling loop's first
-        init pass — which is what reads each device's group membership off the
-        bus. Losing that race shows the same installation without its groups,
-        and nothing short of a rescan brings them back.
+        only rebuilds it from a commissioning run. A device seeded with last
+        session's groups already shows correctly, so it is not worth waiting
+        for; one with no seed would show groupless until a rescan, which is
+        worth a slower boot to avoid. In the common case every device is seeded
+        and this returns at once.
 
         A device that does not answer must not hold the page hostage, so this
         gives up after a deadline and boots with whatever has come up; the
         stragglers keep initializing behind the page as they would have anyway.
         """
         devices = [
-            device
-            for wb_dali_gateway in self.gateway.wb_dali_gateways
-            for controller in wb_dali_gateway.buses
-            for device in controller.dali_devices + controller.dali2_devices
+            device for device in self._all_devices() if device.mqtt_id not in already_seeded
         ]
         if not devices:
             return
@@ -308,26 +348,31 @@ class DaliRuntime:
 
     # -- persistence ------------------------------------------------------
 
-    def watch_config(self, callback: Callable[[str], None]) -> None:
-        """Report the daemon's config file whenever it changes.
+    def watch_config(self, callback: Callable[[str, str], None]) -> None:
+        """Report the daemon's config, and the group snapshot, when either changes.
 
         The browser's filesystem does not survive a reload, so the page has to
-        keep the config itself. Rather than polling, this watches the two events
-        that can follow a config write — an `Editor/*` reply and a commissioning
-        state change — and reports the file when its contents actually differ.
-        The daemon rewrites the file on boot, on every GetList, on SetBus,
-        SetGateway and ResetDevice, and when a scan completes.
+        keep the config itself. Rather than polling, this watches the events
+        that can follow a change — an `Editor/*` reply, a commissioning state
+        change, and the device topics the daemon publishes as it initializes
+        and polls — and reports only when the contents actually differ. The
+        daemon rewrites the config on boot, on every GetList, on SetBus,
+        SetGateway and ResetDevice, and when a scan completes; the group
+        snapshot changes when initialization reads membership off the bus,
+        which touches no file and answers no RPC — that is what the device
+        topics are subscribed for.
         """
-        last: List[str] = [self.read_config()]
+        last: List[tuple] = [(self.read_config(), json.dumps(self.snapshot_groups()))]
 
         def check(_topic: str, _payload: str, _retained: bool) -> None:
-            current = self.read_config()
-            if current and current != last[0]:
+            current = (self.read_config(), json.dumps(self.snapshot_groups()))
+            if current[0] and current != last[0]:
                 last[0] = current
-                callback(current)
+                callback(*current)
 
         self.subscribe("/rpc/v1/wb-mqtt-dali/+/+/+/reply", check)
         self.subscribe("/wb-dali/+/commissioning", check)
+        self.subscribe("/devices/+/meta/driver", check)
 
     def read_config(self) -> str:
         try:

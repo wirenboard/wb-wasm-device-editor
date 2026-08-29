@@ -13,3 +13,9 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.daliBoot-loader {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Alert } from '@/components/alert';
+import { Loader } from '@/components/loader';
 import { PageLayout } from '@/layouts/page';
 import './styles.css';
 
@@ -21,8 +22,16 @@ export const BootProgress = ({ error, log }: BootProgressProps) => {
   const { t } = useTranslation();
 
   return (
-    <PageLayout title={t('dali.title')} hasRights isLoading={!error}>
+    // Not PageLayout's own isLoading: that renders the spinner INSTEAD of the
+    // children, which is precisely the bare-spinner-hiding-the-log experience
+    // this component exists to avoid.
+    <PageLayout title={t('dali.title')} hasRights>
       {error && <Alert variant="danger">{t('dali-wasm.labels.boot-failed')}</Alert>}
+      {!error && (
+        <div className="daliBoot-loader">
+          <Loader />
+        </div>
+      )}
       {(error || log.length > 0) && (
         <pre className="daliBoot-log">{[...log, error].filter(Boolean).join('\n')}</pre>
       )}

@@ -14,6 +14,12 @@ export interface StoredInstallation {
   config: string;
   /** The gateways the config belongs to, as handed to the runtime. */
   scenario: unknown;
+  /**
+   * Group membership by device mqtt id, JSON-encoded. Groups live on the gear,
+   * not in the config, and are read tens of seconds into a boot — this is what
+   * lets the page open with them immediately.
+   */
+  groups?: string;
 }
 
 export function loadInstallation(): StoredInstallation | null {

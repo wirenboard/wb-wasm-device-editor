@@ -52,14 +52,21 @@ export const DaliWasm = observer(() => {
 
   useEffect(() => {
     if (!hasGateway || hasPort) {
-      return;
+      return undefined;
     }
+    // The probe below waits on the WASM module, which on a cold load is a
+    // multi-megabyte download — the longest silent stretch of the whole boot.
+    // Narrate it rather than sit behind a spinner.
+    const unsubscribe = Module.onLoadingProgress?.((progress: { percent: number }) => {
+      setBootLog([`Loading the serial module… ${progress.percent}%`]);
+    });
     // The scan that found the gateway already opened a port. Asking for it
     // again would put a chooser in front of someone who has just chosen.
     Module.isReady
       .then(() => Module.serial.select(false))
       .then(() => setHasPort(true))
       .catch(() => setHasPort(false));
+    return () => unsubscribe?.();
   }, [hasGateway, hasPort]);
 
   const backend = useMemo(() => {
