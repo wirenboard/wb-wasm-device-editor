@@ -18,6 +18,10 @@
   font-size: 13px;
 }
 
+.daliShell-debug {
+  margin-left: auto;
+}
+
 /* The DALI page sizes itself against a bounded parent; without min-height its
    own `overflow: auto` never engages and the tree grows the whole document. */
 .daliShell-page {

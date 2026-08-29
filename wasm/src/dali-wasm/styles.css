@@ -28,5 +28,11 @@ body,
 .daliWasm-page {
   flex: 1;
   min-width: 0;
+  /* A flex child's implicit min-height is `auto`, so tall DALI content would
+     push this past its bounds, the overflow would propagate to the viewport,
+     and the whole document would scroll — carrying the console panel, which is
+     laid out at the bottom of a viewport-sized box, away with it. */
+  min-height: 0;
+  overflow: hidden;
   min-height: 0;
 }

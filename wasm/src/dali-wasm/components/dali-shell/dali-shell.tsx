@@ -1,6 +1,8 @@
+import { observer } from 'mobx-react-lite';
 import type { PropsWithChildren } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/button';
+import { consolePanelStore } from '@/stores/console-panel';
 import { closeDali } from '../../../navigation';
 import type { DaliGateway } from '../../gateways';
 import './styles.css';
@@ -15,7 +17,7 @@ interface DaliShellProps {
  * provide on its own: a way back to the Modbus editor, and which module the
  * bus hangs off.
  */
-export const DaliShell = ({ gateways, children }: PropsWithChildren<DaliShellProps>) => {
+export const DaliShell = observer(({ gateways, children }: PropsWithChildren<DaliShellProps>) => {
   const { t } = useTranslation();
 
   return (
@@ -32,8 +34,18 @@ export const DaliShell = ({ gateways, children }: PropsWithChildren<DaliShellPro
             {t('dali-wasm.labels.mode-gateway', { name: gateways[0].id })}
           </span>
         )}
+        {/* In homeui the console panel is reopened from the app navigation,
+            which this editor does not have — without this button the panel's
+            own close cross would be a one-way door. */}
+        <Button
+          className="daliShell-debug"
+          label={t('navigation.buttons.debug')}
+          variant={consolePanelStore.isVisible ? 'primary' : 'secondary'}
+          size="small"
+          onClick={() => consolePanelStore.toggleVisibility()}
+        />
       </div>
       <div className="daliShell-page">{children}</div>
     </div>
   );
-};
+});
