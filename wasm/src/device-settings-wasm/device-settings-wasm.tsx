@@ -661,7 +661,10 @@ export const DeviceSettingsWasm = observer(() => {
         loader: loadingProgress?.percent !== 100 ? 'progress' : 'spinner',
         progress: loadingProgress?.percent,
         label: loadingProgress?.percent !== 100
-          ? `${formatBytes(loadingProgress?.loaded)} / ${formatBytes(loadingProgress?.total)}`
+          ? t('wasm.labels.downloading-module', {
+            loaded: formatBytes(loadingProgress?.loaded),
+            total: formatBytes(loadingProgress?.total),
+          })
           : null,
       }}
       footer={

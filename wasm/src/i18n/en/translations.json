@@ -37,7 +37,8 @@
       "bootloader-device": "Device is in bootloader mode. Firmware restore is required.",
       "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to specify device type and address manually.",
       "status-yes": "Yes",
-      "status-no": "No"
+      "status-no": "No",
+      "downloading-module": "Downloading the device editor engine — {{loaded}} / {{total}}"
     },
     "errors": {
       "invalid-slave-id": "Slave ID must be an integer between 1 and 247",

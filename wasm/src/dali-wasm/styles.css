@@ -53,3 +53,16 @@ body,
   min-height: 0;
 }
 
+
+/* Reclaim the dead band above the docked console panel: homeui's page keeps a
+   48px bottom padding for its own scrolling shell, and `.dali`'s height: 100%
+   resolves against the padded box, leaving a second 48px short. Inside this
+   bounded layout the flex chain already sizes everything. */
+.daliWasm-page .page-container {
+  padding-bottom: 12px;
+}
+
+.daliWasm-page .dali {
+  height: auto;
+  min-height: 0;
+}
