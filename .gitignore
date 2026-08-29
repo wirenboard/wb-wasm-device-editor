@@ -30,3 +30,4 @@ __pycache__/
 # pyodide python bundle, built by wasm/scripts/build-python-bundle.mjs
 wasm/.python-bundle/
 wasm/.python-cache/
+/tmp/
