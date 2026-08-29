@@ -106,6 +106,7 @@ export class PyodideDaliBackend implements DaliBackend {
       scenario: options.scenario,
       config: stored?.config,
       groups: stored?.groups,
+      memory: stored?.memory,
       inline,
     };
 
@@ -218,6 +219,7 @@ export class PyodideDaliBackend implements DaliBackend {
             config: message.config,
             scenario: message.scenario,
             groups: message.groups,
+            memory: message.memory,
           });
         }
         break;

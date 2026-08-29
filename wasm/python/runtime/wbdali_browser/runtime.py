@@ -136,11 +136,14 @@ class DaliRuntime:
         vendor_dir: Optional[Path] = None,
         root: Path = Path("/"),
         groups: Optional[Dict[str, List[int]]] = None,
+        memory: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.broker = Broker()
         self.transport = transport
         self.serial = WbMqttSerialConfigService(self.broker, serial_config)
         self.groups_seed = groups
+        self.memory_seed = memory
+        self.memory_caches: Dict[tuple, Any] = {}
         self.config = config if config is not None else default_config(self.serial.device_ids)
         self.vendor_dir = vendor_dir
         self.root = Path(root)
@@ -180,7 +183,9 @@ class DaliRuntime:
         # dispatcher it would use to reach wb-mqtt-serial. Substituting the name
         # it constructs is the whole adaptation: the browser talks to the gateway
         # over Modbus registers instead, one blocking request at a time.
-        application_controller.WBDALIDriver = make_driver_class(self.transport)
+        application_controller.WBDALIDriver = make_driver_class(
+            self.transport, self.memory_caches, self.memory_seed
+        )
         install_bus_monitor_polling(application_controller.ApplicationController)
 
         if self.vendor_dir is not None:
@@ -244,6 +249,14 @@ class DaliRuntime:
             parameter._groups = [index in indexes for index in range(len(parameter._groups))]
             seeded.add(device.mqtt_id)
         return seeded
+
+    def snapshot_memory(self) -> Dict[str, Any]:
+        """Every bus's memory-bank memo, keyed by the random address each device
+        answered with — what the next session verifies before trusting a byte."""
+        return {
+            f"{device_name}_bus_{bus}": cache.snapshot()
+            for (device_name, bus), cache in self.memory_caches.items()
+        }
 
     def snapshot_groups(self) -> Dict[str, List[int]]:
         """Each device's group membership, for the page to keep across reloads."""
@@ -435,7 +448,7 @@ class DaliRuntime:
                         return
         logger.warning("Automatic scan of %s did not finish in time", bus_id)
 
-    def watch_config(self, callback: Callable[[str, str], None]) -> None:
+    def watch_config(self, callback: Callable[[str, str, str], None]) -> None:
         """Report the daemon's config, and the group snapshot, when either changes.
 
         The browser's filesystem does not survive a reload, so the page has to
@@ -449,10 +462,17 @@ class DaliRuntime:
         which touches no file and answers no RPC — that is what the device
         topics are subscribed for.
         """
-        last: List[tuple] = [(self.read_config(), json.dumps(self.snapshot_groups()))]
+        def snapshot() -> tuple:
+            return (
+                self.read_config(),
+                json.dumps(self.snapshot_groups()),
+                json.dumps(self.snapshot_memory(), sort_keys=True),
+            )
+
+        last: List[tuple] = [snapshot()]
 
         def check(_topic: str, _payload: str, _retained: bool) -> None:
-            current = (self.read_config(), json.dumps(self.snapshot_groups()))
+            current = snapshot()
             if current[0] and current != last[0]:
                 last[0] = current
                 callback(*current)

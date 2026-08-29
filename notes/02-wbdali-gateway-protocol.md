@@ -448,11 +448,11 @@ Real DALI wire timing (IEC 62386-101, Te = 416.67 µs, 1 bit = 2 Te):
 | FF24 | ≈ 22.5 ms |
 | BF8 | ≈ 9.2 ms |
 | settling forward → backward | 5.5 – 10.5 ms |
-| settling before next forward frame | ≥ 5.5 ms (≥ 13.5 ms multi-master) |
-| send-twice repeat gap | ≤ 100 ms |
+| settling before next forward frame (after *any* frame, incl. backward) | ≥ 13.5 ms priority 1 … ≥ 19.5 ms priority 5 (101 Tables 17/22); WB-MDALI fw waits to the slot max, 16.1 ms at priority 2 |
+| send-twice repeat gap | ≤ 75 ms transmitter (Table 17), receiver accepts ≤ 94 ms (Table 20); fw uses ~16 ms |
 
-So a query round trip ≈ 32-40 ms, a fire-and-forget command ≈ 22-30 ms, a
-send-twice pair ≈ 50-60 ms. A full 16-slot batch of queries ≈ 0.6 s — comfortably
+So a query round trip ≈ 46 ms, a fire-and-forget command ≈ 32 ms, a
+send-twice pair ≈ 61 ms (measured on hardware; breakdown in note 05). A full 16-slot batch of queries ≈ 0.6 s — comfortably
 inside the 1.5 s per-slot deadline, but a batch of send-twice configuration
 commands can approach it.
 

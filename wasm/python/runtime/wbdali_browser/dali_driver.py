@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, List, Optional, Protocol, Sequence, Union
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, Union
 
 from dali.command import Command, Response
 from dali.device.helpers import DeviceInstanceTypeMapper
@@ -60,11 +60,13 @@ from wb.mqtt_dali.wbdali import BusMonitorFrameHandler
 from wb.mqtt_dali.wbdali import FramePriority, WBDALIConfig, _compute_frame_priorities
 from wb.mqtt_dali.wbdali_error_response import (
     NoPowerOnBus,
+    WbGatewayTransmissionError,
     NoResponseFromGateway,
     NoTransmission,
     Overheat,
 )
 
+from .memory_cache import MemoryCache
 from .registers import (
     MONITOR_REGISTERS_PER_SLOT,
     MONITOR_RING_SIZE,
@@ -131,6 +133,7 @@ class BlockingDaliDriver:
         transport: RegisterTransport,
         logger: logging.Logger,
         dev_inst_map: Optional[DeviceInstanceTypeMapper] = None,
+        memory_cache: Optional["MemoryCache"] = None,
     ) -> None:
         if config.bus not in (1, 2, 3):
             raise ValueError("Bus number must be 1, 2 or 3")
@@ -142,6 +145,7 @@ class BlockingDaliDriver:
         self.response_timeout = RESPONSE_TIMEOUT_S
 
         self._transport = transport
+        self._memory = memory_cache
         self._overheat = OverheatRateLimiter()
         # One transaction at a time: the whole point of this driver is that a
         # command and its answer are a single blocking exchange.
@@ -250,10 +254,7 @@ class BlockingDaliDriver:
             expanded.append(cmd)
 
         priorities = _compute_frame_priorities(expanded, priority)
-        answers: List[Response] = []
-        for start in range(0, len(expanded), QUEUE_SIZE):
-            chunk = list(zip(expanded, priorities))[start : start + QUEUE_SIZE]
-            answers.extend(await self._transact_batch(chunk, source))
+        answers = await self._send_through_memory(expanded, priorities, source)
 
         # Give back one response per command the caller asked for, dropping the
         # EnableDeviceType frames this method inserted.
@@ -265,6 +266,75 @@ class BlockingDaliDriver:
             responses.append(answers[index])
             index += 1
         return responses
+
+    async def _send_wire(
+        self, expanded: List[Command], priorities: List[FramePriority], source: BusTrafficSource
+    ) -> List[Response]:
+        answers: List[Response] = []
+        for start in range(0, len(expanded), QUEUE_SIZE):
+            chunk = list(zip(expanded, priorities))[start : start + QUEUE_SIZE]
+            answers.extend(await self._transact_batch(chunk, source))
+        return answers
+
+    async def _send_through_memory(
+        self, expanded: List[Command], priorities: List[FramePriority], source: BusTrafficSource
+    ) -> List[Response]:
+        """Answer memory-bank reads from the memo where it can; see memory_cache.
+
+        A restored memo entry is only used once the device at that short
+        address has confirmed its random address on the wire. A batch whose
+        reads are all remembered sends only its DTR writes; any miss sends the
+        whole batch and the memo learns from the answers.
+        """
+        memory = self._memory
+        if memory is None:
+            return await self._send_wire(expanded, priorities, source)
+
+        for key in memory.untrusted_keys(expanded):
+            random_address = await self._query_random_address(memory, key, source)
+            if memory.confirm(key, random_address):
+                self.logger.info("Memory bank memo confirmed for %s %d", *key)
+            else:
+                self.logger.info("Memory bank memo dropped for %s %d: device changed", *key)
+
+        served = memory.plan(expanded)
+        if served is None:
+            answers = await self._send_wire(expanded, priorities, source)
+            for cmd, answer in zip(expanded, answers):
+                memory.observe(cmd, answer, delivered=not isinstance(answer, WbGatewayTransmissionError))
+            # A device whose banks were just learned must also tell us its
+            # random address, or the memo cannot be verified — or kept — next
+            # session. Three frames, once.
+            for cmd in expanded:
+                key = memory.kind_and_short(cmd)
+                if key is not None and memory.needs_random_address(key):
+                    memory.set_random_address(key, await self._query_random_address(memory, key, source))
+            return answers
+
+        wire = [(cmd, prio) for index, (cmd, prio) in enumerate(zip(expanded, priorities)) if index not in served]
+        wire_answers = iter(
+            await self._send_wire([cmd for cmd, _ in wire], [prio for _, prio in wire], source)
+            if wire
+            else []
+        )
+        memory.apply_served(expanded)
+        answers = []
+        for index, cmd in enumerate(expanded):
+            if index in served:
+                byte = served[index]
+                answers.append(cmd.response(BackwardFrame(byte)) if byte is not None else cmd.response(None))
+            else:
+                answers.append(next(wire_answers))
+        return answers
+
+    async def _query_random_address(self, memory, key, source) -> Optional[int]:
+        replies = await self._send_wire(
+            memory.random_queries(*key), [FramePriority.CONFIGURATION] * 3, source
+        )
+        values = [getattr(reply, "raw_value", None) for reply in replies]
+        if not all(value is not None and not value.error for value in values):
+            return None
+        return (values[0].as_integer << 16) | (values[1].as_integer << 8) | values[2].as_integer
 
     async def _transact(
         self, cmd: Command, priority: FramePriority, source: BusTrafficSource
@@ -422,17 +492,33 @@ class BlockingDaliDriver:
             seq.close()
 
 
-def make_driver_class(transport: RegisterTransport):
+def make_driver_class(
+    transport: RegisterTransport,
+    memory_caches: Optional[Dict[Tuple[str, int], MemoryCache]] = None,
+    memory_seed: Optional[Dict[str, Any]] = None,
+):
     """Bind a transport to a driver class the daemon can construct itself.
 
     `ApplicationController` builds its own driver, passing the MQTT dispatcher it
     would have used to reach wb-mqtt-serial. Substituting the name it constructs
     is the whole adaptation: the dispatcher argument is ignored, and the bus is
     reached through Modbus registers instead.
+
+    Each bus gets its own memory-bank memo (DTR registers are per bus), created
+    on first use from the seed for that bus — `"<module>_bus_<n>"` — and kept in
+    `memory_caches` so the runtime can snapshot them later.
     """
 
     class _BoundDriver(BlockingDaliDriver):
         def __init__(self, config, _mqtt_dispatcher, logger, dev_inst_map=None):
-            super().__init__(config, transport, logger, dev_inst_map)
+            cache = None
+            if memory_caches is not None:
+                key = (config.device_name, config.bus)
+                cache = memory_caches.get(key)
+                if cache is None:
+                    seed = (memory_seed or {}).get(f"{config.device_name}_bus_{config.bus}")
+                    cache = MemoryCache(seed)
+                    memory_caches[key] = cache
+            super().__init__(config, transport, logger, dev_inst_map, memory_cache=cache)
 
     return _BoundDriver

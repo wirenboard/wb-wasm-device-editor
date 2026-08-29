@@ -328,7 +328,7 @@ async def test_the_config_watcher_reports_groups_learned_after_boot(tmp_path):
     await runtime.start()
     try:
         reports = []
-        runtime.watch_config(lambda config_text, groups_json: reports.append(json.loads(groups_json)))
+        runtime.watch_config(lambda config_text, groups_json, _memory: reports.append(json.loads(groups_json)))
 
         for _ in range(200):
             await asyncio.sleep(0.05)
