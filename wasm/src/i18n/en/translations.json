@@ -35,7 +35,9 @@
       "parity-even": "Even",
       "parity-odd": "Odd",
       "bootloader-device": "Device is in bootloader mode. Firmware restore is required.",
-      "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to specify device type and address manually."
+      "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to specify device type and address manually.",
+      "status-yes": "Yes",
+      "status-no": "No"
     },
     "errors": {
       "invalid-slave-id": "Slave ID must be an integer between 1 and 247",

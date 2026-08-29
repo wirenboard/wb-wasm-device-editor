@@ -1,3 +1,4 @@
+import classNames from 'classnames';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -190,7 +191,12 @@ export const RuntimeView = observer(({
         if (cancelled) return;
 
         const device = (schema as any)?.device;
-        const channels: TemplateChannel[] = device?.channels || [];
+        // Templates mark internal machinery — the DALI send queue, reply
+        // registers, the monitor ring — as hidden; wb-mqtt-serial keeps them
+        // off homeui's device pages, and raw 64-bit ring values sitting next
+        // to a temperature read as noise at best and as faults at worst.
+        const channels: TemplateChannel[] = (device?.channels || [])
+          .filter((ch: TemplateChannel & { hidden?: boolean }) => !ch.hidden);
         const translations = device?.translations || {};
 
         // Initial poll — no channel list, C++ reads all supported channels
@@ -310,6 +316,20 @@ export const RuntimeView = observer(({
               <div className="deviceCell deviceCell-error">
                 <div className="deviceCell-name">{cell.name}</div>
                 <span>-</span>
+              </div>
+            ) : cell.type === 'switch' && cell.readOnly ? (
+              // A read-only boolean drawn as a toggle invites clicking and
+              // reads as a *setting* ("Overheat: ON" looks like a switched-on
+              // feature, not a fault flag). A labeled status is unambiguous.
+              <div className="deviceCell">
+                <div className="deviceCell-name">{cell.name}</div>
+                <span
+                  className={classNames('runtimeView-status', {
+                    'runtimeView-statusActive': !!cell.value,
+                  })}
+                >
+                  {cell.value ? t('wasm.labels.status-yes') : t('wasm.labels.status-no')}
+                </span>
               </div>
             ) : (
               <CellContent

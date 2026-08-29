@@ -66,6 +66,10 @@ function installFetchShim(scope: any, assets: Record<string, [Uint8Array, string
 export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeHandle> {
   const log = (text: string) => host.post({ type: 'log', text });
 
+  // Each stage below takes whole seconds; without these lines the boot pane
+  // sits silent between the module download hitting 100% and the daemon's own
+  // first log line.
+  log('Loading the Python runtime…');
   const [wasm, stdlib, lockText, pythonTar, dataTar] = await Promise.all([
     host.assetBytes('pyodide.asm.wasm'),
     host.assetBytes('python_stdlib.zip'),
@@ -83,6 +87,7 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
     () => host.isOffline()
   );
 
+  log('Starting Python…');
   const pyodide: PyodideInterface = await loadPyodide({
     indexURL: PYODIDE_ORIGIN,
     packageBaseUrl: PYODIDE_ORIGIN,
@@ -99,6 +104,7 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
 
   const dali: any = pyodide.pyimport('wbdali_browser.browser');
   dali.configure_logging('INFO');
+  log('Starting the DALI service…');
 
   return {
     async handle(message: any): Promise<void> {

@@ -250,11 +250,6 @@ export const DeviceSettingsWasm = observer(() => {
     }
   }, [selectPort, refreshPortInfo]);
 
-  const reset = () => {
-    setDevices([]);
-    setTabstore(null);
-  };
-
   const configDeviceTypes = async () => {
     return configGetDeviceTypes(language).then((res) => {
       const deviceTypesStore = new DeviceTypesStore(configGetSchema);
@@ -342,7 +337,10 @@ export const DeviceSettingsWasm = observer(() => {
   };
 
   const handleScan = async () => {
-    reset();
+    // The previous scan's workspace stays on screen (dimmed, non-interactive)
+    // until new results arrive: an accidental press of the bright-green Scan
+    // used to wipe the list, the open device page, and the DALI button, with
+    // a full rescan as the only way back.
     bootScanRequestedRef.current = false;
 
     // If no granted ports match — prompt user to pick one first.
@@ -413,8 +411,8 @@ export const DeviceSettingsWasm = observer(() => {
         ));
         loadDeviceSettings(updatedDevice, configDeviceTypesStore);
       } else {
-        // Broadcast restore — rescan to find the device at its real address
-        reset();
+        // Broadcast restore — rescan to find the device at its real address.
+        // The workspace stays visible (dimmed) here too.
         bootScanRequestedRef.current = false;
         setIsPortScanning(true);
         const res = await scan();
@@ -738,9 +736,12 @@ export const DeviceSettingsWasm = observer(() => {
         bootScanRequestedRef={bootScanRequestedRef}
         onStopBootScan={handleStopBootScan}
       />
-      {!isPortScanning && !isBootScanning && (
-        <main className="deviceSettingsWasm-container">
-          <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
+      <main
+        className={classNames('deviceSettingsWasm-container', {
+          'deviceSettingsWasm-container--scanning': isPortScanning || isBootScanning,
+        })}
+      >
+          <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy || isPortScanning || isBootScanning })}>
             {!!(devices.length || manualDevices.length) && (
               <Tabs
                 items={allDevices
@@ -846,7 +847,6 @@ export const DeviceSettingsWasm = observer(() => {
             )}
           </section>
         </main>
-      )}
 
       {isModalOpened && (
         <AddDevice

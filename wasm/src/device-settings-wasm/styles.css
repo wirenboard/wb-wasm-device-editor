@@ -301,3 +301,10 @@
         column-gap: 15px;
     }
 }
+
+/* The workspace stays visible while a scan runs, but must read as inert:
+   clicking a device would race the scan for the one serial port. */
+.deviceSettingsWasm-container--scanning {
+  opacity: 0.5;
+  pointer-events: none;
+}
