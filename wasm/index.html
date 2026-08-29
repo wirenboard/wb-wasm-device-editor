@@ -26,6 +26,10 @@
 </head>
 <body>
 <div id="root"></div>
+<!-- Portal target for homeui's popups (Popup/Tooltip render into it via
+     FloatingPortal). homeui's own app shell provides this element; without
+     it every popover queries a null root and silently renders nowhere. -->
+<div class="floating"></div>
 <script type="module" src="./src/main.tsx"></script>
 </body>
 </html>

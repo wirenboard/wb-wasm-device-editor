@@ -14,7 +14,7 @@ import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { useAsyncAction } from '@/utils/async-action';
 import { findDaliGateways, rememberGateways } from '../dali-wasm/gateways';
-import { setLanguage } from '../i18n/config';
+import { setLanguage as setI18nLanguage } from '../i18n/config';
 import { openDali } from '../navigation';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
@@ -648,7 +648,12 @@ export const DeviceSettingsWasm = observer(() => {
             value={language}
             onChange={(option: Option<string>) => {
               localStorage.setItem('language', option.value);
+              // Both worlds: the state drives the template reload, and i18next
+              // drives every translated string in the editor and the DALI page.
+              // The state setter used to shadow the i18n import of the same
+              // name, so switching languages translated nothing but templates.
               setLanguage(option.value);
+              setI18nLanguage(option.value);
             }}
           />
         </>
