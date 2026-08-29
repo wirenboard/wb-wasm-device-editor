@@ -77,6 +77,9 @@ async def start(
 
     _scenario = json.loads(scenario_json)
     gateway_ids = [gateway["id"] for gateway in _scenario.get("gateways", [])]
+    # TEMP-SIM: local reproduction hook, slave id 250 => simulated bus. REVERT.
+    if any(gateway.get("slaveId") == 250 for gateway in _scenario.get("gateways", [])):
+        port_load = _temp_simulated_port_load(_scenario)
 
     async def call_port_load(request: Dict[str, Any]) -> Dict[str, Any]:
         # JSON both ways: the JS side hands back a string rather than a JsProxy,
@@ -228,3 +231,26 @@ def _require() -> DaliRuntime:
     if _runtime is None:
         raise RuntimeError("wb-mqtt-dali is not running; call start() first")
     return _runtime
+
+
+def _temp_simulated_port_load(scenario):  # TEMP-SIM, REVERT
+    from .hardware import hex_to_registers, registers_to_hex
+    from .scenario import build_network, default_scenario
+    wiring = default_scenario()["gateways"][0]["buses"]
+    sim = {"gateways": [dict(g, buses=wiring) for g in scenario["gateways"]], "frameDelaySeconds": 0.0}
+    network = build_network(sim)
+    by_slave = {g["slaveId"]: g["id"] for g in scenario["gateways"]}
+
+    async def port_load(request_json):
+        request = json.loads(request_json)
+        gw = network.gateways[by_slave[request["slave_id"]]]
+        function = request["function"]
+        if function in (6, 16):
+            gw.write_holding(request["address"], hex_to_registers(request["msg"]))
+            return json.dumps({"error": None, "result": {"response": ""}})
+        if function == 4:
+            registers = gw.read_input(request["address"], request["count"])
+            return json.dumps({"error": None, "result": {"response": registers_to_hex(registers)}})
+        return json.dumps({"error": {"message": f"unsupported function {function}"}})
+
+    return port_load

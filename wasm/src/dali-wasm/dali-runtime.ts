@@ -63,6 +63,16 @@ function installFetchShim(scope: any, assets: Record<string, [Uint8Array, string
   };
 }
 
+function withDeadline<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+}
+
 export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeHandle> {
   const log = (text: string) => host.post({ type: 'log', text });
 
@@ -88,14 +98,16 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
   );
 
   log('Starting Python…');
-  const pyodide: PyodideInterface = await loadPyodide({
+  // Pyodide's loader logs a wasm instantiation failure and then never settles;
+  // without a deadline the boot screen would wait on it forever.
+  const pyodide: PyodideInterface = await withDeadline(loadPyodide({
     indexURL: PYODIDE_ORIGIN,
     packageBaseUrl: PYODIDE_ORIGIN,
     lockFileContents: lockText,
     createPyodideModule,
     stdout: log,
     stderr: log,
-  });
+  }), 120_000, 'Python runtime did not start within two minutes');
 
   const sitePackages = pyodide.runPython('import site; site.getsitepackages()[0]');
   await pyodide.unpackArchive(pythonTar, 'tar.gz', { extractDir: sitePackages });

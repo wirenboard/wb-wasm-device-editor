@@ -173,7 +173,16 @@ export class PyodideDaliBackend implements DaliBackend {
     if (!response.ok) {
       throw new Error(`${name} -> HTTP ${response.status}`);
     }
-    return new Uint8Array(await response.arrayBuffer());
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    // A connection dropped mid-download hands back a short body with a 200:
+    // Pyodide then fails to instantiate its wasm with a message about bytes
+    // "falling off the end" — and its loader hangs rather than rejecting.
+    // Catch it here, where a retry (the next boot) is the obvious fix.
+    const declared = Number(response.headers.get('content-length'));
+    if (declared && bytes.length !== declared) {
+      throw new Error(`${name}: download interrupted (${bytes.length} of ${declared} bytes)`);
+    }
+    return bytes;
   }
 
   #fail(error: unknown): void {

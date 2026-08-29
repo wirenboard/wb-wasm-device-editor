@@ -91,13 +91,19 @@ POLL_INTERVAL_S = 0.005
 # The queue slot every frame is written to, after rewinding the pointer onto it.
 SEND_SLOT = 0
 
-# How often to read the bus monitor ring while it is switched on.
+# How often to read the bus monitor ring.
 #
-# The ring holds four frames, so anything arriving faster than this is
-# overwritten before it can be read — the daemon spots the gap in the frame
-# counter and says so. Reading it competes with DALI traffic for the one serial
-# link, which is why it is off unless the operator asks for it.
+# The ring is the only way traffic the gateway did not send reaches the daemon
+# — and that is not just the operator's monitor view: a DALI-2 sensor reports
+# occupancy and light level as event frames, which the controller consumes off
+# these same frames to update its controls. On a controller wb-mqtt-serial
+# delivers them unconditionally; so must this. The ring holds four frames, so
+# anything arriving faster than the poll is overwritten — the daemon spots the
+# gap in the frame counter and says so. Polling competes with DALI traffic for
+# the one serial link, so it runs slower while nobody is watching the monitor
+# (events are sparse) and faster while they are.
 MONITOR_POLL_INTERVAL_S = 0.1
+MONITOR_IDLE_POLL_INTERVAL_S = 0.25
 
 
 class RegisterTransport(Protocol):
@@ -152,14 +158,18 @@ class BlockingDaliDriver:
         self._lock = asyncio.Lock()
         self._sequence_id = 0
         self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_interval = MONITOR_IDLE_POLL_INTERVAL_S
 
     # -- lifecycle --------------------------------------------------------
 
     async def initialize(self) -> None:
         await self._reset_queue()
+        self._start_bus_monitor()
 
     async def deinitialize(self) -> None:
-        self.set_bus_monitor_enabled(False)
+        if self._monitor_task is not None:
+            self._monitor_task.cancel()
+            self._monitor_task = None
 
     async def _reset_queue(self) -> None:
         """Point the gateway back at slot 0."""
@@ -170,21 +180,23 @@ class BlockingDaliDriver:
     # -- bus monitor ------------------------------------------------------
 
     def set_bus_monitor_enabled(self, enabled: bool) -> None:
-        """Start or stop reading the gateway's bus monitor ring.
+        """Quicken or relax the ring polling — never stop it.
 
-        This is the only way traffic the gateway did not send — a DALI-2 button
-        press, another master's command — reaches the daemon: the reply
-        registers only ever answer our own frames.
+        The operator's monitor toggle decides how promptly foreign frames show
+        up in the view; the daemon needs them regardless, because a DALI-2
+        sensor's readings arrive as event frames and nothing else updates
+        them. (An earlier version stopped polling here, and a sensor's
+        illuminance stayed frozen at its boot value whenever the monitor was
+        off.)
         """
-        if enabled == (self._monitor_task is not None):
-            return
-        if enabled:
+        self._monitor_interval = MONITOR_POLL_INTERVAL_S if enabled else MONITOR_IDLE_POLL_INTERVAL_S
+        self._start_bus_monitor()
+
+    def _start_bus_monitor(self) -> None:
+        if self._monitor_task is None or self._monitor_task.done():
             self._monitor_task = asyncio.create_task(
                 self._poll_bus_monitor(), name=f"dali-monitor-{self.config.device_name}"
             )
-            return
-        self._monitor_task.cancel()
-        self._monitor_task = None
 
     async def _poll_bus_monitor(self) -> None:
         handler = BusMonitorFrameHandler(self.bus_traffic, self.logger, self.dev_inst_map)
@@ -195,7 +207,7 @@ class BlockingDaliDriver:
         count = MONITOR_RING_SIZE * MONITOR_REGISTERS_PER_SLOT
 
         while True:
-            await asyncio.sleep(MONITOR_POLL_INTERVAL_S)
+            await asyncio.sleep(self._monitor_interval)
             try:
                 async with self._lock:
                     registers = await self._transport.read_input(

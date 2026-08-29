@@ -10,7 +10,7 @@ import asyncio
 import pytest
 from wb.mqtt_dali.bus_traffic import BusTrafficSource
 
-from wbdali_browser.dali_driver import MONITOR_POLL_INTERVAL_S
+from wbdali_browser.dali_driver import MONITOR_IDLE_POLL_INTERVAL_S, MONITOR_POLL_INTERVAL_S
 from wbdali_browser.sim.control_gear import SimulatedControlDevice
 
 from .conftest import GATEWAY_DEVICE_ID, SimulatedStack
@@ -43,8 +43,14 @@ async def test_a_button_press_reaches_the_daemon(dali_logger):
         await driver.deinitialize()
 
 
-async def test_nothing_is_read_while_the_monitor_is_off(dali_logger):
-    """The ring costs serial traffic, so it is only read when asked for."""
+async def test_the_ring_is_read_even_with_the_monitor_off(dali_logger):
+    """A sensor's readings arrive as event frames; the daemon needs them whether
+    or not anyone is watching the monitor view.
+
+    An earlier version only polled while the operator's monitor toggle was on,
+    and a DALI-2 sensor's illuminance stayed frozen at its boot value while
+    its LightEvents scrolled past unseen.
+    """
     switch = SimulatedControlDevice(shortaddr=0, random_address=0x2B3C4D)
     stack = SimulatedStack(devices=[switch])
     driver = stack.driver(logger=dali_logger)
@@ -53,7 +59,9 @@ async def test_nothing_is_read_while_the_monitor_is_off(dali_logger):
         frame = switch.press(0)
         stack.gateway.record_bus_frame(1, len(frame), frame.as_integer)
 
-        assert await collect_bus_frames(driver, MONITOR_POLL_INTERVAL_S * 3) == []
+        frames = await collect_bus_frames(driver, MONITOR_IDLE_POLL_INTERVAL_S * 4)
+
+        assert [item.request.as_integer for item in frames] == [frame.as_integer]
     finally:
         await driver.deinitialize()
 
@@ -99,14 +107,19 @@ async def test_the_gateways_own_frames_do_not_appear_twice(dali_logger):
         await driver.deinitialize()
 
 
-async def test_turning_the_monitor_off_stops_the_polling(dali_logger):
+async def test_the_monitor_toggle_only_changes_the_pace(dali_logger):
+    """Polling runs from initialize to deinitialize; the toggle picks the interval."""
     stack = SimulatedStack(devices=[SimulatedControlDevice(shortaddr=0, random_address=0x2B3C4D)])
     driver = stack.driver(logger=dali_logger)
     await driver.initialize()
+    assert driver._monitor_task is not None  # pylint: disable=protected-access
+    assert driver._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
 
     driver.set_bus_monitor_enabled(True)
-    assert driver._monitor_task is not None  # pylint: disable=protected-access
+    assert driver._monitor_interval == MONITOR_POLL_INTERVAL_S  # pylint: disable=protected-access
     driver.set_bus_monitor_enabled(False)
-    assert driver._monitor_task is None  # pylint: disable=protected-access
+    assert driver._monitor_task is not None  # pylint: disable=protected-access
+    assert driver._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
 
     await driver.deinitialize()
+    assert driver._monitor_task is None  # pylint: disable=protected-access
