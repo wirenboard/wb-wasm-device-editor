@@ -10,6 +10,7 @@ converted before Python touches them.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sys
@@ -24,6 +25,7 @@ from .scenario import serial_config, serial_settings, slave_ids
 logger = logging.getLogger("wbdali_browser")
 
 _runtime: Optional[DaliRuntime] = None
+_auto_scan_task = None
 _scenario: Dict[str, Any] = {}
 
 
@@ -98,6 +100,18 @@ async def start(
     # leave a half-built one for the next call to stop().
     await runtime.start()
     _runtime = runtime
+
+    # A gateway nobody has configured yet gets scanned without being asked:
+    # the alternative is a tree of three empty buses and an operator hunting
+    # for the Rescan button on each. In the background — the page is usable
+    # while it runs, and shows each bus's progress as it would for a manual
+    # scan.
+    global _auto_scan_task  # pylint: disable=global-statement
+    if runtime.installation_is_fresh():
+        _auto_scan_task = asyncio.create_task(
+            runtime.scan_all_buses(), name="dali-auto-scan"
+        )
+
     return json.dumps(_scenario)
 
 
@@ -126,11 +140,18 @@ def _restore_groups(groups_json: Optional[str]) -> Optional[dict]:
         return None
     if not isinstance(groups, dict):
         return None
-    return {
-        str(mqtt_id): [int(index) for index in indexes]
-        for mqtt_id, indexes in groups.items()
-        if isinstance(indexes, list)
-    }
+    restored = {}
+    for mqtt_id, indexes in groups.items():
+        if not isinstance(indexes, list):
+            continue
+        try:
+            restored[str(mqtt_id)] = [int(index) for index in indexes]
+        except (TypeError, ValueError):
+            # One malformed entry costs that device its seed, not the boot —
+            # and certainly not the whole saved installation, which is what a
+            # boot failure escalates to after two strikes.
+            logger.warning("Ignoring malformed group seed for %r", mqtt_id)
+    return restored
 
 
 def watch_config(callback: Callable[[str, str], None]) -> None:
@@ -155,8 +176,15 @@ def snapshot_scenario() -> str:
 
 
 async def stop() -> None:
-    global _runtime  # pylint: disable=global-statement
+    global _runtime, _auto_scan_task  # pylint: disable=global-statement
 
+    if _auto_scan_task is not None:
+        _auto_scan_task.cancel()
+        try:
+            await _auto_scan_task
+        except (asyncio.CancelledError, Exception):  # pylint: disable=broad-exception-caught
+            pass
+        _auto_scan_task = None
     if _runtime is not None:
         await _runtime.stop()
         _runtime = None

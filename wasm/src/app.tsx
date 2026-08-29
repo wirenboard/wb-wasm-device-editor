@@ -1,4 +1,5 @@
 import { lazy, Suspense, useSyncExternalStore } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { DeviceSettingsWasm } from './device-settings-wasm';
 import { DALI_HASH } from './navigation';
 
@@ -22,5 +23,13 @@ export const App = () => {
       </Suspense>
     );
   }
-  return <DeviceSettingsWasm />;
+  // homeui master's components reach for router hooks in passing — the cell
+  // history link calls useSearchParams — and crash without a Router above
+  // them. This app has no URL routing; a memory router just provides the
+  // context, exactly as the DALI view already does for its page.
+  return (
+    <MemoryRouter>
+      <DeviceSettingsWasm />
+    </MemoryRouter>
+  );
 };

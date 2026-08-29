@@ -140,8 +140,18 @@ export class PyodideDaliBackend implements DaliBackend {
       portLoad,
     })
       .then(async (runtime) => {
+        if (this.#disposed) {
+          // The view is already gone; booting now would start a daemon nobody
+          // can ever stop — inline runtimes outlive the page that made them.
+          await runtime.handle({ type: 'stop' });
+          return;
+        }
         this.#inlineRuntime = runtime;
         await runtime.handle(boot);
+        if (this.#disposed) {
+          await runtime.handle({ type: 'stop' });
+          return;
+        }
         for (const queued of this.#inlineQueue.splice(0)) {
           await runtime.handle(queued);
         }

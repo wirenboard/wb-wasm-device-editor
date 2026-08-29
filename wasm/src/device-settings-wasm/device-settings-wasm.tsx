@@ -429,8 +429,8 @@ export const DeviceSettingsWasm = observer(() => {
     }
   });
 
-  const getType = (device: Device) => {
-    return configDeviceTypesStore.findNotDeprecatedDeviceTypes(
+  const getType = (device: Device, deviceTypesStore = configDeviceTypesStore) => {
+    return deviceTypesStore.findNotDeprecatedDeviceTypes(
       device.device_signature,
       device.fw?.version,
     ).at(0) || device.device_signature;
@@ -446,7 +446,11 @@ export const DeviceSettingsWasm = observer(() => {
 
   const loadDeviceSettings = useCallback(async (device: Device, deviceTypesStore = configDeviceTypesStore) => {
     setError(null);
-    const deviceType = getType(device);
+    // Resolve the type through the store handed in, not the state variable:
+    // on the restore-at-mount path this runs inside the .then that has only
+    // just produced the store, and the state closure still holds null — which
+    // used to throw here and silently cost the whole settings pane.
+    const deviceType = getType(device, deviceTypesStore);
 
     setIsConfigLoading(true);
 

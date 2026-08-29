@@ -34,5 +34,21 @@ body,
      laid out at the bottom of a viewport-sized box, away with it. */
   min-height: 0;
   overflow: hidden;
+}
+
+/*
+ * With the page area bounded, scrolling must happen INSIDE it — homeui's
+ * `.dali` pane is written to do exactly that (`height: 100%; overflow: auto`),
+ * but two links in the height chain above it only hold inside homeui's own
+ * app shell: `.page-container` declares min-height rather than height, and
+ * `.page-contentWrapper` is a flex child without min-height. Left unrepaired,
+ * the inner scroll never engages and the bounded page CLIPS: content ends up
+ * unreachable behind the console panel instead of scrollable above it.
+ */
+.daliWasm-page .page-container {
+  height: 100%;
+}
+
+.daliWasm-page .page-contentWrapper {
   min-height: 0;
 }

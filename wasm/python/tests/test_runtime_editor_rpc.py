@@ -240,3 +240,101 @@ async def test_seeded_groups_show_without_waiting_for_the_bus(tmp_path):
             raise AssertionError(f"init never corrected the seed: {runtime.snapshot_groups()}")
     finally:
         await runtime.stop()
+
+
+async def test_scan_all_buses_commissions_a_fresh_gateway_by_itself(tmp_path):
+    """The first open of an unconfigured gateway scans every bus unprompted.
+
+    This is what browser.start() kicks off in the background when the config
+    holds no devices at all: sequential scans, bus by bus, through the same
+    Editor/ScanBus surface the Rescan button uses — so the page sees ordinary
+    commissioning traffic and needs nothing special.
+    """
+    runtime = await make_runtime(
+        tmp_path,
+        gear=[
+            SimulatedControlGear(random_address=0x000010),
+            SimulatedControlGear(random_address=0x400000),
+        ],
+    )
+    try:
+        assert runtime.installation_is_fresh()
+
+        await runtime.scan_all_buses()
+
+        gateways = await runtime.rpc("Editor", "GetList")
+        buses = gateways[0]["buses"]
+        assert len(buses[0]["devices"]) == 2
+        assert buses[1]["devices"] == []
+        assert buses[2]["devices"] == []
+        assert not runtime.installation_is_fresh()
+    finally:
+        await runtime.stop()
+
+
+async def test_a_configured_installation_is_not_fresh(tmp_path):
+    """One known device anywhere means no automatic scan."""
+    config = default_config([GATEWAY_DEVICE_ID])
+    config["gateways"][0]["buses"][0]["devices"] = [
+        {"short": 0, "random": 0x100000, "name": "lamp"},
+    ]
+
+    network = SimulatedModbusNetwork()
+    buses = {index: SimulatedDaliBus() for index in (1, 2, 3)}
+    buses[1].add_gear(SimulatedControlGear(shortaddr=0, random_address=0x100000))
+    network.add_module(GATEWAY_DEVICE_ID, buses)
+
+    runtime = DaliRuntime(
+        transport=network,
+        serial_config=serial_config_with(GATEWAY_DEVICE_ID),
+        config=config,
+        vendor_dir=VENDOR_DIR,
+        root=tmp_path,
+    )
+    await runtime.start()
+    try:
+        assert not runtime.installation_is_fresh()
+    finally:
+        await runtime.stop()
+
+
+async def test_the_config_watcher_reports_groups_learned_after_boot(tmp_path):
+    """Membership read off the bus behind the page still gets persisted.
+
+    Device initialization changes no file and answers no RPC, so the watcher
+    listens on the device topics the daemon publishes as it initializes; a
+    subscription that never fires would leave the persisted seed stale forever,
+    re-applied on every reload.
+    """
+    config = default_config([GATEWAY_DEVICE_ID])
+    config["gateways"][0]["buses"][0]["devices"] = [
+        {"short": 0, "random": 0x100000, "name": "grouped lamp"},
+    ]
+
+    network = SimulatedModbusNetwork()
+    buses = {index: SimulatedDaliBus() for index in (1, 2, 3)}
+    buses[1].add_gear(SimulatedControlGear(shortaddr=0, random_address=0x100000, groups={1, 5}))
+    network.add_module(GATEWAY_DEVICE_ID, buses)
+
+    runtime = DaliRuntime(
+        transport=_SerialPacedTransport(network),
+        serial_config=serial_config_with(GATEWAY_DEVICE_ID),
+        config=config,
+        vendor_dir=VENDOR_DIR,
+        root=tmp_path,
+        # A stale seed skips the boot wait; the bus says {1, 5}.
+        groups={f"{GATEWAY_DEVICE_ID}_bus_1_0": [2]},
+    )
+    await runtime.start()
+    try:
+        reports = []
+        runtime.watch_config(lambda config_text, groups_json: reports.append(json.loads(groups_json)))
+
+        for _ in range(200):
+            await asyncio.sleep(0.05)
+            if any(report.get(f"{GATEWAY_DEVICE_ID}_bus_1_0") == [1, 5] for report in reports):
+                break
+        else:
+            raise AssertionError(f"watcher never reported the corrected groups: {reports[-3:]}")
+    finally:
+        await runtime.stop()

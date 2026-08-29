@@ -156,6 +156,21 @@ class DaliRuntime:
     # -- lifecycle --------------------------------------------------------
 
     async def start(self) -> "DaliRuntime":
+        # A failure partway through leaves live tasks behind — the dispatcher,
+        # the serial stub, and (because `Gateway.start` gathers bus startups
+        # with return_exceptions before re-raising) possibly a polling loop
+        # already driving the port. `stop()` tolerates a partial start, so a
+        # failed boot tears down whatever got up instead of orphaning it.
+        try:
+            return await self._start()
+        except BaseException:
+            try:
+                await self.stop()
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.exception("Cleanup after a failed start also failed")
+            raise
+
+    async def _start(self) -> "DaliRuntime":
         from wb.mqtt_dali import application_controller
         from wb.mqtt_dali.gateway import Gateway
         from wb.mqtt_dali.gtin_db import DaliDatabase
@@ -219,6 +234,11 @@ class DaliRuntime:
             parameter = getattr(device, "_groups_parameter", None)
             if seed is None or parameter is None:
                 continue
+            if device.is_initialized:
+                # The bus has already answered; last session's copy is the
+                # stale one now.
+                seeded.add(device.mqtt_id)
+                continue
             indexes = {index for index in seed if 0 <= index < len(parameter._groups)}
             parameter._group_indexes = indexes
             parameter._groups = [index in indexes for index in range(len(parameter._groups))]
@@ -260,8 +280,11 @@ class DaliRuntime:
         reported: set = set()
         while True:
             for device in devices:
-                if device.is_initialized and device.name not in reported:
-                    reported.add(device.name)
+                # Keyed on mqtt_id: names repeat (the default is "DALI <short>"
+                # with no bus in it), and a duplicate would stall the wait at
+                # the deadline for devices that are already up.
+                if device.is_initialized and device.mqtt_id not in reported:
+                    reported.add(device.mqtt_id)
                     logger.info("  %s is up (%d/%d)", device.name, len(reported), len(devices))
             if len(reported) == len(devices):
                 return
@@ -269,7 +292,9 @@ class DaliRuntime:
                 logger.warning(
                     "Booting with %d device(s) still initializing: %s",
                     len(devices) - len(reported),
-                    ", ".join(device.name for device in devices if device.name not in reported),
+                    ", ".join(
+                        device.name for device in devices if device.mqtt_id not in reported
+                    ),
                 )
                 return
             await asyncio.sleep(0.1)
@@ -348,6 +373,68 @@ class DaliRuntime:
 
     # -- persistence ------------------------------------------------------
 
+    def installation_is_fresh(self) -> bool:
+        """Whether no bus of any gateway has a single configured device yet.
+
+        Read from the config file, not the boot-time dict: the daemon rewrites
+        the file as scans complete, and this must reflect that.
+        """
+        try:
+            config = json.loads(self.read_config())
+        except ValueError:
+            config = self.config
+        return all(
+            not bus.get("devices")
+            for gateway in config.get("gateways", [])
+            for bus in gateway.get("buses", [])
+        )
+
+    async def scan_all_buses(self) -> None:
+        """Scan every bus of every gateway, one at a time.
+
+        Meant for the first open of a freshly found gateway: nothing is
+        configured, and asking the operator to visit three bus pages and press
+        Rescan on each is make-work the daemon can do by itself. Sequential
+        because the buses share one serial link — interleaving two
+        commissionings would double both their wall-clock times.
+
+        The page needs no special handling: it subscribes to the commissioning
+        topics when it mounts, shows each bus's progress bar, and rebuilds the
+        tree from the completed message exactly as for an operator-started scan.
+        """
+        for gateway in self.config.get("gateways", []):
+            for bus_number in range(1, 1 + len(gateway.get("buses", []))):
+                bus_id = f"{gateway['device_id']}_bus_{bus_number}"
+                try:
+                    await self.rpc("Editor", "ScanBus", {"busId": bus_id})
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.exception("Automatic scan of %s failed to start", bus_id)
+                    continue
+                await self._wait_for_commissioning_to_finish(bus_id)
+
+    async def _wait_for_commissioning_to_finish(self, bus_id: str) -> None:
+        # 120 s: a populated bus takes ~20 s on real hardware; the rest is
+        # headroom for a bus full of unaddressed gear.
+        deadline = asyncio.get_running_loop().time() + 120.0
+        while asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.5)
+            try:
+                gateways = await self.rpc("Editor", "GetList")
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.exception("Polling commissioning state of %s failed", bus_id)
+                return
+            for gateway in gateways:
+                for bus in gateway.get("buses", []):
+                    if bus.get("id") != bus_id:
+                        continue
+                    # In-progress states carry the stage name (queued,
+                    # binary_search, read_device_info, dali2_* …), so wait for
+                    # a terminal one rather than guessing at the rest.
+                    status = bus.get("commissioning", {}).get("status")
+                    if status in ("idle", "completed", "failed", "cancelled"):
+                        return
+        logger.warning("Automatic scan of %s did not finish in time", bus_id)
+
     def watch_config(self, callback: Callable[[str, str], None]) -> None:
         """Report the daemon's config, and the group snapshot, when either changes.
 
@@ -372,7 +459,7 @@ class DaliRuntime:
 
         self.subscribe("/rpc/v1/wb-mqtt-dali/+/+/+/reply", check)
         self.subscribe("/wb-dali/+/commissioning", check)
-        self.subscribe("/devices/+/meta/driver", check)
+        self.subscribe("/devices/+/meta", check)
 
     def read_config(self) -> str:
         try:
