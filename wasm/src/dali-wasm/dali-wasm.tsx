@@ -29,6 +29,24 @@ import './styles.css';
  * at it, and supply the two pieces of app chrome the page expects around it: a
  * router, and the console panel its bus monitor docks into.
  */
+// One live runtime per set of gateways, surviving view switches (see the
+// unmount comment below for why). Replaced — with the old one disposed — only
+// when a rescan changes the gateways.
+let liveBackend: { key: string; backend: PyodideDaliBackend } | null = null;
+
+function obtainBackend(
+  scenario: ReturnType<typeof scenarioForGateways>,
+  onLog: (text: string) => void
+): PyodideDaliBackend {
+  const key = JSON.stringify(scenario);
+  if (liveBackend && liveBackend.key === key && !liveBackend.backend.isDefunct) {
+    return liveBackend.backend;
+  }
+  liveBackend?.backend.dispose();
+  liveBackend = { key, backend: new PyodideDaliBackend({ scenario, onLog }) };
+  return liveBackend.backend;
+}
+
 export const DaliWasm = observer(() => {
   const { t } = useTranslation();
   // What the Modbus scan found. The daemon has nothing to talk to without a
@@ -79,10 +97,10 @@ export const DaliWasm = observer(() => {
     // the administrator.
     authStore.userRole = UserRole.Admin;
 
-    return new PyodideDaliBackend({
-      scenario: scenarioForGateways(gateways),
-      onLog: (text) => setBootLog((lines) => [...lines.slice(-200), text]),
-    });
+    return obtainBackend(
+      scenarioForGateways(gateways),
+      (text) => setBootLog((lines) => [...lines.slice(-200), text])
+    );
   }, [hasGateway, needsPort, gateways]);
 
   useEffect(() => {
@@ -98,8 +116,15 @@ export const DaliWasm = observer(() => {
 
     return () => {
       cancelled = true;
+      // Detach the page, keep the runtime: the daemon's knowledge of the bus —
+      // every memory bank read, every probed feature, a first device-page open
+      // worth 400+ frames of real serial time — lives in its memory and dies
+      // with it. Navigating to the Modbus editor and back now costs nothing;
+      // the worker is only replaced when the gateways change, and dies with
+      // the tab. Its background polling shares the serial port transaction by
+      // transaction with the editor, which the request queue already
+      // serializes.
       mqttClient.detach(backend);
-      backend.dispose();
     };
   }, [backend]);
 

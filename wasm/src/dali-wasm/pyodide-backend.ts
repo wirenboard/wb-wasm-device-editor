@@ -81,6 +81,7 @@ export class PyodideDaliBackend implements DaliBackend {
   #rejectReady!: (reason: unknown) => void;
   #booted = false;
   #disposed = false;
+  #failed = false;
   #onLog?: (text: string) => void;
   #send: (message: any) => void = () => {};
 
@@ -179,6 +180,7 @@ export class PyodideDaliBackend implements DaliBackend {
       return;
     }
     if (!this.#booted) {
+      this.#failed = true;
       // A saved installation the runtime cannot rebuild would fail every load
       // with no way out from inside the page — but most boot failures are
       // transient (a busy port, an interrupted asset fetch), and the saved
@@ -265,6 +267,11 @@ export class PyodideDaliBackend implements DaliBackend {
   unsubscribe(pattern: string): void {
     this.#handlers.delete(pattern);
     this.#send({ type: 'unsubscribe', pattern });
+  }
+
+  /** True when this backend can no longer serve: disposed, or its boot failed. */
+  get isDefunct(): boolean {
+    return this.#disposed || this.#failed;
   }
 
   dispose(): void {
