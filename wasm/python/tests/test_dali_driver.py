@@ -223,3 +223,44 @@ async def test_a_frame_goes_out_whatever_the_pointer_was(stack, dali_logger):
             assert response.value is True, f"stalled with the pointer at {stale_pointer}"
     finally:
         await driver.deinitialize()
+
+
+async def test_a_batch_is_one_write_and_one_bulk_read(stack, dali_logger):
+    """The whole point of batching: Modbus overhead amortised across the queue.
+
+    Ten commands must not cost ten writes and ten polled reads — one rewind,
+    one fc16 carrying every frame, a poll on the last slot, one bulk read.
+    """
+
+    class CountingTransport:
+        def __init__(self, inner):
+            self.inner = inner
+            self.writes = []
+            self.reads = []
+
+        async def read_input(self, device_id, address, count):
+            self.reads.append((address, count))
+            return await self.inner.read_input(device_id, address, count)
+
+        async def write_holding(self, device_id, address, values):
+            self.writes.append((address, len(values)))
+            await self.inner.write_holding(device_id, address, values)
+
+    transport = CountingTransport(stack.network)
+    driver = stack.driver(bus=1, logger=dali_logger, transport=transport)
+    await driver.initialize()
+    try:
+        transport.writes.clear()
+        transport.reads.clear()
+        responses = await driver.send_commands(
+            [QueryControlGearPresent(GearShort(0)) for _ in range(10)]
+        )
+
+        assert all(response.value for response in responses)
+        # One pointer rewind (1 register) plus one batch write (20 registers).
+        assert transport.writes == [(1432, 1), (1400, 20)]
+        # Polls of the last slot's reply, then one 10-register bulk read.
+        assert transport.reads[-1] == (1500, 10)
+        assert all(read == (1509, 1) for read in transport.reads[:-1])
+    finally:
+        await driver.deinitialize()

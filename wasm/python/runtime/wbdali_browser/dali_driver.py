@@ -250,10 +250,10 @@ class BlockingDaliDriver:
             expanded.append(cmd)
 
         priorities = _compute_frame_priorities(expanded, priority)
-        answers = [
-            await self._transact(cmd, frame_priority, source)
-            for cmd, frame_priority in zip(expanded, priorities)
-        ]
+        answers: List[Response] = []
+        for start in range(0, len(expanded), QUEUE_SIZE):
+            chunk = list(zip(expanded, priorities))[start : start + QUEUE_SIZE]
+            answers.extend(await self._transact_batch(chunk, source))
 
         # Give back one response per command the caller asked for, dropping the
         # EnableDeviceType frames this method inserted.
@@ -269,42 +269,94 @@ class BlockingDaliDriver:
     async def _transact(
         self, cmd: Command, priority: FramePriority, source: BusTrafficSource
     ) -> Response:
-        response = await self._exchange(cmd, priority)
-        self.bus_traffic.notify_command(cmd.frame, response, source, self._sequence_id)
-        self._sequence_id += 1
-        return response
+        return (await self._transact_batch([(cmd, priority)], source))[0]
 
-    async def _exchange(self, cmd: Command, priority: FramePriority) -> Response:
+    async def _transact_batch(
+        self,
+        chunk: List[tuple],
+        source: BusTrafficSource,
+    ) -> List[Response]:
+        """Send up to a queue's worth of frames in one Modbus write.
+
+        The gateway consumes armed slots strictly in pointer order, so filling
+        slots 0..n-1 in a single fc16 after a rewind has it transmit the whole
+        batch back to back at DALI speed — and "the last reply register is
+        non-zero" then implies every earlier slot has been consumed too, so one
+        register is polled however long the batch. Measured on hardware this
+        takes an answered query from 55 ms to 48 ms; the floor, with the frames
+        back to back on the DALI wire, is 46.
+
+        The batch degrades exactly like a single frame used to: a transport
+        error or a timeout turns the outstanding commands into
+        NoResponseFromGateway, and the next batch's rewind resynchronises the
+        gateway whatever state this one left it in.
+        """
         device_id = self.config.device_name
         bus = self.config.bus
-        frame = cmd.frame
-        value = encode_frame(frame.as_integer, len(frame), cmd.sendtwice, priority.value)
+        registers: List[int] = []
+        for cmd, frame_priority in chunk:
+            frame = cmd.frame
+            registers.extend(
+                to_registers(
+                    encode_frame(
+                        frame.as_integer, len(frame), cmd.sendtwice, frame_priority.value
+                    )
+                )
+            )
 
         # A module that has reported overheating needs to be left alone for a
         # while; the daemon's poll and retry loops would otherwise hammer it.
         await self._overheat.wait_before_send()
 
+        last_slot = len(chunk) - 1
+        replies: List[Optional[int]] = [None] * len(chunk)
         try:
             # Rewind first: the gateway only ever transmits the slot its pointer
-            # is on, so this is what guarantees the frame goes out at all.
+            # is on, so this is what guarantees the frames go out at all.
             await self._reset_queue()
             await self._transport.write_holding(
-                device_id, queue_slot_address(bus, SEND_SLOT), to_registers(value)
+                device_id, queue_slot_address(bus, SEND_SLOT), registers
             )
-            reply = await self._poll_reply(device_id, bus, SEND_SLOT)
+            if await self._poll_reply(device_id, bus, last_slot, len(chunk)) is not None:
+                values = await self._transport.read_input(
+                    device_id, reply_address(bus, SEND_SLOT), len(chunk)
+                )
+                replies = list(values)
+            else:
+                self.logger.error(
+                    "No reply for a batch of %d ending with %s", len(chunk), chunk[-1][0]
+                )
+                # The last slot never answered, but earlier ones may have been
+                # consumed before the stall; report what actually happened.
+                values = await self._transport.read_input(
+                    device_id, reply_address(bus, SEND_SLOT), len(chunk)
+                )
+                replies = [value if value >> 8 != 0 else None for value in values]
         except Exception as error:  # pylint: disable=broad-exception-caught
             self.logger.error("DALI transaction failed: %s", error)
-            return NoResponseFromGateway()
 
-        if reply is None:
-            self.logger.error("No reply for %s", cmd)
-            return NoResponseFromGateway()
-        return self._to_response(cmd, *decode_reply(reply))
+        responses: List[Response] = []
+        for (cmd, _frame_priority), reply in zip(chunk, replies):
+            if reply is None:
+                response: Response = NoResponseFromGateway()
+            else:
+                response = self._to_response(cmd, *decode_reply(reply))
+            self.bus_traffic.notify_command(cmd.frame, response, source, self._sequence_id)
+            self._sequence_id += 1
+            responses.append(response)
+        return responses
 
-    async def _poll_reply(self, device_id: str, bus: int, slot: int) -> Optional[int]:
-        """Read the reply register until the gateway reports a transmission."""
+    async def _poll_reply(
+        self, device_id: str, bus: int, slot: int, frames: int = 1
+    ) -> Optional[int]:
+        """Read the reply register until the gateway reports a transmission.
+
+        The deadline scales with the batch: each frame ahead of the polled slot
+        needs its own bus time (46 ms answered, more for send-twice) before the
+        gateway can even reach it.
+        """
         address = reply_address(bus, slot)
-        deadline = asyncio.get_running_loop().time() + self.response_timeout
+        deadline = asyncio.get_running_loop().time() + self.response_timeout + 0.2 * (frames - 1)
         while True:
             value = (await self._transport.read_input(device_id, address, 1))[0]
             if value >> 8 != TransmissionStatus.NO_TRANSMISSION:

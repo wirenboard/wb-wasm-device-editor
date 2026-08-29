@@ -49,12 +49,12 @@ class SimulatedStack:
     async def stop(self):
         return None
 
-    def driver(self, bus: int = 1, logger=None) -> BlockingDaliDriver:
+    def driver(self, bus: int = 1, logger=None, transport=None) -> BlockingDaliDriver:
         from wb.mqtt_dali.wbdali import WBDALIConfig
 
         return BlockingDaliDriver(
             WBDALIConfig(device_name=GATEWAY_DEVICE_ID, bus=bus),
-            self.network,
+            transport if transport is not None else self.network,
             logger or logging.getLogger("test"),
         )
 
