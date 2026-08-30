@@ -63,11 +63,18 @@ test('boots the daemon, scans the simulated bus and shows live controls', async 
   // The syslog toggle is a controller affordance and must not be offered here.
   await expect(page.getByText('Save to syslog')).toHaveCount(0);
 
-  // The bus monitor docks into the console panel from the header button.
+  // The bus monitor docks into the console panel from the header button. With
+  // no bus monitored yet the panel explains itself instead of sitting empty,
+  // and offers to enable monitoring right there.
   const monitorButton = page.getByRole('button', { name: 'Bus Monitor' });
   await monitorButton.click();
   await expect(page.locator('.daliWasm .consolePanel, [class*="consolePanel"]').first())
     .toBeVisible({ timeout: 10_000 });
+  const emptyState = page.locator('.daliMonitorEmpty');
+  await expect(emptyState).toBeVisible({ timeout: 10_000 });
+  await emptyState.getByRole('button', { name: /Bus 1/ }).click();
+  // Enabling registers the bus's monitor tab and the placeholder yields to it.
+  await expect(emptyState).toHaveCount(0, { timeout: 30_000 });
 });
 
 test('opens a commissioned luminaire and shows its settings form', async ({ page }) => {

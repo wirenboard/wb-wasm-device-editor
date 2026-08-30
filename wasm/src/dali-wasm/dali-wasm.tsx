@@ -7,6 +7,7 @@ import { Alert } from '@/components/alert';
 import { ConsolePanel } from '@/components/console-panel';
 import { PageLayout } from '@/layouts/page';
 import DaliPage from '@/pages/settings/configs/dali';
+import { DaliMonitorEmptyState } from '@/pages/settings/configs/dali/components/bus-monitor';
 import { authStore, UserRole } from '@/stores/auth';
 import { consolePanelStore } from '@/stores/console-panel';
 import { BootProgress } from './components/boot-progress';
@@ -172,7 +173,7 @@ export const DaliWasm = observer(() => {
             <div className="daliWasm-page">
               <DaliPage />
             </div>
-            {consolePanelStore.isVisible && <ConsolePanel />}
+            {consolePanelStore.isVisible && <ConsolePanel emptyState={<DaliMonitorEmptyState />} />}
           </div>
         </MemoryRouter>
       )}
