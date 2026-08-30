@@ -27,7 +27,15 @@ review session (ephemeral — re-shoot if needed).
 |---|---|---|
 | 2 | Two identically-titled "Scenes" sections on bus/group pages (light-level `GroupScenesSettings` vs DT8 `ColourGroupScenesSettings`, both "Scenes"/«Сцены») — a data-loss trap; reproduces on real controllers too | One-line title rename in `dali_type8_parameters.py` (e.g. "Colour scenes"/«Цветовые сцены») |
 
-## The one substantial project: identity caching (#11 and the root of #15)
+## ~~The one substantial project: identity caching (#11 and the root of #15)~~ — DONE
+
+Shipped as `wasm/python/runtime/wbdali_browser/memory_cache.py`: memory-bank
+bytes AND settings-shaped answers (scenes, groups, levels, identity words)
+memoized per device, keyed by the random address the device answered with,
+verified by a three-frame QUERY RANDOM ADDRESS before a restored memo is
+trusted, invalidated by commissioning commands and (settings) by any config
+write. Persisted alongside the config via the watch_config 3-tuple. What
+remains of the idea below is only DALI-2 feature-absence caching.
 
 Device pages re-read everything over the bus on every visit (5–10 s spinner,
 unnarrated); boot init re-reads each device's immutable identity every session;

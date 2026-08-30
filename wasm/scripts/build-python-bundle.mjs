@@ -16,6 +16,7 @@
  * Run before vite (see the `prebuild` / `predev` scripts in package.json).
  */
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -79,11 +80,19 @@ async function fetchWheels() {
     if (!pkg) fail(`${name} is not in pyodide-lock.json (pyodide ${version})`);
     const dest = path.join(WHEELS, pkg.file_name);
     files.push(dest);
-    if (fs.existsSync(dest)) continue;
-    const response = await fetch(cdn + pkg.file_name);
-    if (!response.ok) fail(`${cdn}${pkg.file_name} -> HTTP ${response.status}`);
-    fs.writeFileSync(dest, Buffer.from(await response.arrayBuffer()));
-    console.log(`[python-bundle] fetched ${pkg.file_name}`);
+    if (!fs.existsSync(dest)) {
+      const response = await fetch(cdn + pkg.file_name);
+      if (!response.ok) fail(`${cdn}${pkg.file_name} -> HTTP ${response.status}`);
+      fs.writeFileSync(dest, Buffer.from(await response.arrayBuffer()));
+      console.log(`[python-bundle] fetched ${pkg.file_name}`);
+    }
+    // The lock file pins each wheel's sha256 and Pyodide's own loader checks
+    // it; bytes going into the shipped bundle deserve the same scrutiny —
+    // fresh from the CDN and cache hits alike.
+    const digest = createHash('sha256').update(fs.readFileSync(dest)).digest('hex');
+    if (pkg.sha256 && digest !== pkg.sha256) {
+      fail(`${pkg.file_name}: sha256 mismatch (expected ${pkg.sha256}, got ${digest}) — delete .python-cache/wheels and retry`);
+    }
   }
   return files;
 }

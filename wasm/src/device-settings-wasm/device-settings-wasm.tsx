@@ -13,7 +13,7 @@ import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { useAsyncAction } from '@/utils/async-action';
-import { findDaliGateways, rememberGateways } from '../dali-wasm/gateways';
+import { findDaliGateways, rememberGateways, SCAN_RESULTS_KEY } from '../dali-wasm/gateways';
 import { setLanguage as setI18nLanguage } from '../i18n/config';
 import { openDali } from '../navigation';
 import { formatBytes } from '../utils/format-bytes';
@@ -27,6 +27,14 @@ import { useModule } from './module';
 import type { Device } from './types';
 import './styles.css';
 
+const readScanResults = (): Device[] => {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(SCAN_RESULTS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+};
+
 export const DeviceSettingsWasm = observer(() => {
   const { t } = useTranslation();
   const [language, setLanguage] = useState(localStorage.getItem('language') || 'en');
@@ -35,28 +43,15 @@ export const DeviceSettingsWasm = observer(() => {
   // rescan as the only way to refill it — makes the round trip painful. Session
   // storage matches the lifetime of the result: a scan is a snapshot of what is
   // on the wire right now, not something to keep across days.
-  const [devices, setDevices] = useState<Device[]>(() => {
-    try {
-      return JSON.parse(window.sessionStorage.getItem('wb-scan-results') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [devices, setDevices] = useState<Device[]>(readScanResults);
   const [tabstore, setTabstore] = useState(null);
-  const [selectedDevice, setSelectedDevice] = useState(() => {
-    const restored = (() => {
-      try {
-        return JSON.parse(window.sessionStorage.getItem('wb-scan-results') || '[]');
-      } catch {
-        return [];
-      }
-    })();
-    return restored.at(0)?.cfg.slave_id ?? null;
-  });
+  const [selectedDevice, setSelectedDevice] = useState(
+    () => readScanResults().at(0)?.cfg.slave_id ?? null,
+  );
 
   useEffect(() => {
     try {
-      window.sessionStorage.setItem('wb-scan-results', JSON.stringify(devices));
+      window.sessionStorage.setItem(SCAN_RESULTS_KEY, JSON.stringify(devices));
     } catch {
       // Losing the cache only costs the next visitor a rescan.
     }
@@ -750,6 +745,10 @@ export const DeviceSettingsWasm = observer(() => {
         onStopBootScan={handleStopBootScan}
       />
       <main
+        // `pointer-events: none` alone leaves the dimmed workspace in the
+        // tab order — Enter on a focused Save could race the scan for the
+        // port. `inert` removes it from focus and activation entirely.
+        {...((isPortScanning || isBootScanning) ? ({ inert: '' } as any) : {})}
         className={classNames('deviceSettingsWasm-container', {
           'deviceSettingsWasm-container--scanning': isPortScanning || isBootScanning,
         })}

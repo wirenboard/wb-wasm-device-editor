@@ -10,6 +10,7 @@
  * come from and where replies go, which is what the host provides.
  */
 
+import { ASSET_URL } from './pyodide-assets';
 import { loadPyodide, type PyodideInterface } from 'pyodide';
 // Static, so vite bundles the glue instead of emitting a runtime import() that a
 // module worker cannot resolve.
@@ -132,7 +133,7 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
 
           // The daemon rewrites its config after a scan and on other edits; the
           // page stores each version so the installation survives a reload.
-          // Group membership rides along: it is not in the config, and it is
+          // Group membership and the memory memo ride along: it is not in the config, and it is
           // what lets the next session's page open with groups immediately.
           dali.watch_config((config: string, groups: string, memory: string) => {
             host.post({
@@ -182,6 +183,39 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
 }
 
 /** Decode one inlined asset from the offline bundle. */
+/**
+ * One asset, from the inline bundle or the network — the ONLY fetch path for
+ * runtime assets, shared by the worker and the main-thread backend so the
+ * interrupted-download guard cannot diverge between them again.
+ */
+export async function assetBytes(
+  name: string,
+  inline: Record<string, { b64: string; gzip: boolean }> | null,
+  baseURI: string,
+): Promise<Uint8Array> {
+  if (inline) {
+    const asset = inline[name];
+    if (!asset) {
+      throw new Error(`asset ${name} was not inlined`);
+    }
+    return decodeInlineAsset(asset);
+  }
+  const response = await fetch(new URL(ASSET_URL[name], baseURI));
+  if (!response.ok) {
+    throw new Error(`${name} -> HTTP ${response.status}`);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  // A connection dropped mid-download hands back a short body with a 200:
+  // Pyodide then fails to instantiate its wasm with a message about bytes
+  // "falling off the end" — and its loader hangs rather than rejecting.
+  // Catch it here, where a retry (the next boot) is the obvious fix.
+  const declared = Number(response.headers.get('content-length'));
+  if (declared && bytes.length !== declared) {
+    throw new Error(`${name}: download interrupted (${bytes.length} of ${declared} bytes)`);
+  }
+  return bytes;
+}
+
 export async function decodeInlineAsset(asset: { b64: string; gzip: boolean }): Promise<Uint8Array> {
   const raw = Uint8Array.from(atob(asset.b64), (c) => c.charCodeAt(0));
   if (!asset.gzip) {

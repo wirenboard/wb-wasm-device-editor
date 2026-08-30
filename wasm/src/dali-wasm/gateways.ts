@@ -22,6 +22,12 @@ export const DALI_DEVICE_TYPES = ['WB-DALI', 'WB-MDALI'];
 
 const STORAGE_KEY = 'wb-dali-gateways';
 
+/**
+ * Where the Modbus editor parks its scan snapshot (sessionStorage). Exported
+ * so the one writer and every reader share a single spelling.
+ */
+export const SCAN_RESULTS_KEY = 'wb-scan-results';
+
 export interface DaliGateway {
   /** The id the daemon knows the module by, in wb-mqtt-dali's own convention. */
   id: string;
@@ -115,7 +121,7 @@ export function loadRememberedGateways(): DaliGateway[] {
   // A gateway the scan just found is a gateway worth configuring — recover it
   // rather than sending the user back for a rescan.
   try {
-    const scanned = JSON.parse(window.sessionStorage.getItem('wb-scan-results') || '[]');
+    const scanned = JSON.parse(window.sessionStorage.getItem(SCAN_RESULTS_KEY) || '[]');
     if (Array.isArray(scanned)) {
       return findDaliGateways(
         scanned.filter((device) => (device?.cfg?.slave_id ?? null) !== null),

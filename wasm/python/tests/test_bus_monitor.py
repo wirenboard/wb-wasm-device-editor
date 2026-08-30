@@ -147,3 +147,25 @@ async def test_a_bus_of_plain_gear_polls_the_ring_lazily(dali_logger):
         assert driver._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
     finally:
         await driver.deinitialize()
+
+
+async def test_frames_from_before_the_session_are_not_replayed(dali_logger):
+    """A real module's ring still holds last session's frames at boot; the
+    controller suppresses that snapshot via retained-drop, and so must we."""
+    switch = SimulatedControlDevice(shortaddr=0, random_address=0x2B3C4D)
+    stack = SimulatedStack(devices=[switch])
+    stale = switch.press(0)
+    stack.gateway.record_bus_frame(1, len(stale), stale.as_integer)
+
+    driver = stack.driver(logger=dali_logger)
+    await driver.initialize()
+    driver.set_bus_monitor_enabled(True)
+    try:
+        assert await collect_bus_frames(driver, MONITOR_POLL_INTERVAL_S * 4) == []
+
+        fresh = switch.press(0)
+        stack.gateway.record_bus_frame(1, len(fresh), fresh.as_integer)
+        frames = await collect_bus_frames(driver, MONITOR_POLL_INTERVAL_S * 4)
+        assert [item.request.as_integer for item in frames] == [fresh.as_integer]
+    finally:
+        await driver.deinitialize()

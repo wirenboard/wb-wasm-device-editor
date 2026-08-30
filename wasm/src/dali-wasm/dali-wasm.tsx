@@ -7,7 +7,10 @@ import { Alert } from '@/components/alert';
 import { ConsolePanel } from '@/components/console-panel';
 import { PageLayout } from '@/layouts/page';
 import DaliPage from '@/pages/settings/configs/dali';
-import { DaliMonitorEmptyState } from '@/pages/settings/configs/dali/components/bus-monitor';
+// Imported from the concrete module, not the bus-monitor barrel: the barrel
+// is imported by daliGlobalStore, and the empty state imports that store —
+// routing through the barrel would close an import cycle.
+import { DaliMonitorEmptyState } from '@/pages/settings/configs/dali/components/bus-monitor/monitor-empty-state';
 import { authStore, UserRole } from '@/stores/auth';
 import { consolePanelStore } from '@/stores/console-panel';
 import { BootProgress } from './components/boot-progress';

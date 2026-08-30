@@ -1,4 +1,4 @@
-"""A blocking DALI driver: send one frame, poll for its answer.
+"""A blocking DALI driver: write a batch of frames, poll for the last answer.
 
 This replaces `wb.mqtt_dali.wbdali.WBDALIDriver`, whose job is to be fast on a
 controller. There it batches up to sixteen frames into the gateway's send queue,
@@ -6,8 +6,9 @@ lets wb-mqtt-serial stream the results back as sporadic Modbus events, and
 reassembles them by matching MQTT reply topics to queued futures. In a browser
 none of that machinery buys anything: there is one WebSerial link, one request
 in flight at a time, and no event channel to subscribe to. What is left when you
-take it away is the protocol itself — write a frame into a queue slot, read the
-matching reply register — and that is all this does.
+take it away is the protocol itself — rewind, write up to a queue's worth of
+frames into slots 0..n-1 in one register write, poll the last armed slot's
+reply, then read every reply register — and that is all this does.
 
 The interface is the one the daemon uses (`initialize`, `deinitialize`, `send`,
 `send_commands`, `run_sequence`, `bus_traffic`), so `ApplicationController`,
@@ -22,7 +23,7 @@ Nothing else clears it — not a pointer reset, and not the passage of time — 
 slot that was never written keeps a stale status indefinitely, and the driver
 must not read a reply it did not just arm by writing that slot.
 
-Every frame goes into slot 0, after rewinding the gateway's consume pointer to
+Every batch starts at slot 0, after rewinding the gateway's consume pointer to
 it. The gateway transmits armed slots strictly in index order and stops at the
 pointer: measured on hardware, arming slot 5 while the pointer sits at 0 leaves
 the frame there indefinitely, and it only goes out once slots 0..4 have been
@@ -37,8 +38,8 @@ Rewinding before each frame is self-synchronising instead — the invariant is
 re-established rather than assumed, so no earlier failure can persist. It is
 safe because the firmware clears a slot as it consumes it, so a rewind cannot
 re-send anything: rewinding onto an already-consumed slot transmits nothing and
-leaves the reply register untouched. The cost is a third Modbus transaction per
-frame, about a millisecond against a DALI frame's thirty-five.
+leaves the reply register untouched. The cost is one extra Modbus transaction
+per batch, about a millisecond against a DALI frame's thirty-five.
 """
 
 from __future__ import annotations
@@ -88,7 +89,7 @@ from .registers import (
 RESPONSE_TIMEOUT_S = 1.0
 POLL_INTERVAL_S = 0.005
 
-# The queue slot every frame is written to, after rewinding the pointer onto it.
+# The slot a batch starts at, after rewinding the pointer onto it.
 SEND_SLOT = 0
 
 # How often to read the bus monitor ring.
@@ -163,6 +164,7 @@ class BlockingDaliDriver:
         self._lock = asyncio.Lock()
         self._sequence_id = 0
         self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_seen: List[Optional[int]] = [None] * MONITOR_RING_SIZE
         self._closed = False
         self._monitor_on = False
         # Assume event sources exist until the runtime says otherwise: the
@@ -174,6 +176,28 @@ class BlockingDaliDriver:
 
     async def initialize(self) -> None:
         await self._reset_queue()
+        # Baseline the monitor ring before polling starts: a real module still
+        # holds the last frames from before this session in its ring
+        # registers, and on a controller that startup snapshot arrives as
+        # retained MQTT the handler drops. Without the same suppression here,
+        # up to four stale frames — sensor events included — replay as fresh
+        # traffic at every boot.
+        try:
+            async with self._lock:
+                registers = await self._transport.read_input(
+                    self.config.device_name,
+                    monitor_address(self.config.bus, 0),
+                    MONITOR_RING_SIZE * MONITOR_REGISTERS_PER_SLOT,
+                )
+            self._monitor_seen = [
+                from_monitor_registers(
+                    registers[slot * MONITOR_REGISTERS_PER_SLOT : (slot + 1) * MONITOR_REGISTERS_PER_SLOT]
+                ) or None
+                for slot in range(MONITOR_RING_SIZE)
+            ]
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            self.logger.warning("Baselining the bus monitor failed: %s", error)
+            self._monitor_seen = [None] * MONITOR_RING_SIZE
         self._start_bus_monitor()
 
     async def deinitialize(self) -> None:
@@ -233,7 +257,9 @@ class BlockingDaliDriver:
         handler = BusMonitorFrameHandler(self.bus_traffic, self.logger, self.dev_inst_map)
         # A slot keeps its value until the ring wraps onto it again, so the
         # previous read is what tells a new frame from one already reported.
-        seen: List[Optional[int]] = [None] * MONITOR_RING_SIZE
+        # Seeded by initialize()'s baseline read so pre-session frames are
+        # never replayed as fresh.
+        seen: List[Optional[int]] = self._monitor_seen
         base = monitor_address(self.config.bus, 0)
         count = MONITOR_RING_SIZE * MONITOR_REGISTERS_PER_SLOT
 
@@ -379,15 +405,12 @@ class BlockingDaliDriver:
         replies = await self._send_wire(
             memory.random_queries(*key), [FramePriority.CONFIGURATION] * 3, source
         )
-        values = [getattr(reply, "raw_value", None) for reply in replies]
+        # MemoryCache.raw_of, not a bare getattr: a gateway error response
+        # raises from its raw_value property.
+        values = [memory.raw_of(reply) for reply in replies]
         if not all(value is not None and not value.error for value in values):
             return None
         return (values[0].as_integer << 16) | (values[1].as_integer << 8) | values[2].as_integer
-
-    async def _transact(
-        self, cmd: Command, priority: FramePriority, source: BusTrafficSource
-    ) -> Response:
-        return (await self._transact_batch([(cmd, priority)], source))[0]
 
     async def _transact_batch(
         self,

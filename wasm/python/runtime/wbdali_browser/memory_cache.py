@@ -136,6 +136,70 @@ class MemoryCache:
                     continue
 
     # -- classification ---------------------------------------------------
+    #
+    # One classification, three consumers. `observe`, `plan` and
+    # `apply_served` each walk the same command stream at different moments
+    # (learning, serving, bookkeeping); when every walker re-derived what a
+    # command *is*, a kind added to one and forgotten in another silently
+    # desynchronised the DTR shadow. `classify` is now the single place that
+    # decision lives — the walkers only differ in what they DO with it.
+
+    TAG_DTR0 = "dtr0"
+    TAG_DTR1 = "dtr1"
+    TAG_RECOMMISSION = "recommission"
+    TAG_CONFIG_WRITE = "config-write"
+    TAG_SETTINGS_QUERY = "settings-query"
+    TAG_BANK_READ = "bank-read"
+    TAG_OTHER = "other"
+
+    @classmethod
+    def classify(cls, cmd) -> Tuple[str, Any]:
+        """What this command is to the memo: a (tag, payload) pair.
+
+        The payload is the DTR kind for register writes, the (kind, short)
+        key for reads, the recommissioned kind for commissioning commands,
+        and None otherwise.
+        """
+        kind = _DTR0.get(type(cmd))
+        if kind is not None:
+            return cls.TAG_DTR0, kind
+        kind = _DTR1.get(type(cmd))
+        if kind is not None:
+            return cls.TAG_DTR1, kind
+        kind = _INVALIDATING.get(type(cmd))
+        if kind is not None:
+            return cls.TAG_RECOMMISSION, kind
+        # Config writes are send-twice commands (IEC 62386-102 §9.10.2);
+        # whatever they configured, remembered settings for their target are
+        # no longer trustworthy.
+        if getattr(cmd, "sendtwice", False):
+            return cls.TAG_CONFIG_WRITE, None
+        key = cls.settings_key(cmd)
+        if key is not None:
+            return cls.TAG_SETTINGS_QUERY, key
+        key = cls.kind_and_short(cmd)
+        if key is not None:
+            return cls.TAG_BANK_READ, key
+        return cls.TAG_OTHER, None
+
+    @staticmethod
+    def raw_of(response) -> Optional[Any]:
+        """The backward frame of a response, or None.
+
+        The gateway's own error responses (NoResponseFromGateway, NoPowerOnBus,
+        Overheat...) implement `raw_value` as a property that RAISES — a plain
+        getattr lets that RuntimeError escape mid-observe and turns a transient
+        bus fault into an aborted batch.
+        """
+        try:
+            return getattr(response, "raw_value", None)
+        except RuntimeError:
+            return None
+
+    def _entry(self, key: Tuple[str, int]) -> Dict[str, Any]:
+        return self._entries.setdefault(
+            key, {"random": None, "banks": {}, "settings": {}, "trusted": True}
+        )
 
     @staticmethod
     def kind_and_short(cmd) -> Optional[Tuple[str, int]]:
@@ -214,58 +278,40 @@ class MemoryCache:
         location is not implemented) and is remembered as such, while a frame
         the gateway never sent tells us nothing.
         """
-        kind = _DTR0.get(type(cmd))
-        if kind is not None:
-            self._dtr[kind][0] = cmd.param
-            return
-        kind = _DTR1.get(type(cmd))
-        if kind is not None:
-            self._dtr[kind][1] = cmd.param
-            return
-        kind = _INVALIDATING.get(type(cmd))
-        if kind is not None:
-            self.invalidate(kind)
-            return
-        # Config writes are send-twice commands; whatever they configured, the
-        # remembered settings for their target are no longer trustworthy.
-        if getattr(cmd, "sendtwice", False):
+        tag, info = self.classify(cmd)
+        if tag == self.TAG_DTR0:
+            self._dtr[info][0] = cmd.param
+        elif tag == self.TAG_DTR1:
+            self._dtr[info][1] = cmd.param
+        elif tag == self.TAG_RECOMMISSION:
+            self.invalidate(info)
+        elif tag == self.TAG_CONFIG_WRITE:
             self._forget_settings(cmd)
-            return
-        settings_key = self.settings_key(cmd)
-        if settings_key is not None:
-            raw = getattr(response, "raw_value", None)
+        elif tag == self.TAG_SETTINGS_QUERY:
+            raw = self.raw_of(response)
             # Unlike a memory location, every query on the settings list is one
             # a live device answers — a missing answer is a transient (a bus
             # glitch, a collision), not a fact worth remembering, let alone
             # serving forever.
             if delivered and raw is not None and not raw.error:
-                dtr0, dtr1 = self._dtr[settings_key[0]]
-                entry = self._entries.setdefault(
-                    settings_key, {"random": None, "banks": {}, "settings": {}, "trusted": True}
-                )
+                dtr0, dtr1 = self._dtr[info[0]]
+                entry = self._entry(info)
                 entry["trusted"] = True
-                entry.setdefault("settings", {})[self._sig(cmd, dtr0, dtr1)] = (
-                    raw.as_integer if raw is not None else None
-                )
-            return
-        key = self.kind_and_short(cmd)
-        if key is None:
-            return
-        kind = key[0]
-        dtr0, dtr1 = self._dtr[kind]
-        raw = getattr(response, "raw_value", None)
-        if dtr0 is not None and dtr1 is not None and delivered and (raw is None or not raw.error):
-            entry = self._entries.setdefault(
-                key, {"random": None, "banks": {}, "settings": {}, "trusted": True}
-            )
-            entry["trusted"] = True
-            entry["banks"].setdefault(dtr1, {})[dtr0] = raw.as_integer if raw is not None else None
-        # The device increments DTR0 after every READ MEMORY LOCATION it
-        # executes, answered or not — but a frame the gateway never
-        # transmitted was never executed, and advancing the shadow for it
-        # would attribute every later byte in the batch to the wrong offset.
-        if dtr0 is not None and delivered:
-            self._dtr[kind][0] = dtr0 + 1
+                entry["settings"][self._sig(cmd, dtr0, dtr1)] = raw.as_integer
+        elif tag == self.TAG_BANK_READ:
+            kind = info[0]
+            dtr0, dtr1 = self._dtr[kind]
+            raw = self.raw_of(response)
+            if dtr0 is not None and dtr1 is not None and delivered and (raw is None or not raw.error):
+                entry = self._entry(info)
+                entry["trusted"] = True
+                entry["banks"].setdefault(dtr1, {})[dtr0] = raw.as_integer if raw is not None else None
+            # The device increments DTR0 after every READ MEMORY LOCATION it
+            # executes, answered or not — but a frame the gateway never
+            # transmitted was never executed, and advancing the shadow for it
+            # would attribute every later byte in the batch to the wrong offset.
+            if dtr0 is not None and delivered:
+                self._dtr[kind][0] = dtr0 + 1
 
     def invalidate(self, kind: str) -> None:
         for key in [key for key in self._entries if key[0] == kind]:
@@ -277,8 +323,8 @@ class MemoryCache:
         """Restored entries this batch would touch that still await verification."""
         keys = []
         for cmd in commands:
-            key = self.kind_and_short(cmd) or self.settings_key(cmd)
-            if key is None:
+            tag, key = self.classify(cmd)
+            if tag not in (self.TAG_BANK_READ, self.TAG_SETTINGS_QUERY):
                 continue
             entry = self._entries.get(key)
             if entry is not None and not entry["trusted"] and key not in keys:
@@ -324,60 +370,48 @@ class MemoryCache:
         dtr = {kind: list(values) for kind, values in self._dtr.items()}
         answers: Dict[int, int] = {}
         for index, cmd in enumerate(commands):
-            kind = _DTR0.get(type(cmd))
-            if kind is not None:
-                dtr[kind][0] = cmd.param
-                continue
-            kind = _DTR1.get(type(cmd))
-            if kind is not None:
-                dtr[kind][1] = cmd.param
-                continue
-            if type(cmd) in _INVALIDATING:
+            tag, info = self.classify(cmd)
+            if tag == self.TAG_DTR0:
+                dtr[info][0] = cmd.param
+            elif tag == self.TAG_DTR1:
+                dtr[info][1] = cmd.param
+            elif tag in (self.TAG_RECOMMISSION, self.TAG_CONFIG_WRITE):
+                # Commissioning or a config write invalidates what this plan
+                # would serve — send everything, let `observe` do the
+                # forgetting.
                 return None
-            # A config write in the batch invalidates what this plan would
-            # serve — send everything, let `observe` do the forgetting.
-            if getattr(cmd, "sendtwice", False):
-                return None
-            settings_key = self.settings_key(cmd)
-            if settings_key is not None:
-                entry = self._entries.get(settings_key)
+            elif tag == self.TAG_SETTINGS_QUERY:
+                entry = self._entries.get(info)
                 if entry is None or not entry["trusted"]:
                     return None
-                dtr0, dtr1 = dtr[settings_key[0]]
+                dtr0, dtr1 = dtr[info[0]]
                 sig = self._sig(cmd, dtr0, dtr1)
                 if sig not in entry.get("settings", {}):
                     return None
                 answers[index] = entry["settings"][sig]
-                continue
-            key = self.kind_and_short(cmd)
-            if key is None:
-                continue
-            entry = self._entries.get(key)
-            dtr0, dtr1 = dtr[key[0]]
-            if entry is None or not entry["trusted"] or dtr0 is None or dtr1 is None:
-                return None
-            bank = entry["banks"].get(dtr1, {})
-            if dtr0 not in bank:
-                return None
-            answers[index] = bank[dtr0]
-            dtr[key[0]][0] = dtr0 + 1
+            elif tag == self.TAG_BANK_READ:
+                entry = self._entries.get(info)
+                dtr0, dtr1 = dtr[info[0]]
+                if entry is None or not entry["trusted"] or dtr0 is None or dtr1 is None:
+                    return None
+                bank = entry["banks"].get(dtr1, {})
+                if dtr0 not in bank:
+                    return None
+                answers[index] = bank[dtr0]
+                dtr[info[0]][0] = dtr0 + 1
         return answers if answers else None
 
     def apply_served(self, commands) -> None:
         """Advance the shadow registers as if the batch had run — the DTR
         writes did run on the wire, the reads were answered from the memo."""
         for cmd in commands:
-            kind = _DTR0.get(type(cmd))
-            if kind is not None:
-                self._dtr[kind][0] = cmd.param
-                continue
-            kind = _DTR1.get(type(cmd))
-            if kind is not None:
-                self._dtr[kind][1] = cmd.param
-                continue
-            key = self.kind_and_short(cmd)
-            if key is not None and self._dtr[key[0]][0] is not None:
-                self._dtr[key[0]][0] += 1
+            tag, info = self.classify(cmd)
+            if tag == self.TAG_DTR0:
+                self._dtr[info][0] = cmd.param
+            elif tag == self.TAG_DTR1:
+                self._dtr[info][1] = cmd.param
+            elif tag == self.TAG_BANK_READ and self._dtr[info[0]][0] is not None:
+                self._dtr[info[0]][0] += 1
 
     # -- persistence ------------------------------------------------------
 

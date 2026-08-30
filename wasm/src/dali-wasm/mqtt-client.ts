@@ -35,6 +35,14 @@ class BrowserMqttClient {
   #connected = false;
   #clientId = `wb-dali-editor-${Math.random().toString(36).slice(2, 10)}`;
 
+  // Which patterns this client has already registered on which backend. The
+  // live backend survives view switches, so `attach` runs again on every
+  // return to the DALI view — re-subscribing a pattern the backend already
+  // has would stack a second delivery closure and every message would start
+  // arriving twice (then three times, and so on).
+  #registeredOn: DaliBackend | null = null;
+  #registered = new Set<string>();
+
   /**
    * Point the client at a running DALI runtime.
    *
@@ -46,7 +54,7 @@ class BrowserMqttClient {
     this.#backend = backend;
     this.#clientId = backend.clientId;
     for (const [pattern] of this.#callbacks) {
-      backend.subscribe(pattern, (topic, payload, retained) => this.#deliver(pattern, topic, payload, retained));
+      this.#register(pattern);
     }
     backend.ready.then(
       () => {
@@ -93,8 +101,24 @@ class BrowserMqttClient {
       return;
     }
     this.#callbacks.set(topic, [callback]);
-    this.#backend?.subscribe(topic, (messageTopic, payload, retained) =>
-      this.#deliver(topic, messageTopic, payload, retained));
+    this.#register(topic);
+  }
+
+  /** Register a pattern on the backend exactly once per backend. */
+  #register(pattern: string): void {
+    const backend = this.#backend;
+    if (!backend) {
+      return;
+    }
+    if (this.#registeredOn !== backend) {
+      this.#registeredOn = backend;
+      this.#registered.clear();
+    }
+    if (this.#registered.has(pattern)) {
+      return;
+    }
+    this.#registered.add(pattern);
+    backend.subscribe(pattern, (topic, payload, retained) => this.#deliver(pattern, topic, payload, retained));
   }
 
   /**
@@ -110,6 +134,7 @@ class BrowserMqttClient {
   /** Drops every callback for the topic, as homeui's does. */
   unsubscribe(topic: string): void {
     this.#callbacks.delete(topic);
+    this.#registered.delete(topic);
     this.#backend?.unsubscribe(topic);
   }
 
@@ -155,5 +180,8 @@ class BrowserMqttClient {
     }
   }
 }
+
+// Exported for tests; the app uses the singleton below, matching homeui's.
+export { BrowserMqttClient };
 
 export const mqttClient = new BrowserMqttClient();

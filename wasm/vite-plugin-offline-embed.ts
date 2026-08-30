@@ -177,6 +177,11 @@ async function buildFirmwareBundle(): Promise<FirmwareEmbed> {
     fs.mkdirSync(FIRMWARE_CACHE_DIR, { recursive: true });
     fs.writeFileSync(sigsCachePath, JSON.stringify(bootloaderSigs));
   } catch (error) {
+    // Only fall back when a cached listing exists — a missing cache would
+    // otherwise surface as ENOENT and bury the actual network failure.
+    if (!fs.existsSync(sigsCachePath)) {
+      throw error;
+    }
     bootloaderSigs = JSON.parse(fs.readFileSync(sigsCachePath, 'utf8'));
     console.log(`[offline-embed] firmware: bucket listing unreachable, using cached list of ${bootloaderSigs.length} signatures`);
   }

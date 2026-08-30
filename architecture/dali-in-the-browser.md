@@ -96,11 +96,16 @@ transport that has one link and one request in flight at a time.
 `BlockingDaliDriver` is what is left when that is taken away:
 
 ```
-rewind the gateway's consume pointer to slot 0   (function 6, holding 1432)
-write the encoded frame into queue slot 0        (function 16, holding 1400)
-poll reply register 0 until it reports a transmission   (function 4, input 1500)
-turn status + backward frame into a python-dali Response
+rewind the gateway's consume pointer to slot 0     (function 6, holding 1432)
+write the batch into queue slots 0..n-1, one fc16  (function 16, holding 1400)
+poll the LAST armed slot's reply register          (function 4, input 1500+n-1)
+read all n reply registers, turn each status + backward frame into a Response
 ```
+
+Up to a queue's worth (sixteen) of frames go out per write. The gateway
+consumes armed slots strictly in index order, so "the last slot's reply is
+non-zero" implies every earlier slot has been consumed too — one polled
+register however long the batch. A single frame is just the n=1 case.
 
 `ApplicationController` constructs its own driver, so the adaptation is to
 substitute the name it constructs:
@@ -163,10 +168,17 @@ overwrites the oldest. That is not silent: the handler tracks the frame counter
 and reports the gap. The interval is 100 ms, which is about four frames' worth
 of DALI at 1200 baud.
 
-Reading it competes with DALI traffic for the one serial link, so it is off
-unless asked for — wired to the `bus_monitor_enabled` flag the bus tab already
-exposes, which on a controller only decides whether the daemon republishes what
-wb-mqtt-serial pushes at it.
+Reading it competes with DALI traffic for the one serial link — but it can
+never stop entirely: a DALI-2 sensor reports occupancy and light level as
+event frames, and the ring is the only way they reach the daemon (an earlier
+version stopped polling with the monitor off, and illuminance froze at its
+boot value). So the poll always runs, at three paces: 100 ms with the
+operator's monitor open, 250 ms idle on a bus with DALI-2 control devices,
+and a lazy 1 s on a bus of plain gear, where nothing speaks unprompted. The
+`bus_monitor_enabled` flag only picks the pace. At initialize the ring is
+read once WITHOUT dispatching — a real module still holds last session's
+frames, and on a controller that startup snapshot arrives retained and is
+dropped; the baseline read is the same suppression here.
 
 The simulated installation the test suite runs against includes a wall switch
 that presses itself every few seconds, because otherwise there is no traffic
@@ -186,10 +198,13 @@ class RegisterTransport(Protocol):
 | `hardware.WasmSerialTransport` | The C++ WASM module's `port/Load` RPC over WebSerial — what the page runs on |
 | `sim.network.SimulatedModbusNetwork` | Virtual WB-DALI modules over simulated DALI buses — what the test suite runs on |
 
-The simulated network started life as a user-facing mode, from before there was
-hardware to develop against; the page now boots exclusively against real
-gateways, and the simulator remains as the rig the whole stack is tested on.
-The daemon cannot tell the two apart.
+The simulated network started life as a user-facing mode, from before there
+was hardware to develop against; a real page now normally boots against real
+gateways, with one deliberate escape hatch: a scenario whose gateways all sit
+at the reserved slave id 250 (`SIM_SLAVE_ID` in `browser.py`) is served by the
+in-memory module instead — that is how the e2e suite boots the entire page,
+Pyodide and daemon included, in seconds and with no hardware. The daemon
+cannot tell the two apart.
 
 `port/Load` answers in a JSON-RPC envelope — `{error, result}` — with the register
 payload one level down under `result.response`. Reading it at the top level is
@@ -325,7 +340,7 @@ sequenceDiagram
 | Gate the page on a found gateway | The configurator means nothing without a WB-DALI to configure; without one remembered from a Modbus scan the page says so and points back. |
 | Seed groups from the previous session at boot | The page reads its device tree once, at mount, and only a commissioning run rebuilds it — but group membership lives on the gear, read during device init, tens of seconds after boot. The persisted snapshot makes the first tree correct immediately; init still reads the truth off the bus behind it. Only a device with no seed is worth holding boot for. |
 | DALI runtime out of the service worker's eager precache | 13 MB in the bucket whose install must succeed would make every visit to the Modbus editor pay for it, and one failed request would lose offline support for the editor too. |
-| Bus monitor polled, and only on request | Four slots deep, so a burst outruns it — but the gap is reported, not silent. Reading it competes with DALI traffic for the one link. |
+| Bus monitor polled always, paced by need | The ring is the daemon's only source of DALI-2 sensor events, so polling never stops; the monitor toggle and the bus's population only pick the pace (100 ms / 250 ms / 1 s). Four slots deep, so a burst outruns it — but the gap is reported, not silent. |
 | The runtime outlives the DALI view | The daemon's knowledge of the bus — memory banks, probed features, a first device-page open worth 400+ frames — lives in its memory. Killing the worker on navigation re-paid all of it every visit (measured: 163 frames to re-init a lamp, 426 for its first page). Kept alive, reopening the view and revisiting pages is instant; the worker is replaced only when a rescan changes the gateways, and dies with the tab. Its polling shares the port with the editor transaction by transaction. |
 | Drop a saved installation only after two failed boots | Most boot failures are transient (a busy port, an interrupted fetch), and the config carries operator-given names; but one that fails every boot would lock the page shut with no way out from inside it. |
 | Replace homeui's gateway tab | Its only content is the Lunatone DALI-2 IoT Gateway emulator — a WebSocket *server*, which a browser page cannot be — and homeui lands on it. The substitute shows the module's address and line settings instead. |

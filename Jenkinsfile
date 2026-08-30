@@ -113,6 +113,29 @@ pipeline {
             }
         }
 
+        stage('Frontend unit tests') {
+            when {
+                beforeAgent true
+                expression { env.SKIP_AUTO_RELEASE_BUILD != 'true' }
+            }
+            agent {
+                docker {
+                    image 'node:latest'
+                    args '--entrypoint="" -u root:root'
+                    reuseNode true
+                }
+            }
+            steps {
+                // vitest runs on homeui's toolchain (installed by the
+                // configurator build); it covers the dali-wasm TS layer —
+                // gateways persistence, the featured-strip heuristics, the
+                // mqtt client's queue and re-attach semantics.
+                dir(path: 'wasm') {
+                    sh 'npm test'
+                }
+            }
+        }
+
         stage('Build offline single-file') {
             when {
                 beforeAgent true

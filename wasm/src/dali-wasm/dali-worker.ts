@@ -9,7 +9,7 @@
 
 /// <reference lib="webworker" />
 
-import { createDaliRuntime, decodeInlineAsset, type DaliRuntimeHandle } from './dali-runtime';
+import { assetBytes as sharedAssetBytes, createDaliRuntime, decodeInlineAsset, type DaliRuntimeHandle } from './dali-runtime';
 import { ASSET_URL } from './pyodide-assets';
 
 type InlineAsset = { b64: string; gzip: boolean };
@@ -34,19 +34,8 @@ function portLoad(request: string): Promise<string> {
   });
 }
 
-async function assetBytes(name: string): Promise<Uint8Array> {
-  if (inlineAssets) {
-    const asset = inlineAssets[name];
-    if (!asset) {
-      throw new Error(`asset ${name} was not inlined`);
-    }
-    return decodeInlineAsset(asset);
-  }
-  const response = await fetch(new URL(ASSET_URL[name], baseURI));
-  if (!response.ok) {
-    throw new Error(`${name} -> HTTP ${response.status}`);
-  }
-  return new Uint8Array(await response.arrayBuffer());
+function assetBytes(name: string): Promise<Uint8Array> {
+  return sharedAssetBytes(name, inlineAssets, baseURI);
 }
 
 self.onmessage = async (event: MessageEvent) => {

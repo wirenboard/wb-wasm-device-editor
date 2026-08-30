@@ -13,33 +13,12 @@
  */
 
 import type { DaliBackend, MessageHandler } from './backend';
-import { createDaliRuntime, decodeInlineAsset, type DaliRuntimeHandle } from './dali-runtime';
+import { assetBytes, createDaliRuntime, type DaliRuntimeHandle } from './dali-runtime';
 import { readInlineAssets, type InlineAsset } from './inline-assets';
 import { clearInstallation, loadInstallation, saveInstallation } from './persistence';
 import { ASSET_URL } from './pyodide-assets';
+import { registerBootFailure, writeBootFailureFlag } from './boot-failure';
 import { startWorker, type WorkerHost } from './worker-host';
-
-const BOOT_FAILURE_KEY = 'wb-dali-boot-failed';
-
-function readBootFailureFlag(): boolean {
-  try {
-    return window.sessionStorage.getItem(BOOT_FAILURE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeBootFailureFlag(failed: boolean): void {
-  try {
-    if (failed) {
-      window.sessionStorage.setItem(BOOT_FAILURE_KEY, '1');
-    } else {
-      window.sessionStorage.removeItem(BOOT_FAILURE_KEY);
-    }
-  } catch {
-    // Session storage being unavailable only costs the two-strike memory.
-  }
-}
 
 export interface PyodideBackendOptions {
   /** The gateways the daemon talks to — what the Modbus scan found. */
@@ -137,7 +116,7 @@ export class PyodideDaliBackend implements DaliBackend {
 
     createDaliRuntime({
       post: (message) => this.#onMessage(message),
-      assetBytes: (name) => this.#assetBytes(name, inline),
+      assetBytes: (name) => assetBytes(name, inline, document.baseURI),
       isOffline: () => inline !== null,
       portLoad,
     })
@@ -161,30 +140,6 @@ export class PyodideDaliBackend implements DaliBackend {
       .catch((error) => this.#fail(error));
   }
 
-  async #assetBytes(name: string, inline: Record<string, InlineAsset> | null): Promise<Uint8Array> {
-    if (inline) {
-      const asset = inline[name];
-      if (!asset) {
-        throw new Error(`asset ${name} was not inlined`);
-      }
-      return decodeInlineAsset(asset);
-    }
-    const response = await fetch(new URL(ASSET_URL[name], document.baseURI));
-    if (!response.ok) {
-      throw new Error(`${name} -> HTTP ${response.status}`);
-    }
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    // A connection dropped mid-download hands back a short body with a 200:
-    // Pyodide then fails to instantiate its wasm with a message about bytes
-    // "falling off the end" — and its loader hangs rather than rejecting.
-    // Catch it here, where a retry (the next boot) is the obvious fix.
-    const declared = Number(response.headers.get('content-length'));
-    if (declared && bytes.length !== declared) {
-      throw new Error(`${name}: download interrupted (${bytes.length} of ${declared} bytes)`);
-    }
-    return bytes;
-  }
-
   #fail(error: unknown): void {
     if (this.#disposed) {
       return;
@@ -197,10 +152,12 @@ export class PyodideDaliBackend implements DaliBackend {
       // config carries state worth keeping, like the names the operator gave
       // devices. So the installation is only dropped when it fails twice in a
       // row, not on the first stumble.
-      if (readBootFailureFlag()) {
+      if (registerBootFailure()) {
         clearInstallation();
+        // Silent loss of a commissioned installation reads as corruption;
+        // the boot pane is the one place the operator is already looking.
+        this.#onLog?.('The saved installation was discarded after two failed boots.');
       }
-      writeBootFailureFlag(true);
       this.#rejectReady(error instanceof Error ? error : new Error(String(error)));
       return;
     }

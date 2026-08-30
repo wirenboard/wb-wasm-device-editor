@@ -469,7 +469,7 @@ class DaliRuntime:
         logger.warning("Automatic scan of %s did not finish in time", bus_id)
 
     def watch_config(self, callback: Callable[[str, str, str], None]) -> None:
-        """Report the daemon's config, and the group snapshot, when either changes.
+        """Report the config, the group snapshot and the memory memo when any changes.
 
         The browser's filesystem does not survive a reload, so the page has to
         keep the config itself. Rather than polling, this watches the events
@@ -480,7 +480,9 @@ class DaliRuntime:
         SetGateway and ResetDevice, and when a scan completes; the group
         snapshot changes when initialization reads membership off the bus,
         which touches no file and answers no RPC — that is what the device
-        topics are subscribed for.
+        topics are subscribed for. The third payload is the memory memo
+        (`snapshot_memory()`): identity bytes and settings answers the next
+        session can serve without the bus.
         """
         def snapshot() -> tuple:
             return (

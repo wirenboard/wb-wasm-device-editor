@@ -84,12 +84,6 @@ class SimulatedModbusNetwork:
 
     # -- RegisterTransport ------------------------------------------------
 
-    async def read_holding(self, device_id: str, address: int, count: int) -> List[int]:
-        gateway = self._require(device_id)
-        async with self._lock_for(device_id):
-            await self._charge_bus_time(1)
-            return gateway.read_holding(address, count)
-
     async def read_input(self, device_id: str, address: int, count: int) -> List[int]:
         gateway = self._require(device_id)
         async with self._lock_for(device_id):

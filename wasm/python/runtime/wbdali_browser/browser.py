@@ -183,7 +183,7 @@ def _restore_memory(memory_json: Optional[str]) -> Optional[dict]:
 def watch_config(callback: Callable[[str, str, str], None]) -> None:
     """Report the daemon's config whenever it changes, so the page can keep it.
 
-    The callback also receives the group-membership snapshot as JSON: groups are
+    The callback also receives the group-membership snapshot and the memory memo as JSON: groups are
     not in the config file, and losing them across a reload is what makes a
     restored installation open groupless.
     """

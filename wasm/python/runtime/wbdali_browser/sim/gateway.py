@@ -103,18 +103,6 @@ class VirtualWbDaliGateway:
 
         logger.debug("Write to unhandled holding register %d", address)
 
-    def read_holding(self, address: int, count: int) -> List[int]:
-        bus = self._bus_for(address)
-        if bus is None:
-            return [0] * count
-        local = address - bus.address_offset
-        if QUEUE_BASE <= local < QUEUE_BASE + QUEUE_SIZE * 2:
-            start = local - QUEUE_BASE
-            return (bus.queue + [0] * count)[start : start + count]
-        if local == QUEUE_POINTER:
-            return [bus.pointer] + [0] * (count - 1)
-        return [0] * count
-
     def read_input(self, address: int, count: int) -> List[int]:
         bus = self._bus_for(address)
         if bus is None:

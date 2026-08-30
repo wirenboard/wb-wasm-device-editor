@@ -179,9 +179,6 @@ class Broker:
     def retained(self, topic: str) -> Optional[Message]:
         return self._retained.get(topic)
 
-    def clear_retained(self) -> None:
-        self._retained.clear()
-
 
 class _PahoStub:
     """Satisfies ``MQTTDispatcher.client_id``, which reads ``client._client._client_id``."""

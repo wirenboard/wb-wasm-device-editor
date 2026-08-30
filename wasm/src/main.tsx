@@ -23,9 +23,6 @@ topicCopyPolicy.enabled = false;
 
 // A controller host copies monitor rows to syslog; this build has no syslog.
 daliHostCapabilities.syslogMonitor = false;
-// The Lunatone-gateway emulator is a WebSocket *server* — a browser page
-// cannot listen on a port, so the toggle would only mislead.
-daliHostCapabilities.lunatoneEmulator = false;
 
 // homeui's CSS variables are scoped to [data-theme='light'|'dark'] on the root
 // element, and in homeui it is uiStore that puts the attribute there. This app
