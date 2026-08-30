@@ -208,9 +208,12 @@ export async function assetBytes(
   // A connection dropped mid-download hands back a short body with a 200:
   // Pyodide then fails to instantiate its wasm with a message about bytes
   // "falling off the end" — and its loader hangs rather than rejecting.
-  // Catch it here, where a retry (the next boot) is the obvious fix.
+  // Catch it here, where a retry (the next boot) is the obvious fix. Only a
+  // SHORT body on an identity-encoded response counts: with
+  // Content-Encoding, content-length is the wire size while arrayBuffer()
+  // is the decompressed one, and the two legitimately differ.
   const declared = Number(response.headers.get('content-length'));
-  if (declared && bytes.length !== declared) {
+  if (!response.headers.get('content-encoding') && declared && bytes.length < declared) {
     throw new Error(`${name}: download interrupted (${bytes.length} of ${declared} bytes)`);
   }
   return bytes;
