@@ -209,8 +209,23 @@ class DaliRuntime:
         await self.gateway.start()
         seeded = self._seed_groups(self.groups_seed or {})
         await self._wait_for_configured_devices(already_seeded=seeded)
+        self._update_monitor_pacing()
         logger.info("wb-mqtt-dali is running")
         return self
+
+    def _update_monitor_pacing(self) -> None:
+        """Tell each bus driver whether anything on its bus speaks unprompted.
+
+        A bus with DALI-2 control devices needs its monitor ring read briskly
+        even when nobody watches — sensor events are the daemon's data path.
+        A bus of plain gear does not, and its driver can relax the idle poll.
+        Re-run after config changes: a rescan can add or remove the sensors.
+        """
+        if self.gateway is None:
+            return
+        for wb_dali_gateway in self.gateway.wb_dali_gateways:
+            for controller in wb_dali_gateway.buses:
+                controller.driver.set_has_control_devices(bool(controller.dali2_devices))
 
     def _all_devices(self):
         return [
@@ -475,6 +490,9 @@ class DaliRuntime:
             current = snapshot()
             if current[0] and current != last[0]:
                 last[0] = current
+                # The same events that change the config change what lives on
+                # the buses — retune the ring polling along with the report.
+                self._update_monitor_pacing()
                 callback(*current)
 
         self.subscribe("/rpc/v1/wb-mqtt-dali/+/+/+/reply", check)

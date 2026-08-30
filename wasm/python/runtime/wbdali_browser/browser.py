@@ -23,6 +23,11 @@ from .scenario import serial_config, serial_settings, slave_ids
 
 logger = logging.getLogger("wbdali_browser")
 
+# A gateway declared at this Modbus address is simulated rather than reached
+# over WebSerial — the reserved broadcast-adjacent address no real WB-DALI
+# module is configured to.
+SIM_SLAVE_ID = 250
+
 _runtime: Optional[DaliRuntime] = None
 _auto_scan_task = None
 _scenario: Dict[str, Any] = {}
@@ -77,9 +82,12 @@ async def start(
 
     _scenario = json.loads(scenario_json)
     gateway_ids = [gateway["id"] for gateway in _scenario.get("gateways", [])]
-    # TEMP-SIM: local reproduction hook, slave id 250 => simulated bus. REVERT.
-    if any(gateway.get("slaveId") == 250 for gateway in _scenario.get("gateways", [])):
-        port_load = _temp_simulated_port_load(_scenario)
+    # Simulation mode: a gateway at the reserved slave id 250 is served by an
+    # in-memory WB-DALI module with the default simulated installation instead
+    # of the serial port. The e2e suite boots the whole page on it — same
+    # daemon, same UI, no hardware.
+    if any(gateway.get("slaveId") == SIM_SLAVE_ID for gateway in _scenario.get("gateways", [])):
+        port_load = _simulated_port_load(_scenario)
 
     async def call_port_load(request: Dict[str, Any]) -> Dict[str, Any]:
         # JSON both ways: the JS side hands back a string rather than a JsProxy,
@@ -233,7 +241,8 @@ def _require() -> DaliRuntime:
     return _runtime
 
 
-def _temp_simulated_port_load(scenario):  # TEMP-SIM, REVERT
+def _simulated_port_load(scenario):
+    """A `port/Load` served by a simulated WB-DALI module (see SIM_SLAVE_ID)."""
     from .hardware import hex_to_registers, registers_to_hex
     from .scenario import build_network, default_scenario
     wiring = default_scenario()["gateways"][0]["buses"]

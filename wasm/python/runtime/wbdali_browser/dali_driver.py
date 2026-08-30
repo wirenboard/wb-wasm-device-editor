@@ -104,6 +104,11 @@ SEND_SLOT = 0
 # (events are sparse) and faster while they are.
 MONITOR_POLL_INTERVAL_S = 0.1
 MONITOR_IDLE_POLL_INTERVAL_S = 0.25
+# With no DALI-2 control devices on the bus there is nothing that speaks
+# unprompted — the ring only ever holds echoes of our own frames and the odd
+# foreign master. Polling it four times a second would tax the one serial
+# link for nothing, so a bus of plain gear relaxes further.
+MONITOR_QUIET_POLL_INTERVAL_S = 1.0
 
 
 class RegisterTransport(Protocol):
@@ -158,7 +163,11 @@ class BlockingDaliDriver:
         self._lock = asyncio.Lock()
         self._sequence_id = 0
         self._monitor_task: Optional[asyncio.Task] = None
-        self._monitor_interval = MONITOR_IDLE_POLL_INTERVAL_S
+        self._monitor_on = False
+        # Assume event sources exist until the runtime says otherwise: the
+        # cautious default costs a few register reads, the other loses events.
+        self._has_control_devices = True
+        self._monitor_interval = self._pick_monitor_interval()
 
     # -- lifecycle --------------------------------------------------------
 
@@ -189,8 +198,24 @@ class BlockingDaliDriver:
         illuminance stayed frozen at its boot value whenever the monitor was
         off.)
         """
-        self._monitor_interval = MONITOR_POLL_INTERVAL_S if enabled else MONITOR_IDLE_POLL_INTERVAL_S
+        self._monitor_on = enabled
+        self._monitor_interval = self._pick_monitor_interval()
         self._start_bus_monitor()
+
+    def set_has_control_devices(self, present: bool) -> None:
+        """How lively the bus is when nobody watches the monitor.
+
+        DALI-2 control devices — sensors, wall switches — put event frames on
+        the bus unprompted, and the ring is the only way those reach the
+        daemon; a bus with none configured can afford a much lazier idle poll.
+        """
+        self._has_control_devices = present
+        self._monitor_interval = self._pick_monitor_interval()
+
+    def _pick_monitor_interval(self) -> float:
+        if self._monitor_on:
+            return MONITOR_POLL_INTERVAL_S
+        return MONITOR_IDLE_POLL_INTERVAL_S if self._has_control_devices else MONITOR_QUIET_POLL_INTERVAL_S
 
     def _start_bus_monitor(self) -> None:
         if self._monitor_task is None or self._monitor_task.done():
@@ -318,11 +343,16 @@ class BlockingDaliDriver:
             # random address, or the memo cannot be verified — or kept — next
             # session. Three frames, once.
             for cmd in expanded:
-                key = memory.kind_and_short(cmd)
+                key = memory.kind_and_short(cmd) or memory.settings_key(cmd)
                 if key is not None and memory.needs_random_address(key):
                     memory.set_random_address(key, await self._query_random_address(memory, key, source))
             return answers
 
+        # The unserved remainder — DTR writes, EnableDeviceType prefixes, and
+        # any query the memo does not carry — always goes to the wire. Tempting
+        # as it is to skip a remainder that is pure ceremony, the daemon's DT8
+        # reads depend on it ACROSS batches: a QueryContentDTR0 arriving in the
+        # next batch verifies device-side state this batch's writes set up.
         wire = [(cmd, prio) for index, (cmd, prio) in enumerate(zip(expanded, priorities)) if index not in served]
         wire_answers = iter(
             await self._send_wire([cmd for cmd, _ in wire], [prio for _, prio in wire], source)

@@ -45,6 +45,46 @@ _INVALIDATING = {
     device_general.ProgramShortAddress: DEVICE,
     device_general.SetShortAddress: DEVICE,
 }
+# Settings-shaped queries: answers that only change when somebody writes the
+# corresponding setting — scene tables, colour values, groups, levels, the
+# device's identity words. Live state (actual level, status, input values)
+# stays off this list on purpose: it changes on its own. Config writes are
+# send-twice commands, which is how the memo knows when to forget (see
+# `observe`).
+_SETTINGS = {
+    query: GEAR
+    for query in (
+        # NOT QueryNextDeviceType: a multi-type device answers it differently
+        # each time it is repeated, and one signature cannot carry a sequence.
+        # Left unserved it drags its whole batch to the wire, which is correct.
+        gear_general.QueryDeviceType,
+        gear_general.QueryVersionNumber,
+        gear_general.QueryPhysicalMinimum,
+        gear_general.QueryMinLevel,
+        gear_general.QueryMaxLevel,
+        gear_general.QueryPowerOnLevel,
+        gear_general.QuerySystemFailureLevel,
+        gear_general.QueryFadeTimeFadeRate,
+        gear_general.QueryGroupsZeroToSeven,
+        gear_general.QueryGroupsEightToFifteen,
+        gear_general.QuerySceneLevel,
+        # NOT QueryContentDTR0/DTR1: they are how the daemon VERIFIES a
+        # transfer (did the register end up where the sequence should have
+        # left it?), and their answer depends on everything sent before them —
+        # including another generator's traffic interleaved through the same
+        # driver. A remembered verification is a verification of nothing.
+        #
+        # And nothing device-type-scoped (QueryColourValue, the DT8 readings
+        # of the level queries above, the DT6 curve queries): a DT8 answer is
+        # split across the backward frame AND an LSB the device parks in its
+        # own DTR0, which the daemon collects with a separate QueryContentDTR0
+        # call. Serving the frame from memory while the register read goes to
+        # the wire hands the daemon two halves of different answers — see
+        # `settings_key`, which refuses any command running under a device
+        # type for exactly this reason.
+    )
+}
+
 _RANDOM_QUERIES = {
     GEAR: (
         gear_general.QueryRandomAddressH,
@@ -77,10 +117,15 @@ class MemoryCache:
                         }
                         for bank, offsets in (entry.get("banks") or {}).items()
                     }
+                    settings = {
+                        str(sig): (int(byte) if byte is not None else None)
+                        for sig, byte in (entry.get("settings") or {}).items()
+                    }
                     random_address = entry.get("random")
                     self._entries[(kind, int(short))] = {
                         "random": int(random_address) if random_address is not None else None,
                         "banks": banks,
+                        "settings": settings,
                         "trusted": False,
                     }
                 except (TypeError, ValueError, AttributeError):
@@ -99,6 +144,55 @@ class MemoryCache:
         if not isinstance(short, int):
             return None
         return kind, short
+
+    @staticmethod
+    def settings_key(cmd) -> Optional[Tuple[str, int]]:
+        """(kind, short address) of a memoizable settings query, else None."""
+        kind = _SETTINGS.get(type(cmd))
+        if kind is None:
+            return None
+        # Under a device type the same class asks a different question whose
+        # answer is split between the backward frame and the device's DTR0 —
+        # unservable piecemeal (see the note on _SETTINGS).
+        if getattr(cmd, "devicetype", 0) != 0:
+            return None
+        short = getattr(getattr(cmd, "destination", None), "address", None)
+        if not isinstance(short, int):
+            return None
+        return kind, short
+
+    @staticmethod
+    def _sig(cmd, dtr0: Optional[int], dtr1: Optional[int]) -> str:
+        """What makes two settings queries the same question.
+
+        The command class, its own parameter (a scene number), the device type
+        it runs under (a DT8 colour read), and the DTR values written before
+        it (the colour value selector travels through DTR0).
+        """
+        return "|".join(
+            "" if part is None else str(part)
+            for part in (
+                type(cmd).__name__,
+                getattr(cmd, "param", None),
+                getattr(cmd, "devicetype", 0),
+                dtr0,
+                dtr1,
+            )
+        )
+
+    @staticmethod
+    def _kind_of(cmd) -> str:
+        return GEAR if type(cmd).__module__.startswith("dali.gear") else DEVICE
+
+    def _forget_settings(self, cmd) -> None:
+        """A config write makes the memo's settings stale — for the addressed
+        device, or for every device of that kind when it went to a group or
+        the whole bus."""
+        kind = self._kind_of(cmd)
+        short = getattr(getattr(cmd, "destination", None), "address", None)
+        for key, entry in self._entries.items():
+            if key[0] == kind and (not isinstance(short, int) or key[1] == short):
+                entry["settings"] = {}
 
     def random_queries(self, kind: str, short: int) -> list:
         from dali.address import DeviceShort, GearShort
@@ -128,6 +222,24 @@ class MemoryCache:
         if kind is not None:
             self.invalidate(kind)
             return
+        # Config writes are send-twice commands; whatever they configured, the
+        # remembered settings for their target are no longer trustworthy.
+        if getattr(cmd, "sendtwice", False):
+            self._forget_settings(cmd)
+            return
+        settings_key = self.settings_key(cmd)
+        if settings_key is not None:
+            raw = getattr(response, "raw_value", None)
+            if delivered and (raw is None or not raw.error):
+                dtr0, dtr1 = self._dtr[settings_key[0]]
+                entry = self._entries.setdefault(
+                    settings_key, {"random": None, "banks": {}, "settings": {}, "trusted": True}
+                )
+                entry["trusted"] = True
+                entry.setdefault("settings", {})[self._sig(cmd, dtr0, dtr1)] = (
+                    raw.as_integer if raw is not None else None
+                )
+            return
         key = self.kind_and_short(cmd)
         if key is None:
             return
@@ -135,7 +247,9 @@ class MemoryCache:
         dtr0, dtr1 = self._dtr[kind]
         raw = getattr(response, "raw_value", None)
         if dtr0 is not None and dtr1 is not None and delivered and (raw is None or not raw.error):
-            entry = self._entries.setdefault(key, {"random": None, "banks": {}, "trusted": True})
+            entry = self._entries.setdefault(
+                key, {"random": None, "banks": {}, "settings": {}, "trusted": True}
+            )
             entry["trusted"] = True
             entry["banks"].setdefault(dtr1, {})[dtr0] = raw.as_integer if raw is not None else None
         # The device increments DTR0 after every READ MEMORY LOCATION it
@@ -153,7 +267,7 @@ class MemoryCache:
         """Restored entries this batch would touch that still await verification."""
         keys = []
         for cmd in commands:
-            key = self.kind_and_short(cmd)
+            key = self.kind_and_short(cmd) or self.settings_key(cmd)
             if key is None:
                 continue
             entry = self._entries.get(key)
@@ -164,7 +278,12 @@ class MemoryCache:
     def needs_random_address(self, key: Tuple[str, int]) -> bool:
         """A live-learned entry whose device has not yet told us its random address."""
         entry = self._entries.get(key)
-        return entry is not None and entry["trusted"] and entry["random"] is None and bool(entry["banks"])
+        return (
+            entry is not None
+            and entry["trusted"]
+            and entry["random"] is None
+            and bool(entry["banks"] or entry.get("settings"))
+        )
 
     def set_random_address(self, key: Tuple[str, int], random_address: Optional[int]) -> None:
         entry = self._entries.get(key)
@@ -205,6 +324,21 @@ class MemoryCache:
                 continue
             if type(cmd) in _INVALIDATING:
                 return None
+            # A config write in the batch invalidates what this plan would
+            # serve — send everything, let `observe` do the forgetting.
+            if getattr(cmd, "sendtwice", False):
+                return None
+            settings_key = self.settings_key(cmd)
+            if settings_key is not None:
+                entry = self._entries.get(settings_key)
+                if entry is None or not entry["trusted"]:
+                    return None
+                dtr0, dtr1 = dtr[settings_key[0]]
+                sig = self._sig(cmd, dtr0, dtr1)
+                if sig not in entry.get("settings", {}):
+                    return None
+                answers[index] = entry["settings"][sig]
+                continue
             key = self.kind_and_short(cmd)
             if key is None:
                 continue
@@ -250,7 +384,7 @@ class MemoryCache:
         out: Dict[str, Any] = {GEAR: {}, DEVICE: {}}
         for (kind, short), entry in self._entries.items():
             random_address = entry["random"]
-            if random_address is None or not entry["banks"]:
+            if random_address is None or not (entry["banks"] or entry.get("settings")):
                 continue
             out[kind][str(short)] = {
                 "random": int(random_address),
@@ -261,5 +395,6 @@ class MemoryCache:
                     }
                     for bank, offsets in entry["banks"].items()
                 },
+                "settings": dict(entry.get("settings") or {}),
             }
         return out

@@ -123,3 +123,27 @@ async def test_the_monitor_toggle_only_changes_the_pace(dali_logger):
 
     await driver.deinitialize()
     assert driver._monitor_task is None  # pylint: disable=protected-access
+
+
+async def test_a_bus_of_plain_gear_polls_the_ring_lazily(dali_logger):
+    """No control devices — nothing speaks unprompted, the idle poll relaxes."""
+    from wbdali_browser.dali_driver import MONITOR_QUIET_POLL_INTERVAL_S
+
+    stack = SimulatedStack()
+    driver = stack.driver(logger=dali_logger)
+    await driver.initialize()
+    try:
+        driver.set_has_control_devices(False)
+        assert driver._monitor_interval == MONITOR_QUIET_POLL_INTERVAL_S  # pylint: disable=protected-access
+
+        # The operator's monitor toggle still wins while it is on…
+        driver.set_bus_monitor_enabled(True)
+        assert driver._monitor_interval == MONITOR_POLL_INTERVAL_S  # pylint: disable=protected-access
+        driver.set_bus_monitor_enabled(False)
+        assert driver._monitor_interval == MONITOR_QUIET_POLL_INTERVAL_S  # pylint: disable=protected-access
+
+        # …and a sensor appearing after a rescan quickens the idle pace.
+        driver.set_has_control_devices(True)
+        assert driver._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
+    finally:
+        await driver.deinitialize()
