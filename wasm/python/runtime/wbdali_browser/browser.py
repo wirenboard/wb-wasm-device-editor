@@ -82,11 +82,16 @@ async def start(
 
     _scenario = json.loads(scenario_json)
     gateway_ids = [gateway["id"] for gateway in _scenario.get("gateways", [])]
-    # Simulation mode: a gateway at the reserved slave id 250 is served by an
-    # in-memory WB-DALI module with the default simulated installation instead
-    # of the serial port. The e2e suite boots the whole page on it — same
-    # daemon, same UI, no hardware.
-    if any(gateway.get("slaveId") == SIM_SLAVE_ID for gateway in _scenario.get("gateways", [])):
+    # Simulation mode: a scenario of gateways at the reserved slave id 250 is
+    # served by in-memory WB-DALI modules with the default simulated
+    # installation instead of the serial port. The e2e suite boots the whole
+    # page on it — same daemon, same UI, no hardware. Only when EVERY gateway
+    # is simulated: silently rerouting a real module's traffic into the
+    # simulator would show fake luminaires as the real installation.
+    gateways_in_scenario = _scenario.get("gateways", [])
+    if gateways_in_scenario and all(
+        gateway.get("slaveId") == SIM_SLAVE_ID for gateway in gateways_in_scenario
+    ):
         port_load = _simulated_port_load(_scenario)
 
     async def call_port_load(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -248,7 +253,9 @@ def _simulated_port_load(scenario):
     wiring = default_scenario()["gateways"][0]["buses"]
     sim = {"gateways": [dict(g, buses=wiring) for g in scenario["gateways"]], "frameDelaySeconds": 0.0}
     network = build_network(sim)
-    by_slave = {g["slaveId"]: g["id"] for g in scenario["gateways"]}
+    # The same default the scenario helpers use for a gateway that names no
+    # slave id — never a KeyError at request time.
+    by_slave = {g.get("slaveId", i + 1): g["id"] for i, g in enumerate(scenario["gateways"])}
 
     async def port_load(request_json):
         request = json.loads(request_json)

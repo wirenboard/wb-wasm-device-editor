@@ -163,6 +163,7 @@ class BlockingDaliDriver:
         self._lock = asyncio.Lock()
         self._sequence_id = 0
         self._monitor_task: Optional[asyncio.Task] = None
+        self._closed = False
         self._monitor_on = False
         # Assume event sources exist until the runtime says otherwise: the
         # cautious default costs a few register reads, the other loses events.
@@ -176,6 +177,9 @@ class BlockingDaliDriver:
         self._start_bus_monitor()
 
     async def deinitialize(self) -> None:
+        # A monitor toggle arriving after shutdown must not resurrect the
+        # polling task against a stopped transport; see _start_bus_monitor.
+        self._closed = True
         if self._monitor_task is not None:
             self._monitor_task.cancel()
             self._monitor_task = None
@@ -218,6 +222,8 @@ class BlockingDaliDriver:
         return MONITOR_IDLE_POLL_INTERVAL_S if self._has_control_devices else MONITOR_QUIET_POLL_INTERVAL_S
 
     def _start_bus_monitor(self) -> None:
+        if self._closed:
+            return
         if self._monitor_task is None or self._monitor_task.done():
             self._monitor_task = asyncio.create_task(
                 self._poll_bus_monitor(), name=f"dali-monitor-{self.config.device_name}"

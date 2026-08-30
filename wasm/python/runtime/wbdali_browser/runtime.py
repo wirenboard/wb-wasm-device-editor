@@ -340,6 +340,11 @@ class DaliRuntime:
                     await task
                 except asyncio.CancelledError:
                     pass
+                except Exception:  # pylint: disable=broad-exception-caught
+                    # A task that already died re-raises its own exception
+                    # here; teardown must still detach the clients and stop
+                    # the serial stub, or a restart inherits both.
+                    logger.exception("Task %s failed before stop()", task.get_name())
         self._ui_task = self._dispatcher_task = None
         for client in (self._ui_client, self._client):
             if client is not None:

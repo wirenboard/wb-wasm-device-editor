@@ -118,8 +118,12 @@ class MemoryCache:
                         for bank, offsets in (entry.get("banks") or {}).items()
                     }
                     settings = {
-                        str(sig): (int(byte) if byte is not None else None)
+                        str(sig): int(byte)
                         for sig, byte in (entry.get("settings") or {}).items()
+                        # Older snapshots could carry a memoized "no answer";
+                        # a settings query is always answered by a live device,
+                        # so a null is a recorded transient — drop it.
+                        if byte is not None
                     }
                     random_address = entry.get("random")
                     self._entries[(kind, int(short))] = {
@@ -230,7 +234,11 @@ class MemoryCache:
         settings_key = self.settings_key(cmd)
         if settings_key is not None:
             raw = getattr(response, "raw_value", None)
-            if delivered and (raw is None or not raw.error):
+            # Unlike a memory location, every query on the settings list is one
+            # a live device answers — a missing answer is a transient (a bus
+            # glitch, a collision), not a fact worth remembering, let alone
+            # serving forever.
+            if delivered and raw is not None and not raw.error:
                 dtr0, dtr1 = self._dtr[settings_key[0]]
                 entry = self._entries.setdefault(
                     settings_key, {"random": None, "banks": {}, "settings": {}, "trusted": True}
@@ -253,8 +261,10 @@ class MemoryCache:
             entry["trusted"] = True
             entry["banks"].setdefault(dtr1, {})[dtr0] = raw.as_integer if raw is not None else None
         # The device increments DTR0 after every READ MEMORY LOCATION it
-        # executes, answered or not.
-        if dtr0 is not None:
+        # executes, answered or not — but a frame the gateway never
+        # transmitted was never executed, and advancing the shadow for it
+        # would attribute every later byte in the batch to the wrong offset.
+        if dtr0 is not None and delivered:
             self._dtr[kind][0] = dtr0 + 1
 
     def invalidate(self, kind: str) -> None:

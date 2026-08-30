@@ -97,3 +97,36 @@ async def test_a_seeded_session_reads_scenes_and_levels_off_the_memo():
     assert seeded["QueryPowerOnLevel"] == 0
     assert seeded["QueryColourValue"] == cold["QueryColourValue"]
     assert sum(seeded.values()) < sum(cold.values())
+
+
+def test_a_transient_no_answer_is_not_remembered():
+    cache = MemoryCache()
+    query = QuerySceneLevel(GearShort(0), 7)
+
+    class _NoAnswer:  # pylint: disable=too-few-public-methods
+        raw_value = None
+
+    cache.observe(query, _NoAnswer())
+    assert cache.plan([query]) is None
+
+    # The next, answered read is what the memo keeps.
+    cache.observe(query, _Answer(42))
+    assert cache.plan([query]) == {0: 42}
+
+
+def test_an_undelivered_read_does_not_advance_the_shadow_register():
+    from dali.gear.general import DTR1, ReadMemoryLocation
+
+    cache = MemoryCache()
+
+    class _Undelivered:  # pylint: disable=too-few-public-methods
+        raw_value = None
+
+    cache.observe(DTR1(0), None)
+    cache.observe(DTR0(3), None)
+    # The gateway never transmitted this frame — the device never saw it,
+    # so its DTR0 still points at offset 3.
+    cache.observe(ReadMemoryLocation(GearShort(0)), _Undelivered(), delivered=False)
+    cache.observe(ReadMemoryLocation(GearShort(0)), _Answer(0x42))
+
+    assert cache.plan([DTR1(0), DTR0(3), ReadMemoryLocation(GearShort(0))]) == {2: 0x42}
