@@ -55,10 +55,11 @@ def test_the_signature_tells_scenes_apart():
     cache = MemoryCache()
     cache.observe(QuerySceneLevel(GearShort(0), 7), _Answer(42))
     assert cache.plan([QuerySceneLevel(GearShort(0), 8)]) is None
-    # The signature also includes the DTR state: a preceding DTR write makes
-    # this a different question than the one learned, and a miss goes to the
-    # wire — over-keyed on purpose, never wrong.
-    assert cache.plan([DTR0(200), QuerySceneLevel(GearShort(0), 7)]) is None
+    # The signature is the question itself, not the surrounding traffic: an
+    # unrelated DTR write earlier in the batch must not turn the same scene
+    # question into a different one (interleaved generators write DTRs all
+    # the time).
+    assert cache.plan([DTR0(200), QuerySceneLevel(GearShort(0), 7)]) == {1: 42}
 
 
 async def _frames_of_get_device(network, buses, memory=None):
@@ -130,3 +131,100 @@ def test_an_undelivered_read_does_not_advance_the_shadow_register():
     cache.observe(ReadMemoryLocation(GearShort(0)), _Answer(0x42))
 
     assert cache.plan([DTR1(0), DTR0(3), ReadMemoryLocation(GearShort(0))]) == {2: 0x42}
+
+
+def test_per_instance_questions_do_not_collide():
+    from dali.address import DeviceShort, InstanceNumber
+    from dali.device.general import QueryEventScheme
+
+    cache = MemoryCache()
+    q1 = QueryEventScheme(DeviceShort(0), InstanceNumber(1))
+    q2 = QueryEventScheme(DeviceShort(0), InstanceNumber(2))
+    cache.observe(q1, _Answer(2))
+    assert cache.plan([q1]) == {0: 2}
+    # Instance 2 was never asked — its answer must not be instance 1's.
+    assert cache.plan([q2]) is None
+
+
+def test_absence_is_remembered_only_with_three_strikes_of_conviction():
+    from dali.address import DeviceShort
+    from wb.mqtt_dali.device.feedback import QueryFeedbackCapability
+    from dali.address import FeatureInstanceNumber
+
+    class _NoAnswer:  # pylint: disable=too-few-public-methods
+        raw_value = None
+
+    cache = MemoryCache()
+    probe = QueryFeedbackCapability(DeviceShort(0), FeatureInstanceNumber(2))
+
+    cache.observe(probe, _NoAnswer())
+    cache.observe(probe, _NoAnswer())
+    assert cache.plan([probe]) is None  # two glitches are not a fact
+
+    cache.observe(probe, _NoAnswer())
+    # Three consecutive unanswered deliveries: the device does not implement
+    # this feature, and the memo now answers the probe without the bus.
+    assert cache.plan([probe]) == {0: None}
+
+    # An actual answer resets the conviction counter.
+    cache2 = MemoryCache()
+    cache2.observe(probe, _NoAnswer())
+    cache2.observe(probe, _Answer(1))
+    cache2.observe(probe, _NoAnswer())
+    cache2.observe(probe, _NoAnswer())
+    assert cache2.plan([probe]) == {0: 1}
+
+
+async def test_a_seeded_sensor_page_reads_its_instances_off_the_memo():
+    """A DALI-2 device page is per-instance settings and feature probes —
+    the second session should ask the bus almost none of it."""
+    import collections
+
+    from .test_dali2_events import GATEWAY_DEVICE_ID as SENSOR_GW  # noqa: F401
+    from . import test_dali2_events as ev
+
+    # Build the sensor stack the dali2-events tests use.
+    import tempfile
+    from pathlib import Path
+
+    from wbdali_browser.runtime import DaliRuntime, default_config
+    from wbdali_browser.sim.dali_bus import SimulatedDaliBus
+    from wbdali_browser.sim.network import SimulatedModbusNetwork
+
+    async def one_session(memory=None):
+        config = default_config([SENSOR_GW])
+        config["gateways"][0]["buses"][0]["devices"] = [
+            {"short": 0, "random": 0x2BB6F8, "name": "sensor", "dali2": True},
+        ]
+        network = SimulatedModbusNetwork()
+        buses = {index: SimulatedDaliBus() for index in (1, 2, 3)}
+        buses[1].add_device(ev.SimulatedSensor(shortaddr=0, random_address=0x2BB6F8))
+        network.add_module(SENSOR_GW, buses)
+        counts = collections.Counter()
+        orig = buses[1]._deliver  # pylint: disable=protected-access
+        def counting(cmd, bit_length):
+            counts[type(cmd).__name__] += 1
+            return orig(cmd, bit_length)
+        buses[1]._deliver = counting  # pylint: disable=protected-access
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = DaliRuntime(
+                transport=network,
+                serial_config={"ports": [{"path": "/dev/x", "enabled": True,
+                    "devices": [{"id": SENSOR_GW, "slave_id": 17, "device_type": "WB-DALI", "enabled": True}]}]},
+                config=config, vendor_dir=Path("vendor"), root=Path(tmp), memory=memory)
+            await runtime.start()
+            try:
+                gateways = await runtime.rpc("Editor", "GetList")
+                device_id = gateways[0]["buses"][0]["devices"][0]["id"]
+                counts.clear()
+                await runtime.rpc("Editor", "GetDevice", {"deviceId": device_id})
+                snapshot = runtime.snapshot_memory()
+            finally:
+                await runtime.stop()
+        return counts, snapshot
+
+    cold, memory = await one_session()
+    seeded, _ = await one_session(memory=memory)
+    assert cold["QueryEventScheme"] > 0
+    assert seeded["QueryEventScheme"] == 0
+    assert sum(seeded.values()) < sum(cold.values()) / 2

@@ -27,6 +27,9 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from dali.device import general as device_general
+from dali.device import light as device_light
+from dali.device import occupancy as device_occupancy
+from dali.device import pushbutton as device_pushbutton
 from dali.gear import general as gear_general
 
 GEAR = "gear"
@@ -85,6 +88,84 @@ _SETTINGS = {
     )
 }
 
+# The DALI-2 device side of the same idea: per-instance configuration and
+# static descriptors a sensor page re-reads on every visit — event schemes,
+# priorities, groups, the per-type timers, the feedback block. Live state
+# (input values, instance/device status, switch position) stays off the list.
+_SETTINGS.update({
+    query: DEVICE
+    for query in (
+        device_general.QueryVersionNumber,
+        device_general.QueryExtendedVersionNumber,
+        device_general.QueryDeviceCapabilities,
+        device_general.QueryDeviceGroupsZeroToSeven,
+        device_general.QueryDeviceGroupsEightToFifteen,
+        device_general.QueryDeviceGroupsSixteenToTwentyThree,
+        device_general.QueryDeviceGroupsTwentyFourToThirtyOne,
+        device_general.QueryInstanceType,
+        device_general.QueryNumberOfInstances,
+        device_general.QueryResolution,
+        device_general.QueryEventScheme,
+        device_general.QueryEventPriority,
+        device_general.QueryPrimaryInstanceGroup,
+        device_general.QueryInstanceGroup1,
+        device_general.QueryInstanceGroup2,
+        device_general.QueryInstanceEnabled,
+        device_general.QueryEventFilterZeroToSeven,
+        device_general.QueryEventFilterEightToFifteen,
+        device_pushbutton.QueryShortTimer,
+        device_pushbutton.QueryShortTimerMin,
+        device_pushbutton.QueryDoubleTimer,
+        device_pushbutton.QueryDoubleTimerMin,
+        device_pushbutton.QueryRepeatTimer,
+        device_pushbutton.QueryStuckTimer,
+        device_occupancy.QueryCatching,
+        device_occupancy.QueryDeadtimeTimer,
+        device_occupancy.QueryHoldTimer,
+        device_occupancy.QueryReportTimer,
+        device_light.QueryDeadtimeTimer,
+        device_light.QueryHysteresis,
+        device_light.QueryHysteresisMin,
+        device_light.QueryReportTimer,
+    )
+})
+
+try:
+    from wb.mqtt_dali.device import absolute_input_device as wb_absolute
+    from wb.mqtt_dali.device import feedback as wb_feedback
+    from wb.mqtt_dali.device import general_purpose_sensor as wb_gps
+
+    _SETTINGS.update({
+        query: DEVICE
+        for query in (
+            wb_absolute.QueryDeadtimeTimer,
+            wb_absolute.QueryReportTimer,
+            wb_gps.QueryAlarmReportTimer,
+            wb_gps.QueryDeadtimeTimer,
+            wb_gps.QueryHysteresis,
+            wb_gps.QueryHysteresisMin,
+            wb_gps.QueryReportTimer,
+            wb_gps.QueryMeasurementVariable,
+            wb_feedback.QueryFeedbackCapability,
+            wb_feedback.QueryFeedbackActive,
+            wb_feedback.QueryFeedbackTiming,
+            wb_feedback.QueryActiveFeedbackBrightness,
+            wb_feedback.QueryActiveFeedbackColour,
+            wb_feedback.QueryActiveFeedbackPitch,
+            wb_feedback.QueryActiveFeedbackVolume,
+            wb_feedback.QueryInactiveFeedbackBrightness,
+            wb_feedback.QueryInactiveFeedbackColour,
+        )
+    })
+except ImportError:  # pragma: no cover - the vendored daemon always ships these
+    pass
+
+# How many consecutive unanswered deliveries make an absence a fact. The
+# daemon itself asks an absent feature three times before believing it — the
+# memo demands the same conviction, so one glitched frame never becomes a
+# remembered "this device cannot do that".
+NOANSWER_STRIKES = 3
+
 _RANDOM_QUERIES = {
     GEAR: (
         gear_general.QueryRandomAddressH,
@@ -107,6 +188,9 @@ class MemoryCache:
         self._entries: Dict[Tuple[str, int], Dict[str, Any]] = {}
         # Shadow of the bus's DTR0 / DTR1 per kind: the commands are broadcast.
         self._dtr: Dict[str, List[Optional[int]]] = {GEAR: [None, None], DEVICE: [None, None]}
+        # Consecutive unanswered deliveries per settings question, on the way
+        # to NOANSWER_STRIKES (see observe).
+        self._noanswer: Dict[Tuple[Tuple[str, int], str], int] = {}
         for kind in (GEAR, DEVICE):
             for short, entry in ((seed or {}).get(kind) or {}).items():
                 try:
@@ -118,12 +202,13 @@ class MemoryCache:
                         for bank, offsets in (entry.get("banks") or {}).items()
                     }
                     settings = {
-                        str(sig): int(byte)
+                        str(sig): (int(byte) if byte is not None else None)
                         for sig, byte in (entry.get("settings") or {}).items()
-                        # Older snapshots could carry a memoized "no answer";
-                        # a settings query is always answered by a live device,
-                        # so a null is a recorded transient — drop it.
-                        if byte is not None
+                        # None is a remembered ABSENCE — a question this device
+                        # left unanswered NOANSWER_STRIKES times in a row (a
+                        # feature it does not implement), never a one-off
+                        # transient: observe() only records it with that much
+                        # conviction.
                     }
                     random_address = entry.get("random")
                     self._entries[(kind, int(short))] = {
@@ -230,21 +315,24 @@ class MemoryCache:
         return kind, short
 
     @staticmethod
-    def _sig(cmd, dtr0: Optional[int], dtr1: Optional[int]) -> str:
+    def _sig(cmd) -> str:
         """What makes two settings queries the same question.
 
-        The command class, its own parameter (a scene number), the device type
-        it runs under (a DT8 colour read), and the DTR values written before
-        it (the colour value selector travels through DTR0).
+        The command class, its own parameter (a scene number), the instance it
+        addresses, and the device type it runs under. Deliberately NOT the DTR
+        shadow: no memoizable query reads through the DTRs (the one family
+        that does — DT8 colour — is excluded wholesale), and keying on them
+        made the signature hostage to whatever other generator interleaved a
+        DTR write between two askings of the same question.
         """
         return "|".join(
             "" if part is None else str(part)
             for part in (
                 type(cmd).__name__,
                 getattr(cmd, "param", None),
+                # Per-instance questions differ by the instance they address.
+                getattr(cmd, "instance", None),
                 getattr(cmd, "devicetype", 0),
-                dtr0,
-                dtr1,
             )
         )
 
@@ -289,15 +377,27 @@ class MemoryCache:
             self._forget_settings(cmd)
         elif tag == self.TAG_SETTINGS_QUERY:
             raw = self.raw_of(response)
-            # Unlike a memory location, every query on the settings list is one
-            # a live device answers — a missing answer is a transient (a bus
-            # glitch, a collision), not a fact worth remembering, let alone
-            # serving forever.
-            if delivered and raw is not None and not raw.error:
-                dtr0, dtr1 = self._dtr[info[0]]
+            if not delivered:
+                return
+            sig = self._sig(cmd)
+            if raw is not None and not raw.error:
+                self._noanswer.pop((info, sig), None)
                 entry = self._entry(info)
                 entry["trusted"] = True
-                entry["settings"][self._sig(cmd, dtr0, dtr1)] = raw.as_integer
+                entry["settings"][sig] = raw.as_integer
+            elif raw is None:
+                # One missing answer is a transient (a glitch, a collision) —
+                # but the same question left unanswered NOANSWER_STRIKES times
+                # in a row is the device saying "not implemented", the very
+                # fact feature probing burns seconds per sensor rediscovering.
+                strikes = self._noanswer.get((info, sig), 0) + 1
+                if strikes >= NOANSWER_STRIKES:
+                    self._noanswer.pop((info, sig), None)
+                    entry = self._entry(info)
+                    entry["trusted"] = True
+                    entry["settings"][sig] = None
+                else:
+                    self._noanswer[(info, sig)] = strikes
         elif tag == self.TAG_BANK_READ:
             kind = info[0]
             dtr0, dtr1 = self._dtr[kind]
@@ -384,8 +484,7 @@ class MemoryCache:
                 entry = self._entries.get(info)
                 if entry is None or not entry["trusted"]:
                     return None
-                dtr0, dtr1 = dtr[info[0]]
-                sig = self._sig(cmd, dtr0, dtr1)
+                sig = self._sig(cmd)
                 if sig not in entry.get("settings", {}):
                     return None
                 answers[index] = entry["settings"][sig]
