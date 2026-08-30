@@ -442,6 +442,16 @@ export const DeviceSettingsWasm = observer(() => {
     [allDevices, configDeviceTypesStore]
   );
 
+  // Record the gateways the moment the scan knows them, not only when the DALI
+  // button is clicked: the DALI page reached by URL — or after the browser
+  // profile was cleared — reads this record, and "rescan to get the button
+  // back" is a poor recovery path.
+  useEffect(() => {
+    if (daliGateways.length) {
+      rememberGateways(daliGateways);
+    }
+  }, [daliGateways]);
+
   const loadDeviceSettings = useCallback(async (device: Device, deviceTypesStore = configDeviceTypesStore) => {
     setError(null);
     // Resolve the type through the store handed in, not the state variable:

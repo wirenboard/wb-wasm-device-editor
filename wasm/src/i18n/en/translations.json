@@ -75,11 +75,14 @@
   },
   "dali-wasm": {
     "buttons": {
-      "open": "DALI",
-      "back": "Back to Modbus devices"
+      "open": "DALI Configurator",
+      "back": "Back to Modbus devices",
+      "retry": "Retry"
     },
     "labels": {
       "boot-failed": "The DALI service failed to start.",
+      "boot-hint-timeout": "The gateway did not answer on the serial line. Check that the module is powered and the A/B wires are connected, then retry.",
+      "boot-hint-network": "Part of the runtime failed to download. Check the network connection, then retry.",
       "select-port-hint": "Choose the serial port the WB-DALI gateway is connected to.",
       "mode-gateway": "Connected: {{name}}",
       "gateway-type": "Module",

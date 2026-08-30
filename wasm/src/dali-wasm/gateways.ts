@@ -37,7 +37,13 @@ export interface DaliGateway {
 }
 
 export function isDaliGateway(deviceType: string | undefined): boolean {
-  return !!deviceType && DALI_DEVICE_TYPES.includes(deviceType);
+  if (!deviceType) {
+    return false;
+  }
+  // Hardware signatures come without the template's punctuation (`WBMDALI` for
+  // a device whose firmware has no template), so compare with it stripped.
+  const normalized = deviceType.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  return DALI_DEVICE_TYPES.some((type) => type.replace(/[^A-Za-z0-9]/g, '') === normalized);
 }
 
 /** Pick the DALI gateways out of a scan result. */
@@ -98,8 +104,26 @@ export function loadRememberedGateways(): DaliGateway[] {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     const gateways = stored ? JSON.parse(stored) : [];
-    return Array.isArray(gateways) ? gateways.filter((gateway) => gateway?.id) : [];
+    if (Array.isArray(gateways) && gateways.some((gateway) => gateway?.id)) {
+      return gateways.filter((gateway) => gateway?.id);
+    }
   } catch {
-    return [];
+    // Fall through to the scan-results fallback.
   }
+  // localStorage can vanish out from under the record (a cleared profile, a
+  // privacy mode) while the editor's scan result still sits in sessionStorage.
+  // A gateway the scan just found is a gateway worth configuring — recover it
+  // rather than sending the user back for a rescan.
+  try {
+    const scanned = JSON.parse(window.sessionStorage.getItem('wb-scan-results') || '[]');
+    if (Array.isArray(scanned)) {
+      return findDaliGateways(
+        scanned.filter((device) => (device?.cfg?.slave_id ?? null) !== null),
+        (device) => device.device_signature
+      );
+    }
+  } catch {
+    // No scan results either; the page will explain itself.
+  }
+  return [];
 }

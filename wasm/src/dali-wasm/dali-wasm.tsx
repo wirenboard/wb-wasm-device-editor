@@ -3,12 +3,12 @@ import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MemoryRouter } from 'react-router-dom';
+import { Alert } from '@/components/alert';
 import { ConsolePanel } from '@/components/console-panel';
+import { PageLayout } from '@/layouts/page';
 import DaliPage from '@/pages/settings/configs/dali';
 import { authStore, UserRole } from '@/stores/auth';
 import { consolePanelStore } from '@/stores/console-panel';
-import { Alert } from '@/components/alert';
-import { PageLayout } from '@/layouts/page';
 import { BootProgress } from './components/boot-progress';
 import { DaliShell } from './components/dali-shell';
 import { PortGate } from './components/port-gate';
@@ -36,7 +36,7 @@ let liveBackend: { key: string; backend: PyodideDaliBackend } | null = null;
 
 function obtainBackend(
   scenario: ReturnType<typeof scenarioForGateways>,
-  onLog: (text: string) => void
+  onLog: (text: string) => void,
 ): PyodideDaliBackend {
   const key = JSON.stringify(scenario);
   if (liveBackend && liveBackend.key === key && !liveBackend.backend.isDefunct) {
@@ -61,6 +61,9 @@ export const DaliWasm = observer(() => {
   const [bootLog, setBootLog] = useState<string[]>([]);
   const [bootError, setBootError] = useState<string | null>(null);
   const [isBooted, setBooted] = useState(false);
+  // Bumped by the retry button after a failed boot; a new value makes the
+  // backend memo run again, and `obtainBackend` replaces the defunct runtime.
+  const [bootNonce, setBootNonce] = useState(0);
 
   const hasGateway = gateways.length > 0;
 
@@ -70,6 +73,12 @@ export const DaliWasm = observer(() => {
 
   useEffect(() => {
     if (!hasGateway || hasPort) {
+      return undefined;
+    }
+    // A simulated gateway (slave id 250, see wbdali_browser.browser) is not
+    // behind any serial port — the e2e suite and demos boot straight through.
+    if (gateways.every((gateway) => gateway.slaveId === 250)) {
+      setHasPort(true);
       return undefined;
     }
     // The probe below waits on the WASM module, which on a cold load is a
@@ -88,6 +97,9 @@ export const DaliWasm = observer(() => {
   }, [hasGateway, hasPort]);
 
   const backend = useMemo(() => {
+    // The retry button's only lever: a new nonce makes this memo run again,
+    // and `obtainBackend` then replaces the defunct runtime with a fresh one.
+    void bootNonce;
     if (!hasGateway || needsPort) {
       return null;
     }
@@ -99,9 +111,20 @@ export const DaliWasm = observer(() => {
 
     return obtainBackend(
       scenarioForGateways(gateways),
-      (text) => setBootLog((lines) => [...lines.slice(-200), text])
+      (text) => setBootLog((lines) => [...lines.slice(-200), text]),
     );
-  }, [hasGateway, needsPort, gateways]);
+  }, [hasGateway, needsPort, gateways, bootNonce]);
+
+  const retryBoot = () => {
+    // The failed backend is defunct but still cached; drop it so the next
+    // obtainBackend builds a fresh one even if its failure flag was not set.
+    liveBackend?.backend.dispose();
+    liveBackend = null;
+    setBootError(null);
+    setBooted(false);
+    setBootLog([]);
+    setBootNonce((nonce) => nonce + 1);
+  };
 
   useEffect(() => {
     if (!backend) {
@@ -111,7 +134,7 @@ export const DaliWasm = observer(() => {
     mqttClient.attach(backend);
     backend.ready.then(
       () => !cancelled && setBooted(true),
-      (error) => !cancelled && setBootError(String(error?.message ?? error))
+      (error) => !cancelled && setBootError(String(error?.message ?? error)),
     );
 
     return () => {
@@ -137,7 +160,7 @@ export const DaliWasm = observer(() => {
       )}
       {hasGateway && asksForPort && <PortGate onSelected={() => setHasPort(true)} />}
       {hasGateway && !asksForPort && (needsPort || bootError || !isBooted) && (
-        <BootProgress error={bootError} log={bootLog} />
+        <BootProgress error={bootError} log={bootLog} onRetry={retryBoot} />
       )}
       {hasGateway && !needsPort && !bootError && isBooted && (
         <MemoryRouter>

@@ -236,6 +236,10 @@ export default defineConfig(() => {
     build: {
       outDir: path.resolve(__dirname, offline ? 'dist-offline' : 'dist-configurator'),
       emptyOutDir: true,
+      // The offline page is one file; an asset left out of it (the glyphicons
+      // font was) renders as missing icons on an air-gapped machine. Inline
+      // everything — the page is already 25 MB, another base64 font is noise.
+      ...(offline ? { assetsInlineLimit: 1024 * 1024 } : {}),
     },
 
     server: {

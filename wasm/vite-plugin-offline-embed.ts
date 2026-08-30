@@ -384,7 +384,12 @@ export function offlineEmbedPlugin(): Plugin {
       const earlyScripts = `<script>${serialJs}</script>\n<script>${scriptJs}</script>`;
       html = html.replace(/<head([^>]*)>/i, `<head$1>\n${earlyScripts}`);
 
-      const firmware = await buildFirmwareBundle();
+      // NO_FIRMWARE=1 builds a page without the ~8 MB firmware catalog — a
+      // third smaller, for when the offline editor is wanted but firmware
+      // updates are not (the page falls back to fetching them when online).
+      const firmware: FirmwareEmbed = process.env.NO_FIRMWARE === '1'
+        ? (console.log('[offline-embed] firmware: skipped (NO_FIRMWARE=1)'), { texts: {}, blobs: {} })
+        : await buildFirmwareBundle();
       const firmwareJson = sanitizeScriptText(JSON.stringify(firmware));
 
       const blobs = [

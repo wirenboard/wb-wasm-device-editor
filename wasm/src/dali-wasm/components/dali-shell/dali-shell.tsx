@@ -39,9 +39,10 @@ export const DaliShell = observer(({ gateways, children }: PropsWithChildren<Dal
             own close cross would be a one-way door. */}
         <Button
           className="daliShell-debug"
-          label={t('navigation.buttons.debug')}
+          label={t('dali.labels.bus-monitor')}
           variant={consolePanelStore.isVisible ? 'primary' : 'secondary'}
           size="small"
+          aria-pressed={consolePanelStore.isVisible}
           onClick={() => consolePanelStore.toggleVisibility()}
         />
       </div>

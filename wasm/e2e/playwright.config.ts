@@ -9,5 +9,11 @@ export default defineConfig({
       name: 'chromium',
       use: { browserName: 'chromium' },
     },
+    {
+      // The installed Google Chrome, for hosts where the playwright-managed
+      // chromium download is unavailable: npx playwright test --project=system-chrome
+      name: 'system-chrome',
+      use: { browserName: 'chromium', channel: 'chrome' },
+    },
   ],
 });
