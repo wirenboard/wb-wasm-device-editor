@@ -163,11 +163,22 @@ async function buildFirmwareBundle(): Promise<FirmwareEmbed> {
   //    latest.wbfw for each. The downloader requests <version>.wbfw, where
   //    <version> is the content of latest.txt, so we store the wbfw under
   //    that versioned URL key (latest.wbfw and <version>.wbfw share content).
-  const bootloaderSigs: string[] = [];
-  for await (const { key } of listBucket('bootloader/by-signature/')) {
-    if (BOOTLOADER_LATEST_TXT_RE.test(key)) {
-      bootloaderSigs.push(key.split('/')[2]);
+  // The S3 listing is the one fetch the blob cache cannot answer — cache the
+  // list of signatures itself, so a network flap degrades to yesterday's
+  // catalog instead of failing the whole build.
+  const sigsCachePath = path.join(FIRMWARE_CACHE_DIR, 'bootloader-signatures.json');
+  let bootloaderSigs: string[] = [];
+  try {
+    for await (const { key } of listBucket('bootloader/by-signature/')) {
+      if (BOOTLOADER_LATEST_TXT_RE.test(key)) {
+        bootloaderSigs.push(key.split('/')[2]);
+      }
     }
+    fs.mkdirSync(FIRMWARE_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(sigsCachePath, JSON.stringify(bootloaderSigs));
+  } catch (error) {
+    bootloaderSigs = JSON.parse(fs.readFileSync(sigsCachePath, 'utf8'));
+    console.log(`[offline-embed] firmware: bucket listing unreachable, using cached list of ${bootloaderSigs.length} signatures`);
   }
 
   console.log(`[offline-embed] firmware: ${stableList.length} stable blobs + ${bootloaderSigs.length} bootloaders to fetch (cache: ${FIRMWARE_CACHE_DIR})`);
