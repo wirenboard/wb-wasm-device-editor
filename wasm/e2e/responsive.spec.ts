@@ -54,7 +54,11 @@ test('sidebar stacks above content in column layout on mobile', async ({ page })
   await page.getByRole('button', { name: 'Add device' }).click();
   await expect(page.locator('.confirm-content')).toBeVisible();
 
-  await page.locator('#device-type').click();
+  // The device-type select arrives preselected, and react-select's
+  // single-value overlay sits over the input, so a hit-tested click on
+  // #device-type never lands. Open the menu from the keyboard instead.
+  await page.locator('#device-type').focus();
+  await page.keyboard.press('ArrowDown');
   await page.locator('.dropdown__option').first().click();
 
   const modalSlaveIdInput = page.locator('.confirm-content input[type="number"]');
