@@ -193,7 +193,10 @@ class SerialPort {
                 this.isOpen = true;
             } catch (error) {
                 this.error = error;
-                if (error instanceof DOMException && error.name === 'NotFoundError') {
+                // No port chosen, or the chooser needs a user gesture we do
+                // not have — retrying only spams requestPort a hundred times.
+                if (error instanceof DOMException
+                    && ['NotFoundError', 'SecurityError', 'NotAllowedError'].includes(error.name)) {
                     delete this.port;
                     return;
                 }

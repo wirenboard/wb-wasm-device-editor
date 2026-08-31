@@ -10,11 +10,14 @@ export default defineConfig({
       use: {
         browserName: 'chromium',
         launchOptions: {
-          // CI runs the suite in a Docker container whose /dev/shm is the
-          // 64 MB default; the Pyodide-heavy DALI specs fill it and the
-          // renderer dies mid-suite ("browser has been closed") — the same
-          // build passes everywhere with a real /dev/shm. Harmless locally.
-          args: ['--disable-dev-shm-usage'],
+          // No hardware in e2e: with WebSerial exposed (CI's chromium image
+          // has it even headless), the first device access falls through to
+          // requestPort() without a user gesture and the page dies — the
+          // trace from the CI runner ends 300 ms after "Using native
+          // WebSerial API". Disabling the APIs makes every environment
+          // behave like the specs assume. /dev/shm: the Docker default
+          // 64 MB is too small for the Pyodide-heavy specs.
+          args: ['--disable-blink-features=Serial,WebUSB', '--disable-dev-shm-usage'],
         },
       },
     },
