@@ -82,7 +82,7 @@ uint8_t TWASMPort::ReadByte(const std::chrono::microseconds& timeout)
 {
     uint8_t byte = 0;
     if (ReadChunk(&byte, 1, ToMilliseconds(timeout, MIN_RESPONSE_TIMEOUT)) == 0) {
-        throw TResponseTimeoutException();
+        throw std::runtime_error("request timed out");
     }
     return byte;
 }
@@ -122,7 +122,14 @@ TReadFrameResult TWASMPort::ReadFrame(uint8_t* buffer,
     }
 
     if (!res.Count) {
-        throw TResponseTimeoutException();
+        // Deliberately NOT the TPort-contract TResponseTimeoutException: that
+        // type is transient, and wb-mqtt-serial's device paths (EnableEvents
+        // during deviceLoad of a never-answering device) retry it in a way
+        // that, under Asyncify, killed the renderer with a native stack
+        // overflow — reproduced deterministically, and gone with a plain
+        // runtime_error, which is also what this port always threw. port/Load
+        // then reports the field-known "Port IO error: request timed out".
+        throw std::runtime_error("request timed out");
     }
 
     LOG(Debug) << "read " << res.Count << " bytes: " << WBMQTT::HexDump(buffer, res.Count);
