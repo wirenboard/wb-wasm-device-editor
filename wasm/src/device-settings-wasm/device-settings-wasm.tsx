@@ -12,8 +12,9 @@ import { Loader } from '@/components/loader';
 import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
+import type { LoadConfigResult } from '@/stores/device-manager/types';
 import { useAsyncAction } from '@/utils/async-action';
-import { setReactLocale } from '~/react-directives/locale';
+import i18n from '@/i18n/config';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
@@ -235,7 +236,10 @@ export const DeviceSettingsWasm = observer(() => {
   };
 
   useEffect(() => {
-    setReactLocale();
+    const lang = localStorage.getItem('language') || 'en';
+    if (i18n.language !== lang) {
+      i18n.changeLanguage(lang);
+    }
   }, []);
 
   useEffect(() => {
@@ -251,7 +255,7 @@ export const DeviceSettingsWasm = observer(() => {
               '',
               store,
               fwUpdateProxy,
-              { LoadConfig: () => Promise.resolve({}) },
+              { LoadConfig: () => Promise.resolve({} as LoadConfigResult) },
             );
             setTabstore(tabStore);
           }
@@ -309,7 +313,7 @@ export const DeviceSettingsWasm = observer(() => {
         '',
         configDeviceTypesStore,
         fwUpdateProxy,
-        { LoadConfig: () => Promise.resolve({}) },
+        { LoadConfig: () => Promise.resolve({} as LoadConfigResult) },
       );
       setTabstore(store);
     }
@@ -437,7 +441,7 @@ export const DeviceSettingsWasm = observer(() => {
         }),
       },
     );
-    await store.loadContent(device.cfg);
+    await store.loadContent(getPortConfig(device.cfg));
     store.updateEmbeddedSoftwareVersion(getPortConfig(device.cfg));
     store.schemaStore.customChannels = null;
 
@@ -600,7 +604,7 @@ export const DeviceSettingsWasm = observer(() => {
             onChange={(option: Option<string>) => {
               localStorage.setItem('language', option.value);
               setLanguage(option.value);
-              setReactLocale();
+              i18n.changeLanguage(option.value);
             }}
           />
         </>
@@ -715,7 +719,7 @@ export const DeviceSettingsWasm = observer(() => {
                       '',
                       configDeviceTypesStore,
                       fwUpdateProxy,
-                      { LoadConfig: () => Promise.resolve({}) },
+                      { LoadConfig: () => Promise.resolve({} as LoadConfigResult) },
                     );
                     setTabstore(store);
                   }
