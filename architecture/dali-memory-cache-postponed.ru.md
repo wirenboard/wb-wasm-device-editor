@@ -1,11 +1,12 @@
 # Мемо-кэш шины DALI: дизайн и причина отзыва (SOFT-7409)
 
-Статус: **отозвано из редактора 2026-08-31**, возврат — только вместе с
-индикацией происхождения данных в UI. Трекинг: SOFT-7409. Код мемо остаётся
-upstream (wb-mqtt-dali#227, `wb/mqtt_dali/memory_cache.py` +
-`WBDALIDriver._send_through_memory`), выключен по умолчанию (`memory=None`);
-обвязка редактора снята коммитом «chore(dali): withdraw the memory memo» на
-`feat/dali-pyodide`. ADR 4–6 в `dali-wasm-arc42.ru.md` помечены отозванными.
+Статус: **отозвано 2026-08-31**, возврат — только вместе с индикацией
+происхождения данных в UI. Трекинг: SOFT-7409. Код мемо вырезан и из
+wb-mqtt-dali#227; полная реализация (`wb/mqtt_dali/memory_cache.py`,
+`WBDALIDriver._send_through_memory`, тесты) сохранена на ветке
+`soft-dali-memory-cache` в wb-mqtt-dali. Обвязка редактора снята коммитом
+«chore(dali): withdraw the memory memo» на `feat/dali-pyodide`. ADR 4–6 в
+`dali-wasm-arc42.ru.md` помечены отозванными.
 
 ## 1. Задача, которую решал мемо
 
@@ -21,7 +22,7 @@ upstream (wb-mqtt-dali#227, `wb/mqtt_dali/memory_cache.py` +
 Замерено с мемо: **−54 % кадров** на открытие устройства (ADR 4),
 **−30 кадров** на страницу настроек (ADR 5).
 
-## 2. Как мемо устроен (реализовано в wb-mqtt-dali#227)
+## 2. Как мемо устроен (реализация — ветка `soft-dali-memory-cache`)
 
 - **Схема кэша — сам протокол IEC 62386**, не объектная модель демона: ключи
   вида «банк/смещение устройства N», «QuerySceneLevel(3) gear 7». Демон может
@@ -94,8 +95,7 @@ upstream (wb-mqtt-dali#227, `wb/mqtt_dali/memory_cache.py` +
 
 | Артефакт | Где |
 |---|---|
-| Код мемо + serve-путь драйвера | wb-mqtt-dali#227 (`soft-dali-driver-link`): `memory_cache.py`, `wbdali.py::_send_through_memory` |
-| Тесты мемо (upstream) | wb-mqtt-dali `tests/test_memory_cache*.py` |
+| Код мемо + serve-путь драйвера + тесты | wb-mqtt-dali, ветка `soft-dali-memory-cache` (срез #227 до вырезания): `memory_cache.py`, `wbdali.py::_send_through_memory`, `tests/test_memory_cache*.py` |
 | Снятая обвязка редактора | история `feat/dali-pyodide`: `runtime.py`/`browser.py`/`persistence.ts`/`pyodide-backend.ts`/`dali-runtime.ts`, тесты `test_memory_cache.py`, `test_settings_memo.py` |
 | Замеры | ADR 4–5, ADR 25 (46 мс/кадр, −54 %/−30 кадров) |
 | Трекинг | SOFT-7409 |
