@@ -115,7 +115,12 @@ export const DaliWasm = observer(() => {
 
     return obtainBackend(
       scenarioForGateways(gateways),
-      (text) => setBootLog((lines) => [...lines.slice(-200), text]),
+      (text) => {
+        // The boot pane keeps only the tail and disappears once the page is
+        // up; the console keeps the daemon's whole story for field debugging.
+        console.debug('[dali]', text);
+        setBootLog((lines) => [...lines.slice(-200), text]);
+      },
     );
   }, [hasGateway, needsPort, gateways, bootNonce]);
 
