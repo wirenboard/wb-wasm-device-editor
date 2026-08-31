@@ -10,8 +10,12 @@ import asyncio
 import pytest
 from wb.mqtt_dali.bus_traffic import BusTrafficSource
 
-from wbdali_browser.dali_driver import MONITOR_IDLE_POLL_INTERVAL_S, MONITOR_POLL_INTERVAL_S
-from wbdali_browser.sim.control_gear import SimulatedControlDevice
+from wb.mqtt_dali.gateway_link import (
+    MONITOR_IDLE_POLL_INTERVAL_S,
+    MONITOR_POLL_INTERVAL_S,
+    MONITOR_QUIET_POLL_INTERVAL_S,
+)
+from wb.mqtt_dali.sim.control_gear import SimulatedControlDevice
 
 from .conftest import GATEWAY_DEVICE_ID, SimulatedStack
 
@@ -93,7 +97,7 @@ async def test_the_gateways_own_frames_do_not_appear_twice(dali_logger):
     from dali.address import GearBroadcast
     from dali.gear.general import Off
 
-    from wbdali_browser.sim.control_gear import SimulatedControlGear
+    from wb.mqtt_dali.sim.control_gear import SimulatedControlGear
 
     stack = SimulatedStack(gear=[SimulatedControlGear(shortaddr=0, random_address=0x1A2B3C)])
     driver = stack.driver(logger=dali_logger)
@@ -112,39 +116,37 @@ async def test_the_monitor_toggle_only_changes_the_pace(dali_logger):
     stack = SimulatedStack(devices=[SimulatedControlDevice(shortaddr=0, random_address=0x2B3C4D)])
     driver = stack.driver(logger=dali_logger)
     await driver.initialize()
-    assert driver._monitor_task is not None  # pylint: disable=protected-access
-    assert driver._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
+    assert driver.link._monitor_task is not None  # pylint: disable=protected-access
+    assert driver.link._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
 
     driver.set_bus_monitor_enabled(True)
-    assert driver._monitor_interval == MONITOR_POLL_INTERVAL_S  # pylint: disable=protected-access
+    assert driver.link._monitor_interval == MONITOR_POLL_INTERVAL_S  # pylint: disable=protected-access
     driver.set_bus_monitor_enabled(False)
-    assert driver._monitor_task is not None  # pylint: disable=protected-access
-    assert driver._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
+    assert driver.link._monitor_task is not None  # pylint: disable=protected-access
+    assert driver.link._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
 
     await driver.deinitialize()
-    assert driver._monitor_task is None  # pylint: disable=protected-access
+    assert driver.link._monitor_task is None  # pylint: disable=protected-access
 
 
 async def test_a_bus_of_plain_gear_polls_the_ring_lazily(dali_logger):
     """No control devices — nothing speaks unprompted, the idle poll relaxes."""
-    from wbdali_browser.dali_driver import MONITOR_QUIET_POLL_INTERVAL_S
-
     stack = SimulatedStack()
     driver = stack.driver(logger=dali_logger)
     await driver.initialize()
     try:
         driver.set_has_control_devices(False)
-        assert driver._monitor_interval == MONITOR_QUIET_POLL_INTERVAL_S  # pylint: disable=protected-access
+        assert driver.link._monitor_interval == MONITOR_QUIET_POLL_INTERVAL_S  # pylint: disable=protected-access
 
         # The operator's monitor toggle still wins while it is on…
         driver.set_bus_monitor_enabled(True)
-        assert driver._monitor_interval == MONITOR_POLL_INTERVAL_S  # pylint: disable=protected-access
+        assert driver.link._monitor_interval == MONITOR_POLL_INTERVAL_S  # pylint: disable=protected-access
         driver.set_bus_monitor_enabled(False)
-        assert driver._monitor_interval == MONITOR_QUIET_POLL_INTERVAL_S  # pylint: disable=protected-access
+        assert driver.link._monitor_interval == MONITOR_QUIET_POLL_INTERVAL_S  # pylint: disable=protected-access
 
         # …and a sensor appearing after a rescan quickens the idle pace.
         driver.set_has_control_devices(True)
-        assert driver._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
+        assert driver.link._monitor_interval == MONITOR_IDLE_POLL_INTERVAL_S  # pylint: disable=protected-access
     finally:
         await driver.deinitialize()
 

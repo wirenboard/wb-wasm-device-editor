@@ -2,10 +2,11 @@ import logging
 
 import pytest
 
-from wbdali_browser.dali_driver import BlockingDaliDriver
-from wbdali_browser.sim.control_gear import SimulatedControlGear
-from wbdali_browser.sim.dali_bus import SimulatedDaliBus
-from wbdali_browser.sim.network import SimulatedModbusNetwork
+from wb.mqtt_dali.gateway_link import RegisterLink
+from wb.mqtt_dali.wbdali import WBDALIConfig, WBDALIDriver
+from wb.mqtt_dali.sim.control_gear import SimulatedControlGear
+from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
+from wb.mqtt_dali.sim.network import SimulatedModbusNetwork
 
 GATEWAY_DEVICE_ID = "wb-mdali_1"
 
@@ -49,14 +50,11 @@ class SimulatedStack:
     async def stop(self):
         return None
 
-    def driver(self, bus: int = 1, logger=None, transport=None) -> BlockingDaliDriver:
-        from wb.mqtt_dali.wbdali import WBDALIConfig
-
-        return BlockingDaliDriver(
-            WBDALIConfig(device_name=GATEWAY_DEVICE_ID, bus=bus),
-            transport if transport is not None else self.network,
-            logger or logging.getLogger("test"),
-        )
+    def driver(self, bus: int = 1, logger=None, transport=None) -> WBDALIDriver:
+        config = WBDALIConfig(device_name=GATEWAY_DEVICE_ID, bus=bus)
+        logger = logger or logging.getLogger("test")
+        link = RegisterLink(config, transport if transport is not None else self.network, logger)
+        return WBDALIDriver(config, None, logger, link=link)
 
 
 @pytest.fixture

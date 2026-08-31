@@ -2,10 +2,12 @@
 
 The daemon is started the way `main.py::default_service` starts it, minus the
 parts a browser cannot provide: no broker connection, no signal handlers, no
-journal. What replaces them is a loopback broker for the daemon's own
-publishing, a stub for the one wb-mqtt-serial RPC its boot depends on, a
-pre-seeded virtual filesystem, and a DALI driver that reaches the gateway over
-Modbus registers instead of MQTT.
+journal. What replaces them comes from the daemon's own package — its
+in-process broker and the stand-in for wb-mqtt-serial (`wb.mqtt_dali.sim`),
+its register link for a host that owns the Modbus side and its optional memo
+(`wb.mqtt_dali.gateway_link`, `wb.mqtt_dali.memory_cache`) — wired through the
+seams `Gateway` and `ApplicationController` offer a host: a driver factory,
+group seeding, a relocatable data directory, and awaitables instead of polling.
 
 Boot order is not negotiable (see `Gateway.start()`):
 
@@ -30,9 +32,13 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from .broker import Broker, Client, Message, get_payload_str
-from .dali_driver import RegisterTransport, make_driver_class
-from .serial_service import WbMqttSerialConfigService
+from wb.mqtt_dali.common_dali_device import DATA_DIR_ENV
+from wb.mqtt_dali.gateway_link import RegisterLink, RegisterTransport
+from wb.mqtt_dali.memory_cache import MemoryCache
+from wb.mqtt_dali.mqtt_dispatcher import get_str_payload
+from wb.mqtt_dali.sim.broker import Broker, Client, Message, topic_matches
+from wb.mqtt_dali.sim.serial_service import FakeWbMqttSerial
+from wb.mqtt_dali.wbdali import WBDALIDriver
 
 logger = logging.getLogger("wbdali_browser.runtime")
 
@@ -47,10 +53,12 @@ CONFED_SCHEMA_PATH = "usr/share/wb-mqtt-confed/schemas/wb-mqtt-dali.schema.json"
 # the editor shows the raw GTIN.
 GTIN_DB_PATH = DATA_DIR + "/products.csv"
 
-# The one path the daemon hardcodes and does not take as an argument
-# (`common_dali_device.py:697`). Loading it ourselves onto the class attribute it
-# caches in means that `open()` never runs.
-COMMON_DEVICE_SCHEMA = "schemas/common_device.schema.json"
+# How long boot waits for the configured devices' first initialization attempts
+# before showing the page with whatever has come up.
+FIRST_ATTEMPTS_DEADLINE_S = 30.0
+# 120 s: a populated bus takes ~20 s on real hardware; the rest is headroom
+# for a bus full of unaddressed gear.
+COMMISSIONING_DEADLINE_S = 120.0
 
 
 def default_config(gateway_ids: List[str]) -> dict:
@@ -83,7 +91,7 @@ def write_config(root: Path, config: dict) -> None:
 
 
 def install_data_files(vendor_dir: Path, root: Path) -> None:
-    """Lay out the package data the daemon reads from absolute paths.
+    """Lay out the package data the daemon reads from its data directory.
 
     In the browser these arrive as a tarball unpacked straight into `/usr/share`,
     so this is only used by the tests, which install under a temporary root
@@ -95,21 +103,6 @@ def install_data_files(vendor_dir: Path, root: Path) -> None:
     _copy_if_present(vendor_dir / "schemas", root / DATA_DIR / "schemas")
     _copy_if_present(vendor_dir / "products.csv", root / GTIN_DB_PATH)
     _copy_if_present(vendor_dir / "wb-mqtt-dali.schema.json", root / CONFED_SCHEMA_PATH)
-
-    # `common_dali_device.py` opens this one from a hardcoded absolute path
-    # rather than taking it as an argument, so under a shifted root it has to be
-    # placed on the class attribute the daemon caches it in.
-    if root != Path("/"):
-        preload_common_device_schema(vendor_dir / COMMON_DEVICE_SCHEMA)
-
-
-def preload_common_device_schema(schema_path: Path) -> None:
-    from wb.mqtt_dali.common_dali_device import DaliDeviceBase
-
-    if not DaliDeviceBase._common_schema:  # pylint: disable=protected-access
-        DaliDeviceBase._common_schema = json.loads(  # pylint: disable=protected-access
-            schema_path.read_text(encoding="utf-8")
-        )
 
 
 def _copy_if_present(source: Path, target: Path) -> None:
@@ -128,7 +121,7 @@ def _copy_if_present(source: Path, target: Path) -> None:
 class DaliRuntime:
     """One running wb-mqtt-dali, its broker, and the emulated wb-mqtt-serial."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         transport: RegisterTransport,
         serial_config: dict,
@@ -140,10 +133,12 @@ class DaliRuntime:
     ) -> None:
         self.broker = Broker()
         self.transport = transport
-        self.serial = WbMqttSerialConfigService(self.broker, serial_config)
+        # Config only: the daemon discovers its modules through config/Load,
+        # and reaches them itself through the register link below.
+        self.serial = FakeWbMqttSerial(self.broker, None, serial_config)
         self.groups_seed = groups
         self.memory_seed = memory
-        self.memory_caches: Dict[tuple, Any] = {}
+        self.memory_caches: Dict[tuple, MemoryCache] = {}
         self.config = config if config is not None else default_config(self.serial.device_ids)
         self.vendor_dir = vendor_dir
         self.root = Path(root)
@@ -174,22 +169,15 @@ class DaliRuntime:
             raise
 
     async def _start(self) -> "DaliRuntime":
-        from wb.mqtt_dali import application_controller
         from wb.mqtt_dali.gateway import Gateway
         from wb.mqtt_dali.gtin_db import DaliDatabase
         from wb.mqtt_dali.mqtt_dispatcher import MQTTDispatcher
 
-        # `ApplicationController` builds its own DALI driver, handing it the MQTT
-        # dispatcher it would use to reach wb-mqtt-serial. Substituting the name
-        # it constructs is the whole adaptation: the browser talks to the gateway
-        # over Modbus registers instead, one blocking request at a time.
-        application_controller.WBDALIDriver = make_driver_class(
-            self.transport, self.memory_caches, self.memory_seed
-        )
-        install_bus_monitor_polling(application_controller.ApplicationController)
-
         if self.vendor_dir is not None:
             install_data_files(self.vendor_dir, self.root)
+        # The daemon reads its schemas from here; under a shifted root that is
+        # where install_data_files put them, in the browser it is the tarball.
+        os.environ[DATA_DIR_ENV] = str(self.root / DATA_DIR)
         write_config(self.root, self.config)
 
         self._client = Client(self.broker, "wb-mqtt-dali")
@@ -205,34 +193,35 @@ class DaliRuntime:
             self.dispatcher,
             str(self.root / CONFIG_PATH),
             DaliDatabase(str(self.root / GTIN_DB_PATH)),
+            driver_factory=self._make_driver,
         )
         await self.gateway.start()
         seeded = self._seed_groups(self.groups_seed or {})
         await self._wait_for_configured_devices(already_seeded=seeded)
-        self._update_monitor_pacing()
         logger.info("wb-mqtt-dali is running")
         return self
 
-    def _update_monitor_pacing(self) -> None:
-        """Tell each bus driver whether anything on its bus speaks unprompted.
+    def _make_driver(self, config, mqtt_dispatcher, driver_logger, dev_inst_map) -> WBDALIDriver:
+        """The daemon's driver over this host's Modbus access, with a memo per bus.
 
-        A bus with DALI-2 control devices needs its monitor ring read briskly
-        even when nobody watches — sensor events are the daemon's data path.
-        A bus of plain gear does not, and its driver can relax the idle poll.
-        Re-run after config changes: a rescan can add or remove the sensors.
+        Each bus gets its own memo (DTR registers are per bus), created on first
+        use from the seed for that bus — `"<module>_bus_<n>"` — and kept so the
+        runtime can snapshot it later.
         """
-        if self.gateway is None:
-            return
-        for wb_dali_gateway in self.gateway.wb_dali_gateways:
-            for controller in wb_dali_gateway.buses:
-                controller.driver.set_has_control_devices(bool(controller.dali2_devices))
+        key = (config.device_name, config.bus)
+        cache = self.memory_caches.get(key)
+        if cache is None:
+            cache = MemoryCache((self.memory_seed or {}).get(f"{config.device_name}_bus_{config.bus}"))
+            self.memory_caches[key] = cache
+        link = RegisterLink(config, self.transport, driver_logger)
+        return WBDALIDriver(config, mqtt_dispatcher, driver_logger, dev_inst_map, link=link, memory=cache)
+
+    def _controllers(self):
+        return [controller for wb_dali_gateway in self.gateway.wb_dali_gateways for controller in wb_dali_gateway.buses]
 
     def _all_devices(self):
         return [
-            device
-            for wb_dali_gateway in self.gateway.wb_dali_gateways
-            for controller in wb_dali_gateway.buses
-            for device in controller.dali_devices + controller.dali2_devices
+            device for controller in self._controllers() for device in controller.dali_devices + controller.dali2_devices
         ]
 
     def _seed_groups(self, groups_by_mqtt_id: Dict[str, List[int]]) -> set:
@@ -251,17 +240,12 @@ class DaliRuntime:
         seeded = set()
         for device in self._all_devices():
             seed = groups_by_mqtt_id.get(device.mqtt_id)
-            parameter = getattr(device, "_groups_parameter", None)
-            if seed is None or parameter is None:
+            if seed is None or not hasattr(device, "seed_groups"):
                 continue
-            if device.is_initialized:
-                # The bus has already answered; last session's copy is the
-                # stale one now.
-                seeded.add(device.mqtt_id)
-                continue
-            indexes = {index for index in seed if 0 <= index < len(parameter._groups)}
-            parameter._group_indexes = indexes
-            parameter._groups = [index in indexes for index in range(len(parameter._groups))]
+            if not device.is_initialized:
+                device.seed_groups(seed)
+            # Either way the page shows this device correctly: the bus has
+            # answered, or last session's copy stands in until it does.
             seeded.add(device.mqtt_id)
         return seeded
 
@@ -282,7 +266,7 @@ class DaliRuntime:
         }
 
     async def _wait_for_configured_devices(self, already_seeded: set = frozenset()) -> None:
-        """Hold "ready" until unseeded configured devices have initialized.
+        """Hold "ready" until every unseeded configured device has been tried once.
 
         The web UI reads the device tree exactly once, when its page mounts, and
         only rebuilds it from a commissioning run. A device seeded with last
@@ -295,37 +279,39 @@ class DaliRuntime:
         gives up after a deadline and boots with whatever has come up; the
         stragglers keep initializing behind the page as they would have anyway.
         """
-        devices = [
-            device for device in self._all_devices() if device.mqtt_id not in already_seeded
+        waiting = [
+            controller
+            for controller in self._controllers()
+            if any(
+                device.mqtt_id not in already_seeded
+                for device in controller.dali_devices + controller.dali2_devices
+            )
         ]
-        if not devices:
+        if not waiting:
             return
+        count = sum(
+            1 for device in self._all_devices() if device.mqtt_id not in already_seeded
+        )
         # Reading five devices' worth of identity and groups takes tens of
         # seconds at DALI speed, and the boot screen shows this log as it
-        # happens — so say what the time is being spent on, one line per device.
-        logger.info("Reading %d configured DALI device(s) from the bus...", len(devices))
-        deadline = asyncio.get_running_loop().time() + 30.0
-        reported: set = set()
-        while True:
-            for device in devices:
-                # Keyed on mqtt_id: names repeat (the default is "DALI <short>"
-                # with no bus in it), and a duplicate would stall the wait at
-                # the deadline for devices that are already up.
-                if device.is_initialized and device.mqtt_id not in reported:
-                    reported.add(device.mqtt_id)
-                    logger.info("  %s is up (%d/%d)", device.name, len(reported), len(devices))
-            if len(reported) == len(devices):
-                return
-            if asyncio.get_running_loop().time() > deadline:
-                logger.warning(
-                    "Booting with %d device(s) still initializing: %s",
-                    len(devices) - len(reported),
-                    ", ".join(
-                        device.name for device in devices if device.mqtt_id not in reported
-                    ),
-                )
-                return
-            await asyncio.sleep(0.1)
+        # happens — so say what the time is being spent on.
+        logger.info("Reading %d configured DALI device(s) from the bus...", count)
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*(controller.wait_first_init_attempts() for controller in waiting)),
+                FIRST_ATTEMPTS_DEADLINE_S,
+            )
+        except asyncio.TimeoutError:
+            pass
+        pending = [
+            device.name
+            for device in self._all_devices()
+            if device.mqtt_id not in already_seeded and not device.is_initialized
+        ]
+        if pending:
+            logger.warning(
+                "Booting with %d device(s) still initializing: %s", len(pending), ", ".join(pending)
+            )
 
     async def stop(self) -> None:
         if hasattr(self.transport, "stop"):
@@ -364,9 +350,7 @@ class DaliRuntime:
             self._dispatch_to_ui(message)
 
     def _dispatch_to_ui(self, message: Message) -> None:
-        from .broker import topic_matches
-
-        payload = get_payload_str(message)
+        payload = get_str_payload(message)
         for pattern, callbacks in list(self._subscriptions.items()):
             if not topic_matches(pattern, message.topic.value):
                 continue
@@ -394,7 +378,7 @@ class DaliRuntime:
         # A later subscriber to a filter already in place gets its own replay,
         # because the broker only replays on the first SUBSCRIBE.
         for message in self.broker.retained_matching(pattern):
-            callback(message.topic.value, get_payload_str(message), True)
+            callback(message.topic.value, get_str_payload(message), True)
 
     def unsubscribe(self, pattern: str) -> None:
         """Drop every UI callback for a filter, matching homeui's mqttClient."""
@@ -443,47 +427,24 @@ class DaliRuntime:
                 except Exception:  # pylint: disable=broad-exception-caught
                     logger.exception("Automatic scan of %s failed to start", bus_id)
                     continue
-                await self._wait_for_commissioning_to_finish(bus_id)
-
-    async def _wait_for_commissioning_to_finish(self, bus_id: str) -> None:
-        # 120 s: a populated bus takes ~20 s on real hardware; the rest is
-        # headroom for a bus full of unaddressed gear.
-        deadline = asyncio.get_running_loop().time() + 120.0
-        while asyncio.get_running_loop().time() < deadline:
-            await asyncio.sleep(0.5)
-            try:
-                gateways = await self.rpc("Editor", "GetList")
-            except Exception:  # pylint: disable=broad-exception-caught
-                logger.exception("Polling commissioning state of %s failed", bus_id)
-                return
-            for gateway in gateways:
-                for bus in gateway.get("buses", []):
-                    if bus.get("id") != bus_id:
-                        continue
-                    # In-progress states carry the stage name (queued,
-                    # binary_search, read_device_info, dali2_* …), so wait for
-                    # a terminal one rather than guessing at the rest.
-                    status = bus.get("commissioning", {}).get("status")
-                    if status in ("idle", "completed", "failed", "cancelled"):
-                        return
-        logger.warning("Automatic scan of %s did not finish in time", bus_id)
+                try:
+                    await asyncio.wait_for(self.gateway.wait_commissioning(bus_id), COMMISSIONING_DEADLINE_S)
+                except asyncio.TimeoutError:
+                    logger.warning("Automatic scan of %s did not finish in time", bus_id)
 
     def watch_config(self, callback: Callable[[str, str, str], None]) -> None:
         """Report the config, the group snapshot and the memory memo when any changes.
 
         The browser's filesystem does not survive a reload, so the page has to
-        keep the config itself. Rather than polling, this watches the events
-        that can follow a change — an `Editor/*` reply, a commissioning state
-        change, and the device topics the daemon publishes as it initializes
-        and polls — and reports only when the contents actually differ. The
-        daemon rewrites the config on boot, on every GetList, on SetBus,
-        SetGateway and ResetDevice, and when a scan completes; the group
-        snapshot changes when initialization reads membership off the bus,
-        which touches no file and answers no RPC — that is what the device
-        topics are subscribed for. The third payload is the memory memo
-        (`snapshot_memory()`): identity bytes and settings answers the next
-        session can serve without the bus.
+        keep the config itself. The daemon says when it writes the config
+        (`Gateway.on_config_saved`); the group snapshot and the memo change as
+        initialization and page opens read the bus, which touches no file and
+        answers no RPC — so the events that follow those are watched too, and a
+        report goes out only when the contents actually differ. The third
+        payload is the memory memo (`snapshot_memory()`): identity bytes and
+        settings answers the next session can serve without the bus.
         """
+
         def snapshot() -> tuple:
             return (
                 self.read_config(),
@@ -493,15 +454,13 @@ class DaliRuntime:
 
         last: List[tuple] = [snapshot()]
 
-        def check(_topic: str, _payload: str, _retained: bool) -> None:
+        def check(*_args) -> None:
             current = snapshot()
             if current[0] and current != last[0]:
                 last[0] = current
-                # The same events that change the config change what lives on
-                # the buses — retune the ring polling along with the report.
-                self._update_monitor_pacing()
                 callback(*current)
 
+        self.gateway.on_config_saved(check)
         self.subscribe("/rpc/v1/wb-mqtt-dali/+/+/+/reply", check)
         self.subscribe("/wb-dali/+/commissioning", check)
         self.subscribe("/devices/+/meta", check)
@@ -557,33 +516,3 @@ class RpcError(Exception):
     def __init__(self, error: dict) -> None:
         self.error = error
         super().__init__(error.get("data") or error.get("message") or "RPC error")
-
-
-def install_bus_monitor_polling(controller_class) -> None:
-    """Let the bus monitor toggle start and stop the driver's ring polling.
-
-    On a controller the monitor needs nothing from the driver: wb-mqtt-serial
-    streams the ring as sporadic events and the flag only decides whether the
-    daemon republishes them. Here the ring has to be read, which costs serial
-    traffic — so the same flag has to reach the driver.
-
-    Two wrappers rather than a subclass: `Gateway` constructs these itself, from
-    two places, and both would have to be substituted.
-    """
-    if getattr(controller_class, "_bus_monitor_polling_installed", False):
-        return
-
-    original_start = controller_class.start
-    original_set = controller_class.set_bus_monitor_enabled
-
-    async def start(self):
-        await original_start(self)
-        self._dev.set_bus_monitor_enabled(self.bus_monitor_enabled)
-
-    def set_bus_monitor_enabled(self, enabled: bool) -> None:
-        original_set(self, enabled)
-        self._dev.set_bus_monitor_enabled(enabled)
-
-    controller_class.start = start
-    controller_class.set_bus_monitor_enabled = set_bus_monitor_enabled
-    controller_class._bus_monitor_polling_installed = True

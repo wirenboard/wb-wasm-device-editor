@@ -9,10 +9,10 @@ import asyncio
 
 import pytest
 
-from wbdali_browser.broker import Client
-from wbdali_browser.sim.control_gear import SimulatedControlGear
-from wbdali_browser.sim.dali_bus import SimulatedDaliBus
-from wbdali_browser.sim.network import SimulatedModbusNetwork
+from wb.mqtt_dali.sim.broker import Client
+from wb.mqtt_dali.sim.control_gear import SimulatedControlGear
+from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
+from wb.mqtt_dali.sim.network import SimulatedModbusNetwork
 
 from .conftest import GATEWAY_DEVICE_ID, SimulatedStack, serial_config_with
 
@@ -24,7 +24,7 @@ async def test_a_publish_in_the_same_tick_as_a_subscribe_is_delivered():
     anything published before it ran, which is exactly what a caller that
     subscribes and then immediately publishes does.
     """
-    from wbdali_browser.broker import Broker
+    from wb.mqtt_dali.sim.broker import Broker
 
     broker = Broker()
     client = Client(broker, "same-tick")
@@ -106,10 +106,10 @@ async def test_an_unreachable_module_reports_an_error_rather_than_hanging():
 
 async def test_the_config_service_lists_the_gateways_the_daemon_looks_for():
     """`Gateway._update_gateways` deletes any gateway this config does not list."""
-    from wbdali_browser.broker import Broker
-    from wbdali_browser.serial_service import WbMqttSerialConfigService
+    from wb.mqtt_dali.sim.broker import Broker
+    from wb.mqtt_dali.sim.serial_service import FakeWbMqttSerial
 
-    service = WbMqttSerialConfigService(Broker(), serial_config_with(GATEWAY_DEVICE_ID))
+    service = FakeWbMqttSerial(Broker(), None, serial_config_with(GATEWAY_DEVICE_ID))
 
     assert service.device_ids == [GATEWAY_DEVICE_ID]
     devices = service.serial_config["ports"][0]["devices"]

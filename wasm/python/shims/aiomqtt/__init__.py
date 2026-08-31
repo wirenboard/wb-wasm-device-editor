@@ -10,6 +10,6 @@ client must be attached to a `Broker`, so the runtime creates them explicitly
 and this module only provides the type for isinstance checks and annotations.
 """
 
-from wbdali_browser.broker import Client, Message, MqttError, Topic
+from wb.mqtt_dali.sim.broker import Client, Message, MqttError, Topic
 
 __all__ = ["Client", "Message", "MqttError", "Topic"]

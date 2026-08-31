@@ -12,7 +12,9 @@ set -e
 
 DST=${1:-wasm/python/vendor}
 
-WB_MQTT_DALI_REF=${WB_MQTT_DALI_REF:-main}
+# soft-dali-host-apis carries the simulator, the gateway link, the memo and the
+# host seams (wirenboard/wb-mqtt-dali#226, #227, #228); back to main once merged.
+WB_MQTT_DALI_REF=${WB_MQTT_DALI_REF:-soft-dali-host-apis}
 PYTHON_DALI_REF=${PYTHON_DALI_REF:-dev/v0.11}
 PYTHON_MQTT_RPC_REF=${PYTHON_MQTT_RPC_REF:-main}
 JSON_RPC_REF=${JSON_RPC_REF:-master}

@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, Optional
 
 from .hardware import WasmSerialTransport
 from .runtime import DaliRuntime, default_config
-from .scenario import serial_config, serial_settings, slave_ids
+from wb.mqtt_dali.sim.scenario import serial_config, serial_settings, slave_ids
 
 logger = logging.getLogger("wbdali_browser")
 
@@ -49,7 +49,7 @@ def configure_logging(level: str = "INFO") -> None:
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
     # The bus driver logs one line per frame at DEBUG; a scan is thousands of
     # frames, and each line costs a postMessage to the page.
-    logging.getLogger("wbdali_browser.sim").setLevel(logging.INFO)
+    logging.getLogger("wb.mqtt_dali.sim").setLevel(logging.INFO)
 
 
 async def start(
@@ -249,7 +249,7 @@ def _require() -> DaliRuntime:
 def _simulated_port_load(scenario):
     """A `port/Load` served by a simulated WB-DALI module (see SIM_SLAVE_ID)."""
     from .hardware import hex_to_registers, registers_to_hex
-    from .scenario import build_network, default_scenario
+    from wb.mqtt_dali.sim.scenario import build_network, default_scenario
     wiring = default_scenario()["gateways"][0]["buses"]
     sim = {"gateways": [dict(g, buses=wiring) for g in scenario["gateways"]], "frameDelaySeconds": 0.0}
     network = build_network(sim)

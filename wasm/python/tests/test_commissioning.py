@@ -11,7 +11,7 @@ import asyncio
 from wb.mqtt_dali.commissioning import Commissioning, CommissioningStage
 from wb.mqtt_dali.dali_device import DaliDeviceAddress
 
-from wbdali_browser.sim.control_gear import SimulatedControlGear as simulated_gear
+from wb.mqtt_dali.sim.control_gear import SimulatedControlGear as simulated_gear
 
 from .conftest import SimulatedStack
 

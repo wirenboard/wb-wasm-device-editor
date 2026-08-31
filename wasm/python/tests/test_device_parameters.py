@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 
 from wbdali_browser.runtime import DaliRuntime
-from wbdali_browser.sim.control_gear import SimulatedControlGear
-from wbdali_browser.sim.dali_bus import SimulatedDaliBus
-from wbdali_browser.sim.network import SimulatedModbusNetwork
+from wb.mqtt_dali.sim.control_gear import SimulatedControlGear
+from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
+from wb.mqtt_dali.sim.network import SimulatedModbusNetwork
 
 from .conftest import GATEWAY_DEVICE_ID, serial_config_with
 

@@ -14,9 +14,9 @@ from pathlib import Path
 
 from wbdali_browser import browser
 from wbdali_browser.hardware import hex_to_registers, registers_to_hex
-from wbdali_browser.sim.control_gear import SimulatedControlGear
-from wbdali_browser.sim.dali_bus import SimulatedDaliBus
-from wbdali_browser.sim.network import SimulatedModbusNetwork
+from wb.mqtt_dali.sim.control_gear import SimulatedControlGear
+from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
+from wb.mqtt_dali.sim.network import SimulatedModbusNetwork
 
 VENDOR_DIR = Path(__file__).parent.parent / "vendor"
 GATEWAY = "wb-dali_17"

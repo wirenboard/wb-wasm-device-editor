@@ -11,55 +11,7 @@ import collections
 import tempfile
 from pathlib import Path
 
-from dali.address import GearBroadcast, GearShort
-from dali.frame import BackwardFrame
-from dali.gear.general import DTR0, QuerySceneLevel, SetMaxLevel
-
-from wbdali_browser.memory_cache import MemoryCache
-
 from .test_memory_cache import boot, make_stack
-
-
-class _Answer:  # pylint: disable=too-few-public-methods
-    def __init__(self, byte):
-        self.raw_value = BackwardFrame(byte)
-
-
-def test_a_config_write_makes_the_memo_forget_its_target():
-    cache = MemoryCache()
-    query = QuerySceneLevel(GearShort(0), 7)
-    cache.observe(query, _Answer(42))
-    assert cache.plan([query]) == {0: 42}
-
-    # A config write to another short leaves this device's memo alone…
-    cache.observe(SetMaxLevel(GearShort(3)), None)
-    assert cache.plan([query]) == {0: 42}
-
-    # …a write to this short — or to everyone — does not.
-    cache.observe(SetMaxLevel(GearShort(0)), None)
-    assert cache.plan([query]) is None
-
-    cache.observe(query, _Answer(42))
-    cache.observe(SetMaxLevel(GearBroadcast()), None)
-    assert cache.plan([query]) is None
-
-
-def test_a_batch_containing_a_config_write_is_never_served():
-    cache = MemoryCache()
-    query = QuerySceneLevel(GearShort(0), 7)
-    cache.observe(query, _Answer(42))
-    assert cache.plan([query, SetMaxLevel(GearShort(0))]) is None
-
-
-def test_the_signature_tells_scenes_apart():
-    cache = MemoryCache()
-    cache.observe(QuerySceneLevel(GearShort(0), 7), _Answer(42))
-    assert cache.plan([QuerySceneLevel(GearShort(0), 8)]) is None
-    # The signature is the question itself, not the surrounding traffic: an
-    # unrelated DTR write earlier in the batch must not turn the same scene
-    # question into a different one (interleaved generators write DTRs all
-    # the time).
-    assert cache.plan([DTR0(200), QuerySceneLevel(GearShort(0), 7)]) == {1: 42}
 
 
 async def _frames_of_get_device(network, buses, memory=None):
@@ -100,81 +52,6 @@ async def test_a_seeded_session_reads_scenes_and_levels_off_the_memo():
     assert sum(seeded.values()) < sum(cold.values())
 
 
-def test_a_transient_no_answer_is_not_remembered():
-    cache = MemoryCache()
-    query = QuerySceneLevel(GearShort(0), 7)
-
-    class _NoAnswer:  # pylint: disable=too-few-public-methods
-        raw_value = None
-
-    cache.observe(query, _NoAnswer())
-    assert cache.plan([query]) is None
-
-    # The next, answered read is what the memo keeps.
-    cache.observe(query, _Answer(42))
-    assert cache.plan([query]) == {0: 42}
-
-
-def test_an_undelivered_read_does_not_advance_the_shadow_register():
-    from dali.gear.general import DTR1, ReadMemoryLocation
-
-    cache = MemoryCache()
-
-    class _Undelivered:  # pylint: disable=too-few-public-methods
-        raw_value = None
-
-    cache.observe(DTR1(0), None)
-    cache.observe(DTR0(3), None)
-    # The gateway never transmitted this frame — the device never saw it,
-    # so its DTR0 still points at offset 3.
-    cache.observe(ReadMemoryLocation(GearShort(0)), _Undelivered(), delivered=False)
-    cache.observe(ReadMemoryLocation(GearShort(0)), _Answer(0x42))
-
-    assert cache.plan([DTR1(0), DTR0(3), ReadMemoryLocation(GearShort(0))]) == {2: 0x42}
-
-
-def test_per_instance_questions_do_not_collide():
-    from dali.address import DeviceShort, InstanceNumber
-    from dali.device.general import QueryEventScheme
-
-    cache = MemoryCache()
-    q1 = QueryEventScheme(DeviceShort(0), InstanceNumber(1))
-    q2 = QueryEventScheme(DeviceShort(0), InstanceNumber(2))
-    cache.observe(q1, _Answer(2))
-    assert cache.plan([q1]) == {0: 2}
-    # Instance 2 was never asked — its answer must not be instance 1's.
-    assert cache.plan([q2]) is None
-
-
-def test_absence_is_remembered_only_with_three_strikes_of_conviction():
-    from dali.address import DeviceShort
-    from wb.mqtt_dali.device.feedback import QueryFeedbackCapability
-    from dali.address import FeatureInstanceNumber
-
-    class _NoAnswer:  # pylint: disable=too-few-public-methods
-        raw_value = None
-
-    cache = MemoryCache()
-    probe = QueryFeedbackCapability(DeviceShort(0), FeatureInstanceNumber(2))
-
-    cache.observe(probe, _NoAnswer())
-    cache.observe(probe, _NoAnswer())
-    assert cache.plan([probe]) is None  # two glitches are not a fact
-
-    cache.observe(probe, _NoAnswer())
-    # Three consecutive unanswered deliveries: the device does not implement
-    # this feature, and the memo now answers the probe without the bus.
-    assert cache.plan([probe]) == {0: None}
-
-    # An actual answer resets the conviction counter.
-    cache2 = MemoryCache()
-    cache2.observe(probe, _NoAnswer())
-    cache2.observe(probe, _Answer(1))
-    cache2.observe(probe, _NoAnswer())
-    cache2.observe(probe, _NoAnswer())
-    assert cache2.plan([probe]) == {0: 1}
-
-
 async def test_a_seeded_sensor_page_reads_its_instances_off_the_memo():
     """A DALI-2 device page is per-instance settings and feature probes —
     the second session should ask the bus almost none of it."""
@@ -188,8 +65,8 @@ async def test_a_seeded_sensor_page_reads_its_instances_off_the_memo():
     from pathlib import Path
 
     from wbdali_browser.runtime import DaliRuntime, default_config
-    from wbdali_browser.sim.dali_bus import SimulatedDaliBus
-    from wbdali_browser.sim.network import SimulatedModbusNetwork
+    from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
+    from wb.mqtt_dali.sim.network import SimulatedModbusNetwork
 
     async def one_session(memory=None):
         config = default_config([SENSOR_GW])

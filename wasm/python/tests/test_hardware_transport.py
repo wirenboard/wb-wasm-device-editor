@@ -9,16 +9,17 @@ protocol above it belongs to the driver.
 
 import pytest
 
-from wbdali_browser.dali_driver import BlockingDaliDriver
+from wb.mqtt_dali.gateway_link import RegisterLink
+from wb.mqtt_dali.wbdali import WBDALIDriver
 from wbdali_browser.hardware import (
     ModbusError,
     WasmSerialTransport,
     hex_to_registers,
     registers_to_hex,
 )
-from wbdali_browser.sim.control_gear import SimulatedControlGear
-from wbdali_browser.sim.dali_bus import SimulatedDaliBus
-from wbdali_browser.sim.gateway import VirtualWbDaliGateway
+from wb.mqtt_dali.sim.control_gear import SimulatedControlGear
+from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
+from wb.mqtt_dali.sim.gateway import VirtualWbDaliGateway
 
 from .conftest import GATEWAY_DEVICE_ID
 
@@ -121,15 +122,15 @@ async def test_the_driver_runs_over_this_transport_unchanged(dali_logger):
 
     gateway = make_gateway()
     transport = WasmSerialTransport(make_port_load(gateway), {GATEWAY_DEVICE_ID: SLAVE_ID})
-    driver = BlockingDaliDriver(
-        WBDALIConfig(device_name=GATEWAY_DEVICE_ID, bus=1), transport, dali_logger
-    )
+    config = WBDALIConfig(device_name=GATEWAY_DEVICE_ID, bus=1)
+    driver = WBDALIDriver(config, None, dali_logger, link=RegisterLink(config, transport, dali_logger))
     await driver.initialize()
-
-    await driver.send(DAPC(GearShort(0), 128))
-    response = await driver.send(QueryActualLevel(GearShort(0)))
-
-    assert response.value == 128
+    try:
+        await driver.send(DAPC(GearShort(0), 128))
+        response = await driver.send(QueryActualLevel(GearShort(0)))
+        assert response.value == 128
+    finally:
+        await driver.deinitialize()
 
 
 async def test_a_single_register_write_uses_function_6():

@@ -14,9 +14,9 @@ from dali.address import GearShort
 from dali.gear.general import Initialise
 
 from wbdali_browser.runtime import DaliRuntime, default_config
-from wbdali_browser.sim.control_gear import SimulatedControlGear
-from wbdali_browser.sim.dali_bus import SimulatedDaliBus
-from wbdali_browser.sim.network import SimulatedModbusNetwork
+from wb.mqtt_dali.sim.control_gear import SimulatedControlGear
+from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
+from wb.mqtt_dali.sim.network import SimulatedModbusNetwork
 
 from .conftest import GATEWAY_DEVICE_ID, serial_config_with
 

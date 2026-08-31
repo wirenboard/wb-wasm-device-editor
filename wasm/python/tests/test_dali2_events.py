@@ -15,9 +15,9 @@ import asyncio
 from dali.tests import fakes
 
 from wbdali_browser.runtime import DaliRuntime, default_config
-from wbdali_browser.sim.control_gear import SimulatedControlDevice
-from wbdali_browser.sim.dali_bus import SimulatedDaliBus
-from wbdali_browser.sim.network import SimulatedModbusNetwork
+from wb.mqtt_dali.sim.control_gear import SimulatedControlDevice
+from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
+from wb.mqtt_dali.sim.network import SimulatedModbusNetwork
 
 from .conftest import GATEWAY_DEVICE_ID, serial_config_with
 from .test_memory_cache import VENDOR_DIR

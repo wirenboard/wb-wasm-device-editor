@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from wbdali_browser.runtime import DaliRuntime, default_config
-from wbdali_browser.scenario import build_network, default_scenario, serial_config
+from wb.mqtt_dali.sim.scenario import build_network, default_scenario, serial_config
 
 from .conftest import GATEWAY_DEVICE_ID
 from .test_runtime_editor_rpc import wait_for_commissioning
