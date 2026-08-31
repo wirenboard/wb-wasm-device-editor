@@ -183,6 +183,13 @@ class SerialPort {
     async open() {
         if (this.isOpen)
             await this.close();
+        if (!this.api) {
+            // No WebSerial/WebUSB in this browser: retrying cannot conjure a
+            // port, and the 100-attempt loop below turned every request into
+            // a 150 ms stall — thousands of them per device load.
+            delete this.port;
+            return;
+        }
         this.pending = new Uint8Array();
         this.optionsChanged = false;
 
