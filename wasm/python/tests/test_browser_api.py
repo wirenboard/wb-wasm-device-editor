@@ -1,9 +1,9 @@
 """The JavaScript-facing API, exercised the way dali-runtime.ts calls it.
 
 `browser.start()` takes positional arguments — scenario, config, groups,
-memory, port_load — and the TS boot message hands them over in that order.
+port_load — and the TS boot message hands them over in that order.
 Nothing else pins that order, so this does, along with the JSON envelope the
-port_load bridge speaks and the three-part watch_config callback.
+port_load bridge speaks and the two-part watch_config callback.
 """
 
 import asyncio
@@ -76,7 +76,6 @@ async def test_start_takes_the_arguments_in_the_order_dali_runtime_ts_passes_the
             scenario_json(),
             json.dumps(config),
             json.dumps(groups),
-            None,  # memory: nothing remembered yet
             make_port_load(network),
         )
         assert json.loads(applied)["gateways"][0]["id"] == GATEWAY
@@ -86,19 +85,24 @@ async def test_start_takes_the_arguments_in_the_order_dali_runtime_ts_passes_the
         assert gateways[0]["buses"][0]["devices"][0]["groups"] == [3]
 
         reports = []
-        browser.watch_config(lambda config_text, groups_json, memory_json: reports.append(
-            (json.loads(config_text), json.loads(groups_json), json.loads(memory_json))
+        browser.watch_config(lambda config_text, groups_json: reports.append(
+            (json.loads(config_text), json.loads(groups_json))
         ))
-        # A device-page open reads the memory banks, which the watcher must
-        # then report as a memory snapshot for the page to persist.
-        device_id = gateways[0]["buses"][0]["devices"][0]["id"]
-        await browser.rpc("Editor", "GetDevice", json.dumps({"deviceId": device_id}))
+        # SetBus always rewrites the config file, which the watcher must then
+        # report — config and group snapshot — for the page to persist.
+        await browser.rpc(
+            "Editor", "SetBus",
+            json.dumps({"busId": f"{GATEWAY}_bus_1", "config": {"bus_monitor_enabled": True}}),
+        )
         for _ in range(100):
             await asyncio.sleep(0.05)
-            if any(report[2].get(f"{GATEWAY}_bus_1", {}).get("gear") for report in reports):
+            if any(
+                report[0].get("gateways") and f"{GATEWAY}_bus_1_0" in report[1]
+                for report in reports
+            ):
                 break
         else:
-            raise AssertionError(f"watcher never reported the memory snapshot: {reports[-1:] }")
+            raise AssertionError(f"watcher never reported the saved config: {reports[-1:] }")
     finally:
         await browser.stop()
         browser.Path = original_root

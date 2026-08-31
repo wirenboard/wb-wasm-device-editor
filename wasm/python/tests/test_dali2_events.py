@@ -11,6 +11,7 @@ the Illuminance control stays frozen at 0. The cure is the sensor's own
 """
 
 import asyncio
+from pathlib import Path
 
 from dali.tests import fakes
 
@@ -20,7 +21,8 @@ from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
 from wb.mqtt_dali.sim.network import SimulatedModbusNetwork
 
 from .conftest import GATEWAY_DEVICE_ID, serial_config_with
-from .test_memory_cache import VENDOR_DIR
+
+VENDOR_DIR = Path(__file__).parent.parent / "vendor"
 
 # LightEvent(instance 1, 422 lux) as an MSensor in the factory "Instance"
 # scheme puts it on the wire — instance type 4 in the frame, no short address.

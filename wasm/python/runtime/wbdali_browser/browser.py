@@ -56,7 +56,6 @@ async def start(
     scenario_json: str,
     config_json: Optional[str] = None,
     groups_json: Optional[str] = None,
-    memory_json: Optional[str] = None,
     port_load: Optional[Callable] = None,
 ) -> str:
     """Boot wb-mqtt-dali against the WB-DALI modules the Modbus scan found.
@@ -107,7 +106,6 @@ async def start(
         config=_restore_config(config_json, gateway_ids) or default_config(gateway_ids),
         root=Path("/"),
         groups=_restore_groups(groups_json),
-        memory=_restore_memory(memory_json),
     )
     # Only publish the runtime once it is up: a failed start would otherwise
     # leave a half-built one for the next call to stop().
@@ -167,23 +165,10 @@ def _restore_groups(groups_json: Optional[str]) -> Optional[dict]:
     return restored
 
 
-def _restore_memory(memory_json: Optional[str]) -> Optional[dict]:
-    if not memory_json:
-        return None
-    try:
-        memory = json.loads(memory_json)
-    except ValueError:
-        logger.warning("Saved DALI memory-bank state is not valid JSON; ignoring it")
-        return None
-    # Per-entry validation happens in MemoryCache, which skips what it cannot
-    # read; a malformed seed costs at most a re-read, never the boot.
-    return memory if isinstance(memory, dict) else None
-
-
-def watch_config(callback: Callable[[str, str, str], None]) -> None:
+def watch_config(callback: Callable[[str, str], None]) -> None:
     """Report the daemon's config whenever it changes, so the page can keep it.
 
-    The callback also receives the group-membership snapshot and the memory memo as JSON: groups are
+    The callback also receives the group-membership snapshot as JSON: groups are
     not in the config file, and losing them across a reload is what makes a
     restored installation open groupless.
     """

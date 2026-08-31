@@ -4,8 +4,8 @@ The daemon is started the way `main.py::default_service` starts it, minus the
 parts a browser cannot provide: no broker connection, no signal handlers, no
 journal. What replaces them comes from the daemon's own package — its
 in-process broker and the stand-in for wb-mqtt-serial (`wb.mqtt_dali.sim`),
-its register link for a host that owns the Modbus side and its optional memo
-(`wb.mqtt_dali.gateway_link`, `wb.mqtt_dali.memory_cache`) — wired through the
+its register link for a host that owns the Modbus side
+(`wb.mqtt_dali.gateway_link`) — wired through the
 seams `Gateway` and `ApplicationController` offer a host: a driver factory,
 group seeding, a relocatable data directory, and awaitables instead of polling.
 
@@ -34,7 +34,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 from wb.mqtt_dali.common_dali_device import DATA_DIR_ENV
 from wb.mqtt_dali.gateway_link import RegisterLink, RegisterTransport
-from wb.mqtt_dali.memory_cache import MemoryCache
 from wb.mqtt_dali.mqtt_dispatcher import get_str_payload
 from wb.mqtt_dali.sim.broker import Broker, Client, Message, topic_matches
 from wb.mqtt_dali.sim.serial_service import FakeWbMqttSerial
@@ -129,7 +128,6 @@ class DaliRuntime:
         vendor_dir: Optional[Path] = None,
         root: Path = Path("/"),
         groups: Optional[Dict[str, List[int]]] = None,
-        memory: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.broker = Broker()
         self.transport = transport
@@ -137,8 +135,6 @@ class DaliRuntime:
         # and reaches them itself through the register link below.
         self.serial = FakeWbMqttSerial(self.broker, None, serial_config)
         self.groups_seed = groups
-        self.memory_seed = memory
-        self.memory_caches: Dict[tuple, MemoryCache] = {}
         self.config = config if config is not None else default_config(self.serial.device_ids)
         self.vendor_dir = vendor_dir
         self.root = Path(root)
@@ -202,19 +198,14 @@ class DaliRuntime:
         return self
 
     def _make_driver(self, config, mqtt_dispatcher, driver_logger, dev_inst_map) -> WBDALIDriver:
-        """The daemon's driver over this host's Modbus access, with a memo per bus.
+        """The daemon's driver over this host's Modbus access.
 
-        Each bus gets its own memo (DTR registers are per bus), created on first
-        use from the seed for that bus — `"<module>_bus_<n>"` — and kept so the
-        runtime can snapshot it later.
+        No memory memo: every read goes to the bus. Withdrawn pending the
+        provenance design (SOFT-7409) — cached values must be labeled as
+        cached in the UI before they are served again.
         """
-        key = (config.device_name, config.bus)
-        cache = self.memory_caches.get(key)
-        if cache is None:
-            cache = MemoryCache((self.memory_seed or {}).get(f"{config.device_name}_bus_{config.bus}"))
-            self.memory_caches[key] = cache
         link = RegisterLink(config, self.transport, driver_logger)
-        return WBDALIDriver(config, mqtt_dispatcher, driver_logger, dev_inst_map, link=link, memory=cache)
+        return WBDALIDriver(config, mqtt_dispatcher, driver_logger, dev_inst_map, link=link)
 
     def _controllers(self):
         return [controller for wb_dali_gateway in self.gateway.wb_dali_gateways for controller in wb_dali_gateway.buses]
@@ -248,14 +239,6 @@ class DaliRuntime:
             # answered, or last session's copy stands in until it does.
             seeded.add(device.mqtt_id)
         return seeded
-
-    def snapshot_memory(self) -> Dict[str, Any]:
-        """Every bus's memory-bank memo, keyed by the random address each device
-        answered with — what the next session verifies before trusting a byte."""
-        return {
-            f"{device_name}_bus_{bus}": cache.snapshot()
-            for (device_name, bus), cache in self.memory_caches.items()
-        }
 
     def snapshot_groups(self) -> Dict[str, List[int]]:
         """Each device's group membership, for the page to keep across reloads."""
@@ -432,24 +415,21 @@ class DaliRuntime:
                 except asyncio.TimeoutError:
                     logger.warning("Automatic scan of %s did not finish in time", bus_id)
 
-    def watch_config(self, callback: Callable[[str, str, str], None]) -> None:
-        """Report the config, the group snapshot and the memory memo when any changes.
+    def watch_config(self, callback: Callable[[str, str], None]) -> None:
+        """Report the config and the group snapshot when either changes.
 
         The browser's filesystem does not survive a reload, so the page has to
         keep the config itself. The daemon says when it writes the config
-        (`Gateway.on_config_saved`); the group snapshot and the memo change as
-        initialization and page opens read the bus, which touches no file and
+        (`Gateway.on_config_saved`); the group snapshot changes as
+        initialization reads the bus, which touches no file and
         answers no RPC — so the events that follow those are watched too, and a
-        report goes out only when the contents actually differ. The third
-        payload is the memory memo (`snapshot_memory()`): identity bytes and
-        settings answers the next session can serve without the bus.
+        report goes out only when the contents actually differ.
         """
 
         def snapshot() -> tuple:
             return (
                 self.read_config(),
                 json.dumps(self.snapshot_groups()),
-                json.dumps(self.snapshot_memory(), sort_keys=True),
             )
 
         last: List[tuple] = [snapshot()]

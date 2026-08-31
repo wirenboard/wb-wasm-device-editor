@@ -127,21 +127,19 @@ export async function createDaliRuntime(host: RuntimeHost): Promise<DaliRuntimeH
             JSON.stringify(message.scenario),
             message.config ?? undefined,
             message.groups ?? undefined,
-            message.memory ?? undefined,
             (request: string) => host.portLoad(request)
           );
 
           // The daemon rewrites its config after a scan and on other edits; the
           // page stores each version so the installation survives a reload.
-          // Group membership and the memory memo ride along: it is not in the config, and it is
+          // Group membership rides along: it is not in the config, and it is
           // what lets the next session's page open with groups immediately.
-          dali.watch_config((config: string, groups: string, memory: string) => {
+          dali.watch_config((config: string, groups: string) => {
             host.post({
               type: 'config',
               config,
               scenario: JSON.parse(dali.snapshot_scenario()),
               groups,
-              memory,
             });
           });
 

@@ -20,12 +20,6 @@ export interface StoredInstallation {
    * lets the page open with them immediately.
    */
   groups?: string;
-  /**
-   * Memory-bank bytes per device (identity: GTIN, serials, versions),
-   * JSON-encoded and keyed by the random address they were read from — the
-   * reads that dominate every device initialization and first page open.
-   */
-  memory?: string;
 }
 
 export function loadInstallation(): StoredInstallation | null {

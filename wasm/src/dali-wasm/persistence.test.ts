@@ -6,17 +6,15 @@ describe('installation persistence', () => {
     window.localStorage.clear();
   });
 
-  it('round-trips config, scenario, groups and memory', () => {
+  it('round-trips config, scenario and groups', () => {
     saveInstallation({
       config: '{"gateways": []}',
       scenario: { gateways: [{ id: 'wb-dali_17', slaveId: 17, buses: {} }] },
       groups: '{"wb-dali_17_bus_1_4": [1, 5]}',
-      memory: '{"wb-dali_17_bus_1": {"gear": {}}}',
     });
     const loaded = loadInstallation();
     expect(loaded?.config).toBe('{"gateways": []}');
     expect(loaded?.groups).toBe('{"wb-dali_17_bus_1_4": [1, 5]}');
-    expect(loaded?.memory).toBe('{"wb-dali_17_bus_1": {"gear": {}}}');
     expect((loaded?.scenario as any).gateways[0].slaveId).toBe(17);
   });
 
