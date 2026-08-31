@@ -7,7 +7,16 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { browserName: 'chromium' },
+      use: {
+        browserName: 'chromium',
+        launchOptions: {
+          // CI runs the suite in a Docker container whose /dev/shm is the
+          // 64 MB default; the Pyodide-heavy DALI specs fill it and the
+          // renderer dies mid-suite ("browser has been closed") — the same
+          // build passes everywhere with a real /dev/shm. Harmless locally.
+          args: ['--disable-dev-shm-usage'],
+        },
+      },
     },
     // The installed Google Chrome, for hosts where the playwright-managed
     // chromium download is unavailable. Opt-in (PW_SYSTEM_CHROME=1 npx
