@@ -81,7 +81,17 @@ export function findDaliGateways<T extends { cfg: DaliGateway['serial'] & { slav
  * No buses are listed: on real hardware the devices on them are whatever a bus
  * scan finds, and the daemon writes them into its own config afterwards.
  */
+// Opt-in pacing for the simulated bus (seconds per DALI frame), set by tests
+// that need the "bus is still busy" window a real installation always has.
+export const SIM_FRAME_DELAY_KEY = 'wb-dali-sim-frame-delay-s';
+
 export function scenarioForGateways(gateways: DaliGateway[]): InstallationScenario {
+  let frameDelaySeconds = 0;
+  try {
+    frameDelaySeconds = Number(window.localStorage.getItem(SIM_FRAME_DELAY_KEY)) || 0;
+  } catch {
+    // Storage can be unavailable (privacy mode); the sim just runs unpaced.
+  }
   return {
     gateways: gateways.map((gateway) => ({
       id: gateway.id,
@@ -89,6 +99,7 @@ export function scenarioForGateways(gateways: DaliGateway[]): InstallationScenar
       buses: { 1: {}, 2: {}, 3: {} },
     })),
     serialSettings: gateways[0]?.serial,
+    ...(frameDelaySeconds > 0 ? { frameDelaySeconds } : {}),
   };
 }
 

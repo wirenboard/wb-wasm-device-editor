@@ -24,6 +24,10 @@ topicCopyPolicy.enabled = false;
 // A controller host copies monitor rows to syslog; this build has no syslog.
 daliHostCapabilities.syslogMonitor = false;
 
+// The loopback broker never leaves the page, so a device's MQTT id names
+// nothing the user could refer to — hide its editor on the device page.
+daliHostCapabilities.externalBroker = false;
+
 // homeui's CSS variables are scoped to [data-theme='light'|'dark'] on the root
 // element, and in homeui it is uiStore that puts the attribute there. This app
 // never runs that store, and without the attribute every var(--...) inside the

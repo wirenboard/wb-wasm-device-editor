@@ -42,6 +42,13 @@ export interface InstallationScenario {
     parity: string;
     stop_bits: number;
   };
+  /**
+   * Wall-clock cost the SIMULATED bus charges per DALI frame, seconds.
+   * Real hardware paces itself (~46 ms/frame); the sim answers instantly,
+   * which hides every "the bus is still busy" state from tests. Honoured by
+   * `wbdali_browser.sim`; ignored on real gateways.
+   */
+  frameDelaySeconds?: number;
 }
 
 export interface ScenarioGateway {
