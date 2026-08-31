@@ -20,6 +20,41 @@ PYTHON_MQTT_RPC_REF=${PYTHON_MQTT_RPC_REF:-main}
 JSON_RPC_REF=${JSON_RPC_REF:-master}
 PAHO_MQTT_REF=${PAHO_MQTT_REF:-master}
 
+# The vendored tree is only as fresh as the last fetch, and a reused CI
+# workspace or a developer checkout keeps it for weeks while the branches it
+# came from move on. Each fetch stamps the exact commits it took; when every
+# branch still points at the same commit there is nothing to do. Without
+# network the stamp cannot be checked, and an existing tree is kept.
+resolve()
+{
+    local REPO=$1
+    local REF=$2
+    local SHA
+    # ls-remote rather than the REST API: the API's anonymous quota is shared
+    # by everyone behind one address, which a CI runner regularly exhausts.
+    SHA=$(timeout 30 git ls-remote "https://github.com/$REPO.git" "refs/heads/$REF" 2>/dev/null | cut -f1)
+    echo "${SHA:-unresolved}"
+}
+
+WANT="wirenboard/wb-mqtt-dali@$WB_MQTT_DALI_REF=$(resolve wirenboard/wb-mqtt-dali "$WB_MQTT_DALI_REF")
+wirenboard/python-dali@$PYTHON_DALI_REF=$(resolve wirenboard/python-dali "$PYTHON_DALI_REF")
+wirenboard/python-mqtt-rpc@$PYTHON_MQTT_RPC_REF=$(resolve wirenboard/python-mqtt-rpc "$PYTHON_MQTT_RPC_REF")
+pavlov99/json-rpc@$JSON_RPC_REF=$(resolve pavlov99/json-rpc "$JSON_RPC_REF")
+eclipse-paho/paho.mqtt.python@$PAHO_MQTT_REF=$(resolve eclipse-paho/paho.mqtt.python "$PAHO_MQTT_REF")"
+STAMP=$DST/.refs
+if [ -f "$STAMP" ] && [ -z "$FORCE_FETCH" ]; then
+    case "$WANT" in
+        *unresolved*)
+            echo "python sources in $DST: kept (GitHub unreachable, cannot check freshness)"
+            exit 0
+            ;;
+    esac
+    if [ "$(cat "$STAMP")" = "$WANT" ]; then
+        echo "python sources in $DST: up to date"
+        exit 0
+    fi
+fi
+
 FETCH_DIR=$(mktemp -d)
 trap "rm -rf $FETCH_DIR" EXIT
 
@@ -84,3 +119,4 @@ find $DST -name '__pycache__' -type d -prune -exec rm -rf {} +
 find $DST -name '*.pyc' -delete
 
 echo "python sources in $DST: $(du -sh $DST | cut -f1)"
+printf "%s" "$WANT" > "$STAMP"
