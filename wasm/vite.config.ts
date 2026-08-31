@@ -215,7 +215,9 @@ export default defineConfig(() => {
     react(),
     commonjs(),
     svgr({ include: '**/*.svg' }),
-    throttleModuleData(),
+    // Off by default: 500 KB/s turns every dev page load into a ~20 s wait.
+    // Opt in when working on the loading-progress UI.
+    ...(process.env.THROTTLE_MODULE_DATA === '1' ? [throttleModuleData()] : []),
     stripPyodideWasmUrl(),
     rebuildPythonBundle(),
     redirectHomeuiModules(),
