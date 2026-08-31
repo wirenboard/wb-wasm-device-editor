@@ -9,8 +9,7 @@
 
 /// <reference lib="webworker" />
 
-import { assetBytes as sharedAssetBytes, createDaliRuntime, decodeInlineAsset, type DaliRuntimeHandle } from './dali-runtime';
-import { ASSET_URL } from './pyodide-assets';
+import { assetBytes as sharedAssetBytes, createDaliRuntime, type DaliRuntimeHandle } from './dali-runtime';
 
 type InlineAsset = { b64: string; gzip: boolean };
 

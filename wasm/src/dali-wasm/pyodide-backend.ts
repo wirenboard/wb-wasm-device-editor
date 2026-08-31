@@ -16,7 +16,6 @@ import type { DaliBackend, MessageHandler } from './backend';
 import { assetBytes, createDaliRuntime, type DaliRuntimeHandle } from './dali-runtime';
 import { readInlineAssets, type InlineAsset } from './inline-assets';
 import { clearInstallation, loadInstallation, saveInstallation } from './persistence';
-import { ASSET_URL } from './pyodide-assets';
 import { registerBootFailure, writeBootFailureFlag } from './boot-failure';
 import { startWorker, type WorkerHost } from './worker-host';
 

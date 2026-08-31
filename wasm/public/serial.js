@@ -139,6 +139,10 @@ class SerialPort {
 
     async forceSelect() {
         this.checkSerial('forceSelect');
+        // The open port belongs to the previous selection; without this the
+        // swapped-in port is never opened (writes used to reopen every time).
+        await this.close();
+        this.pending = new Uint8Array();
         this.port = await this.api.requestPort({ filters: this.filters });
         localStorage.setItem('serialPort', this.portKey(this.port.getInfo()));
     }
@@ -220,17 +224,27 @@ class SerialPort {
         // Closing and reopening the USB port on every write cost tens of
         // milliseconds per Modbus exchange; the port stays open until the line
         // settings change or a request fails.
-        if (!this.isOpen || this.optionsChanged)
+        if (!this.isOpen || this.optionsChanged || !this.port || !this.port.writable)
             await this.open();
 
         if (!this.port || !this.port.writable) {
             console.error('Serial port is not open or not writable');
+            this.isOpen = false;
             return;
         }
 
-        const writer = this.port.writable.getWriter();
-        await writer.write(data);
-        writer.releaseLock();
+        try {
+            const writer = this.port.writable.getWriter();
+            await writer.write(data);
+            writer.releaseLock();
+        } catch (error) {
+            // A dead stream: the adapter was unplugged or Chrome errored the
+            // port. Mark it closed so the next request reopens and heals —
+            // the old reopen-on-every-write policy did this by accident.
+            console.warn('Serial write failed, will reopen:', error);
+            this.isOpen = false;
+            throw error;
+        }
     }
 
     /**
@@ -245,8 +259,14 @@ class SerialPort {
         }
         if (!this.port || !this.port.readable) {
             console.error('Serial port is not open or not readable');
+            this.isOpen = false;
             return new Uint8Array();
         }
+        // Firmware flows ask for extra patience around bootloader operations;
+        // honour it here since the module's own timeouts no longer go through
+        // the old read() path.
+        if (this.extendedTimeout)
+            timeoutMs = Math.max(timeoutMs, this.replyTimeout);
 
         const reader = this.port.readable.getReader();
         let timer;
@@ -292,7 +312,16 @@ class SerialPort {
             return;
         // A zero-length wait would race the port; a few milliseconds is enough
         // to collect what the adapter already holds.
-        while ((await this.readChunk(4096, 5)).length) { /* drained */ }
+        // Bounded: a noisy line, or a second master polling the same bus,
+        // delivers bytes continuously, and an unbounded drain would hold the
+        // whole request pipeline hostage.
+        const deadline = performance.now() + 100;
+        while ((await this.readChunk(4096, 5)).length) {
+            if (performance.now() > deadline) {
+                console.warn('Serial drain gave up: the line keeps delivering data');
+                break;
+            }
+        }
         this.pending = new Uint8Array();
     }
 
