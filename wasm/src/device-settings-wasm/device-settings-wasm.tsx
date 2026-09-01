@@ -12,7 +12,6 @@ import { Loader } from '@/components/loader';
 import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
-import type { LoadConfigResult } from '@/stores/device-manager/types';
 import { useAsyncAction } from '@/utils/async-action';
 import i18n from '@/i18n/config';
 import { formatBytes } from '../utils/format-bytes';
@@ -236,13 +235,6 @@ export const DeviceSettingsWasm = observer(() => {
   };
 
   useEffect(() => {
-    const lang = localStorage.getItem('language') || 'en';
-    if (i18n.language !== lang) {
-      i18n.changeLanguage(lang);
-    }
-  }, []);
-
-  useEffect(() => {
     if (moduleInitialized) {
       configDeviceTypes().then((store) => {
         if (selectedDevice) {
@@ -255,7 +247,7 @@ export const DeviceSettingsWasm = observer(() => {
               '',
               store,
               fwUpdateProxy,
-              { LoadConfig: () => Promise.resolve({} as LoadConfigResult) },
+              { LoadConfig: () => Promise.resolve({ parameters: {}, fw: '', model: '' }) },
             );
             setTabstore(tabStore);
           }
@@ -313,7 +305,7 @@ export const DeviceSettingsWasm = observer(() => {
         '',
         configDeviceTypesStore,
         fwUpdateProxy,
-        { LoadConfig: () => Promise.resolve({} as LoadConfigResult) },
+        { LoadConfig: () => Promise.resolve({ parameters: {}, fw: '', model: '' }) },
       );
       setTabstore(store);
     }
@@ -719,7 +711,7 @@ export const DeviceSettingsWasm = observer(() => {
                       '',
                       configDeviceTypesStore,
                       fwUpdateProxy,
-                      { LoadConfig: () => Promise.resolve({} as LoadConfigResult) },
+                      { LoadConfig: () => Promise.resolve({ parameters: {}, fw: '', model: '' }) },
                     );
                     setTabstore(store);
                   }

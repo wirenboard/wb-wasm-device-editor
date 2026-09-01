@@ -25,11 +25,10 @@ window.Module =
 
       _requestLock: Promise.resolve(),
 
-      onRuntimeInitialized() {
-          if (typeof this.setReleaseSuite === 'function') {
-              this.setReleaseSuite(localStorage.getItem('release') || 'stable');
-          }
+      async onRuntimeInitialized() {
+          this.setReleaseSuite(localStorage.getItem('release') || 'stable');
           this.serial = new SerialPort();
+          await this.serial.init();
           this.loadingProgress = { loaded: this.loadingProgress?.total || 0, total: this.loadingProgress?.total || 0, percent: 100 };
           this._notifyLoading();
           wasmReadyResolve();
@@ -135,16 +134,6 @@ window.Module =
       },
 
       _fwUpdateStateCallbacks: [],
-
-      parseReply(string) {
-          const json = JSON.parse(string);
-          this.reply = json;
-
-          if (this.reply.error)
-              this.print('request error ' + this.reply.error.code + ': ' + this.reply.error.message);
-
-          this.finished = true;
-      },
 
       parseString(string, fwUpdateState) {
           const json = JSON.parse(string);
