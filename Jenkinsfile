@@ -136,10 +136,19 @@ pipeline {
             }
             steps {
                 dir(path: 'wasm') {
+                    // Traces on failure: the suite passes everywhere locally
+                    // (Playwright's own headless shell included), while this
+                    // stage loses the browser mid-suite — the trace is the
+                    // only witness of what killed it here.
                     sh '''
                         export PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-                        npm run test:e2e
+                        npm run test:e2e -- --trace retain-on-failure
                     '''
+                }
+            }
+            post {
+                failure {
+                    archiveArtifacts artifacts: 'wasm/test-results/**', allowEmptyArchive: true
                 }
             }
         }
