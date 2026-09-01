@@ -159,43 +159,6 @@ class _SerialPacedTransport:
         await self._network.write_holding(device_id, address, values)
 
 
-async def test_groups_survive_a_restart_without_a_rescan(tmp_path):
-    """The first GetList of a fresh boot already carries group membership.
-
-    The web UI takes its device tree from one GetList when the page mounts and
-    only rebuilds it from a commissioning run. Group membership is not in the
-    config file — it lives on the gear, read during device initialization — so
-    boot must not report ready before that read has happened, or every session
-    opens showing the installation without its groups until someone rescans.
-    """
-    config = default_config([GATEWAY_DEVICE_ID])
-    config["gateways"][0]["buses"][0]["devices"] = [
-        {"short": 0, "random": 0x100000, "name": "grouped lamp"},
-    ]
-
-    network = SimulatedModbusNetwork()
-    buses = {index: SimulatedDaliBus() for index in (1, 2, 3)}
-    buses[1].add_gear(SimulatedControlGear(shortaddr=0, random_address=0x100000, groups={1, 5}))
-    network.add_module(GATEWAY_DEVICE_ID, buses)
-
-    runtime = DaliRuntime(
-        transport=_SerialPacedTransport(network),
-        serial_config=serial_config_with(GATEWAY_DEVICE_ID),
-        config=config,
-        vendor_dir=VENDOR_DIR,
-        root=tmp_path,
-    )
-    await runtime.start()
-    try:
-        gateways = await runtime.rpc("Editor", "GetList")
-
-        devices = gateways[0]["buses"][0]["devices"]
-        assert [device["name"] for device in devices] == ["grouped lamp"]
-        assert devices[0]["groups"] == [1, 5]
-    finally:
-        await runtime.stop()
-
-
 async def test_seeded_groups_show_without_waiting_for_the_bus(tmp_path):
     """A groups seed makes the first GetList correct with no init wait at all.
 
@@ -336,5 +299,42 @@ async def test_the_config_watcher_reports_groups_learned_after_boot(tmp_path):
                 break
         else:
             raise AssertionError(f"watcher never reported the corrected groups: {reports[-3:]}")
+    finally:
+        await runtime.stop()
+
+
+async def test_a_restored_boot_does_not_wait_for_device_initialization(tmp_path):
+    """The page shows up now and fills in as the bus answers.
+
+    Reading a restored installation's devices off the bus takes tens of
+    seconds at DALI speed; holding "ready" for it kept the whole UI behind
+    the boot log (the observed cost of withdrawing the memo, SOFT-7409).
+    """
+    config = default_config([GATEWAY_DEVICE_ID])
+    config["gateways"][0]["buses"][0]["devices"] = [
+        {"short": 0, "random": 0x100000, "name": "lamp"},
+    ]
+
+    network = SimulatedModbusNetwork()
+    buses = {index: SimulatedDaliBus() for index in (1, 2, 3)}
+    buses[1].add_gear(SimulatedControlGear(shortaddr=0, random_address=0x100000, groups={3}))
+    network.add_module(GATEWAY_DEVICE_ID, buses)
+
+    runtime = DaliRuntime(
+        transport=_SerialPacedTransport(network),
+        serial_config=serial_config_with(GATEWAY_DEVICE_ID),
+        config=config,
+        vendor_dir=VENDOR_DIR,
+        root=tmp_path,
+        # Deliberately no group seed: even the worst case must not gate READY.
+    )
+    await runtime.start()
+    try:
+        device = runtime._all_devices()[0]  # pylint: disable=protected-access
+        # start() came back before the paced bus could finish first init...
+        assert not device.is_initialized
+        # ...and the tree is already servable from the config alone.
+        gateways = await runtime.rpc("Editor", "GetList")
+        assert gateways[0]["buses"][0]["devices"][0]["name"] == "lamp"
     finally:
         await runtime.stop()

@@ -58,6 +58,13 @@ async def sensor_runtime(tmp_path):
         root=tmp_path,
     )
     await runtime.start()
+    # start() no longer waits for device initialization; these tests need the
+    # sensor's instance map built (and its own boot-time publications over
+    # with) before frames are injected, so wait for it here explicitly.
+    for _ in range(200):
+        if all(device.is_initialized for device in runtime._all_devices()):  # pylint: disable=protected-access
+            break
+        await asyncio.sleep(0.05)
     return runtime, network
 
 

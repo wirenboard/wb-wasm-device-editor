@@ -54,7 +54,6 @@ GTIN_DB_PATH = DATA_DIR + "/products.csv"
 
 # How long boot waits for the configured devices' first initialization attempts
 # before showing the page with whatever has come up.
-FIRST_ATTEMPTS_DEADLINE_S = 30.0
 # 120 s: a populated bus takes ~20 s on real hardware; the rest is headroom
 # for a bus full of unaddressed gear.
 COMMISSIONING_DEADLINE_S = 120.0
@@ -192,8 +191,16 @@ class DaliRuntime:
             driver_factory=self._make_driver,
         )
         await self.gateway.start()
-        seeded = self._seed_groups(self.groups_seed or {})
-        await self._wait_for_configured_devices(already_seeded=seeded)
+        self._seed_groups(self.groups_seed or {})
+        # Deliberately NOT waiting for device initialization: reading a
+        # restored installation's devices off the bus takes tens of seconds at
+        # DALI speed, and the page can already live with stragglers — the tree
+        # comes from the config, seeded groups stand in until the bus answers,
+        # a group tab re-asks, and asking about a device pulls its
+        # initialization forward. The UI shows up now and fills in.
+        pending = sum(1 for device in self._all_devices() if not device.is_initialized)
+        if pending:
+            logger.info("%d device(s) initializing behind the page", pending)
         logger.info("wb-mqtt-dali is running")
         return self
 
@@ -247,54 +254,6 @@ class DaliRuntime:
             for device in self._all_devices()
             if hasattr(device, "groups")
         }
-
-    async def _wait_for_configured_devices(self, already_seeded: set = frozenset()) -> None:
-        """Hold "ready" until every unseeded configured device has been tried once.
-
-        The web UI reads the device tree exactly once, when its page mounts, and
-        only rebuilds it from a commissioning run. A device seeded with last
-        session's groups already shows correctly, so it is not worth waiting
-        for; one with no seed would show groupless until a rescan, which is
-        worth a slower boot to avoid. In the common case every device is seeded
-        and this returns at once.
-
-        A device that does not answer must not hold the page hostage, so this
-        gives up after a deadline and boots with whatever has come up; the
-        stragglers keep initializing behind the page as they would have anyway.
-        """
-        waiting = [
-            controller
-            for controller in self._controllers()
-            if any(
-                device.mqtt_id not in already_seeded
-                for device in controller.dali_devices + controller.dali2_devices
-            )
-        ]
-        if not waiting:
-            return
-        count = sum(
-            1 for device in self._all_devices() if device.mqtt_id not in already_seeded
-        )
-        # Reading five devices' worth of identity and groups takes tens of
-        # seconds at DALI speed, and the boot screen shows this log as it
-        # happens — so say what the time is being spent on.
-        logger.info("Reading %d configured DALI device(s) from the bus...", count)
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*(controller.wait_first_init_attempts() for controller in waiting)),
-                FIRST_ATTEMPTS_DEADLINE_S,
-            )
-        except asyncio.TimeoutError:
-            pass
-        pending = [
-            device.name
-            for device in self._all_devices()
-            if device.mqtt_id not in already_seeded and not device.is_initialized
-        ]
-        if pending:
-            logger.warning(
-                "Booting with %d device(s) still initializing: %s", len(pending), ", ".join(pending)
-            )
 
     async def stop(self) -> None:
         if hasattr(self.transport, "stop"):

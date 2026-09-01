@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert } from '@/components/alert';
 import { Button } from '@/components/button';
@@ -42,6 +43,17 @@ function hintFor(error: string): string | null {
 export const BootProgress = ({ error, log, onRetry }: BootProgressProps) => {
   const { t } = useTranslation();
   const hint = error ? hintFor(error) : null;
+  const logRef = useRef<HTMLPreElement>(null);
+  // The newest line is the one that matters, so the log follows its own tail —
+  // unless the reader has scrolled up to study something, which must not be
+  // yanked away from under them.
+  const pinned = useRef(true);
+  useEffect(() => {
+    const el = logRef.current;
+    if (el && pinned.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [log, error]);
 
   return (
     // Not PageLayout's own isLoading: that renders the spinner INSTEAD of the
@@ -65,7 +77,16 @@ export const BootProgress = ({ error, log, onRetry }: BootProgressProps) => {
         </div>
       )}
       {(error || log.length > 0) && (
-        <pre className="daliBoot-log">{[...log, error].filter(Boolean).join('\n')}</pre>
+        <pre
+          ref={logRef}
+          className="daliBoot-log"
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+          }}
+        >
+          {[...log, error].filter(Boolean).join('\n')}
+        </pre>
       )}
     </PageLayout>
   );
