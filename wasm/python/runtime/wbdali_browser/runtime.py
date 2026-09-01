@@ -192,12 +192,8 @@ class DaliRuntime:
         )
         await self.gateway.start()
         self._seed_groups(self.groups_seed or {})
-        # Deliberately NOT waiting for device initialization: reading a
-        # restored installation's devices off the bus takes tens of seconds at
-        # DALI speed, and the page can already live with stragglers — the tree
-        # comes from the config, seeded groups stand in until the bus answers,
-        # a group tab re-asks, and asking about a device pulls its
-        # initialization forward. The UI shows up now and fills in.
+        # Not waiting for device initialization: that is tens of seconds of
+        # bus reads, and the page already lives with stragglers (ADR 27).
         pending = sum(1 for device in self._all_devices() if not device.is_initialized)
         if pending:
             logger.info("%d device(s) initializing behind the page", pending)
@@ -207,9 +203,7 @@ class DaliRuntime:
     def _make_driver(self, config, mqtt_dispatcher, driver_logger, dev_inst_map) -> WBDALIDriver:
         """The daemon's driver over this host's Modbus access.
 
-        No memory memo: every read goes to the bus. Withdrawn pending the
-        provenance design (SOFT-7409) — cached values must be labeled as
-        cached in the UI before they are served again.
+        No memory memo: every read goes to the bus (SOFT-7409).
         """
         link = RegisterLink(config, self.transport, driver_logger)
         return WBDALIDriver(config, mqtt_dispatcher, driver_logger, dev_inst_map, link=link)

@@ -44,9 +44,7 @@ export const BootProgress = ({ error, log, onRetry }: BootProgressProps) => {
   const { t } = useTranslation();
   const hint = error ? hintFor(error) : null;
   const logRef = useRef<HTMLPreElement>(null);
-  // The newest line is the one that matters, so the log follows its own tail —
-  // unless the reader has scrolled up to study something, which must not be
-  // yanked away from under them.
+  // Follow the tail, unless the reader has scrolled up.
   const pinned = useRef(true);
   useEffect(() => {
     const el = logRef.current;

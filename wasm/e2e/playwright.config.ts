@@ -4,22 +4,19 @@ export default defineConfig({
   testDir: '.',
   timeout: 60_000,
   workers: 1,
+  // Top level so system-chrome inherits it too. CI's chromium exposes
+  // WebSerial even headless, and the first device access then falls through
+  // to requestPort() without a gesture and kills the page; /dev/shm: Chrome
+  // in Docker gets 64 MB, which the WASM-module specs outgrow.
+  use: {
+    launchOptions: {
+      args: ['--disable-blink-features=Serial,WebUSB', '--disable-dev-shm-usage'],
+    },
+  },
   projects: [
     {
       name: 'chromium',
-      use: {
-        browserName: 'chromium',
-        launchOptions: {
-          // No hardware in e2e: with WebSerial exposed (CI's chromium image
-          // has it even headless), the first device access falls through to
-          // requestPort() without a user gesture and the page dies — the
-          // trace from the CI runner ends 300 ms after "Using native
-          // WebSerial API". Disabling the APIs makes every environment
-          // behave like the specs assume. /dev/shm: the Docker default
-          // 64 MB is too small for the Pyodide-heavy specs.
-          args: ['--disable-blink-features=Serial,WebUSB', '--disable-dev-shm-usage'],
-        },
-      },
+      use: { browserName: 'chromium' },
     },
     // The installed Google Chrome, for hosts where the playwright-managed
     // chromium download is unavailable. Opt-in (PW_SYSTEM_CHROME=1 npx
