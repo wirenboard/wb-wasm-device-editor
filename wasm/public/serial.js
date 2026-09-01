@@ -72,15 +72,23 @@ class SerialPort {
             default: this.replyTimeout = 250; break;
         }
 
+        let parityName;
         switch (String.fromCharCode(parity)) {
-            case 'E': this.options.parity = 'even'; break;
-            case 'O': this.options.parity = 'odd'; break;
-            default: this.options.parity = 'none'; break;
+            case 'E': parityName = 'even'; break;
+            case 'O': parityName = 'odd'; break;
+            default: parityName = 'none'; break;
         }
 
         if (this.extendedTimeout)
             this.replyTimeout *= 2;
 
+        // The port is reopened to take new settings; a request that restates
+        // the settings already in force must not pay for that.
+        if (this.options.baudRate !== baudRate || this.options.dataBits !== dataBits ||
+            this.options.parity !== parityName || this.options.stopBits !== stopBits) {
+            this.optionsChanged = true;
+        }
+        this.options.parity = parityName;
         this.options.baudRate = baudRate;
         this.options.dataBits = dataBits;
         this.options.stopBits = stopBits;
@@ -131,6 +139,10 @@ class SerialPort {
 
     async forceSelect() {
         this.checkSerial('forceSelect');
+        // The open port belongs to the previous selection; without this the
+        // swapped-in port is never opened (writes used to reopen every time).
+        await this.close();
+        this.pending = new Uint8Array();
         this.port = await this.api.requestPort({ filters: this.filters });
         localStorage.setItem('serialPort', this.portKey(this.port.getInfo()));
     }
@@ -171,6 +183,15 @@ class SerialPort {
     async open() {
         if (this.isOpen)
             await this.close();
+        if (!this.api) {
+            // No WebSerial/WebUSB in this browser: retrying cannot conjure a
+            // port, and the 100-attempt loop below turned every request into
+            // a 150 ms stall — thousands of them per device load.
+            delete this.port;
+            return;
+        }
+        this.pending = new Uint8Array();
+        this.optionsChanged = false;
 
         for (let i = 0; i < 100; i++) {
             try {
@@ -179,7 +200,10 @@ class SerialPort {
                 this.isOpen = true;
             } catch (error) {
                 this.error = error;
-                if (error instanceof DOMException && error.name === 'NotFoundError') {
+                // No port chosen, or the chooser needs a user gesture we do
+                // not have — retrying only spams requestPort a hundred times.
+                if (error instanceof DOMException
+                    && ['NotFoundError', 'SecurityError', 'NotAllowedError'].includes(error.name)) {
                     delete this.port;
                     return;
                 }
@@ -207,62 +231,126 @@ class SerialPort {
     }
 
     async write(data) {
-        await this.open();
+        // Closing and reopening the USB port on every write cost tens of
+        // milliseconds per Modbus exchange; the port stays open until the line
+        // settings change or a request fails.
+        if (!this.isOpen || this.optionsChanged || !this.port || !this.port.writable)
+            await this.open();
 
         if (!this.port || !this.port.writable) {
             console.error('Serial port is not open or not writable');
+            this.isOpen = false;
             return;
         }
 
-        const writer = this.port.writable.getWriter();
-        await writer.write(data);
-        writer.releaseLock();
+        try {
+            const writer = this.port.writable.getWriter();
+            await writer.write(data);
+            writer.releaseLock();
+        } catch (error) {
+            // A dead stream: the adapter was unplugged or Chrome errored the
+            // port. Mark it closed so the next request reopens and heals —
+            // the old reopen-on-every-write policy did this by accident.
+            console.warn('Serial write failed, will reopen:', error);
+            this.isOpen = false;
+            throw error;
+        }
     }
 
-    async read(count) {
+    /**
+     * Whatever bytes arrive within timeoutMs, at most count of them; an empty
+     * array when nothing does. Bytes beyond count stay queued for the next
+     * call, so a frame the port delivers in one chunk is not lost when the
+     * caller asks for it in pieces.
+     */
+    async readChunk(count, timeoutMs) {
+        if (this.pending && this.pending.length) {
+            return this.takePending(count);
+        }
         if (!this.port || !this.port.readable) {
             console.error('Serial port is not open or not readable');
-            return;
+            this.isOpen = false;
+            return new Uint8Array();
         }
+        // Firmware flows ask for extra patience around bootloader operations;
+        // honour it here since the module's own timeouts no longer go through
+        // the old read() path.
+        if (this.extendedTimeout)
+            timeoutMs = Math.max(timeoutMs, this.replyTimeout);
 
         const reader = this.port.readable.getReader();
+        let timer;
+        let timedOut = false;
+        const timeout = new Promise((resolve) => {
+            timer = setTimeout(() => { timedOut = true; resolve(); }, timeoutMs);
+        });
+        let value;
+        try {
+            const read = reader.read();
+            await Promise.race([read, timeout]);
+            if (timedOut) {
+                // Cancelling settles the pending read with done=true. It has to
+                // be awaited before the lock is released, or the next reader
+                // is handed the closing stream and reads nothing at all.
+                await reader.cancel().catch(() => {});
+            }
+            ({ value } = await read);
+        } catch (error) {
+            console.warn('Serial read error:', error);
+            value = undefined;
+        } finally {
+            clearTimeout(timer);
+            try { reader.releaseLock(); } catch {}
+        }
+        if (!value || !value.length) {
+            return new Uint8Array();
+        }
+        this.pending = value;
+        return this.takePending(count);
+    }
+
+    takePending(count) {
+        const taken = this.pending.slice(0, count);
+        this.pending = this.pending.slice(taken.length);
+        return taken;
+    }
+
+    /** Drop what has arrived but nobody asked for — a late reply to a request that already timed out. */
+    async discardPending() {
+        this.pending = new Uint8Array();
+        if (!this.port || !this.port.readable)
+            return;
+        // A zero-length wait would race the port; a few milliseconds is enough
+        // to collect what the adapter already holds.
+        // Bounded: a noisy line, or a second master polling the same bus,
+        // delivers bytes continuously, and an unbounded drain would hold the
+        // whole request pipeline hostage.
+        const deadline = performance.now() + 100;
+        while ((await this.readChunk(4096, 5)).length) {
+            if (performance.now() > deadline) {
+                console.warn('Serial drain gave up: the line keeps delivering data');
+                break;
+            }
+        }
+        this.pending = new Uint8Array();
+    }
+
+    /** Read up to count bytes within the reply timeout — the pre-chunked contract, kept for older module builds. */
+    async read(count) {
+        const deadline = performance.now() + this.replyTimeout;
         let data = new Uint8Array();
-        let read = true;
-
-        async function receive() {
-            while (read) {
-                let { value } = await reader.read();
-
-                if (!read)
-                    break;
-
-                let buffer = new Uint8Array(data.length + value.length);
-                buffer.set(data, 0);
-                buffer.set(value, data.length);
-                data = buffer;
-
-                if (data.length < count)
-                    continue;
-
-                read = false;
-            }
-
-            return data;
+        while (data.length < count) {
+            const left = deadline - performance.now();
+            if (left <= 0)
+                break;
+            const chunk = await this.readChunk(count - data.length, left);
+            if (!chunk.length)
+                break;
+            const joined = new Uint8Array(data.length + chunk.length);
+            joined.set(data, 0);
+            joined.set(chunk, data.length);
+            data = joined;
         }
-
-        async function wait(timeout) {
-            await new Promise((resolve) => setTimeout(resolve, timeout));
-
-            if (read) {
-                read = false;
-                await reader.cancel();
-            }
-
-            return data;
-        }
-
-        let result = await Promise.race([receive(), wait(this.replyTimeout)]);
-        try { reader.releaseLock(); } catch {}
-        return result;
+        return data;
     }
 }
