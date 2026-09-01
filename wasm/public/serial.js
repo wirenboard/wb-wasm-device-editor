@@ -181,8 +181,16 @@ class SerialPort {
     }
 
     async open() {
-        if (this.isOpen)
-            await this.close();
+        // Close on the object, not on `isOpen`: failure paths mark the port
+        // closed without closing it, and Chrome then rejects open() forever.
+        if (this.port) {
+            try {
+                await this.port.close();
+            } catch (closeError) {
+                // Already closed, or never opened: nothing to undo.
+            }
+        }
+        this.isOpen = false;
         if (!this.api) {
             // No WebSerial/WebUSB in this browser: retrying cannot conjure a
             // port, and the 100-attempt loop below turned every request into
@@ -243,17 +251,22 @@ class SerialPort {
             return;
         }
 
+        const writer = this.port.writable.getWriter();
         try {
-            const writer = this.port.writable.getWriter();
             await writer.write(data);
-            writer.releaseLock();
         } catch (error) {
-            // A dead stream: the adapter was unplugged or Chrome errored the
-            // port. Mark it closed so the next request reopens and heals —
-            // the old reopen-on-every-write policy did this by accident.
+            // Dead stream (unplug, errored port): mark it closed, the next
+            // request reopens. Never rethrow — Asyncify.handleAsync attaches
+            // no catch, so a rejection suspends the C++ call forever.
             console.warn('Serial write failed, will reopen:', error);
             this.isOpen = false;
-            throw error;
+        } finally {
+            // close() rejects while the stream is locked, so always release.
+            try {
+                writer.releaseLock();
+            } catch (releaseError) {
+                // The stream is already gone; the reopen path handles it.
+            }
         }
     }
 
@@ -263,7 +276,7 @@ class SerialPort {
      * call, so a frame the port delivers in one chunk is not lost when the
      * caller asks for it in pieces.
      */
-    async readChunk(count, timeoutMs) {
+    async readChunk(count, timeoutMs, allowExtended = true) {
         if (this.pending && this.pending.length) {
             return this.takePending(count);
         }
@@ -272,10 +285,9 @@ class SerialPort {
             this.isOpen = false;
             return new Uint8Array();
         }
-        // Firmware flows ask for extra patience around bootloader operations;
-        // honour it here since the module's own timeouts no longer go through
-        // the old read() path.
-        if (this.extendedTimeout)
+        // Firmware flows ask for extra patience — but only where a reply is
+        // awaited: stretching a drain read to replyTimeout stalls SkipNoise.
+        if (this.extendedTimeout && allowExtended)
             timeoutMs = Math.max(timeoutMs, this.replyTimeout);
 
         const reader = this.port.readable.getReader();
@@ -326,7 +338,7 @@ class SerialPort {
         // delivers bytes continuously, and an unbounded drain would hold the
         // whole request pipeline hostage.
         const deadline = performance.now() + 100;
-        while ((await this.readChunk(4096, 5)).length) {
+        while ((await this.readChunk(4096, 5, false)).length) {
             if (performance.now() > deadline) {
                 console.warn('Serial drain gave up: the line keeps delivering data');
                 break;
