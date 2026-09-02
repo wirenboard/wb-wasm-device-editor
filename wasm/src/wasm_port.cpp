@@ -30,17 +30,25 @@ namespace
     // at most count bytes. Zero means nothing arrived.
     int ReadChunk(uint8_t* buffer, size_t count, int timeoutMs)
     {
+        // Emscripten runs this body twice — once to unwind, once to rewind —
+        // and only the async callback runs exactly once, on the real reply.
+        // Anything outside it would run on the unwind pass against the value
+        // the PREVIOUS suspension delivered, so every side effect lives inside.
         // clang-format off
         return EM_ASM_INT(
         {
-            let result = Asyncify.handleAsync(async() => { return await Module.serial.readChunk($1, $2); });
+            return Asyncify.handleAsync(async() => {
+                const result = await Module.serial.readChunk($1, $2);
 
-            if (!(result instanceof Uint8Array) || result.length == 0) {
-                return 0;
-            }
+                // A reply longer than the buffer is a broken contract, not
+                // something to truncate: writing it would corrupt the heap.
+                if (!(result instanceof Uint8Array) || result.length === 0 || result.length > $1) {
+                    return 0;
+                }
 
-            Module.HEAPU8.set(result, $0);
-            return result.length;
+                Module.HEAPU8.set(result, $0);
+                return result.length;
+            });
         },
         buffer, count, timeoutMs);
         // clang-format on
