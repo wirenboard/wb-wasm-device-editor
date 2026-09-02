@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <emscripten/emscripten.h>
 #include <emscripten/val.h>
 
@@ -90,7 +91,9 @@ uint8_t TWASMPort::ReadByte(const std::chrono::microseconds& timeout)
 {
     uint8_t byte = 0;
     if (ReadChunk(&byte, 1, ToMilliseconds(timeout, MIN_RESPONSE_TIMEOUT)) == 0) {
-        throw std::runtime_error("request timed out");
+        // TFileDescriptorPort::ReadByte's type: a plain runtime_error escapes
+        // every catch (const TSerialDeviceException&) in the drivers.
+        throw TSerialDeviceTransientErrorException("timeout");
     }
     return byte;
 }
@@ -130,13 +133,8 @@ TReadFrameResult TWASMPort::ReadFrame(uint8_t* buffer,
     }
 
     if (!res.Count) {
-        // Deliberately NOT the TPort-contract TResponseTimeoutException: that
-        // type is transient, and wb-mqtt-serial's device paths (EnableEvents
-        // during deviceLoad of a never-answering device) retry it in a way
-        // that, under Asyncify, killed the renderer with a native stack
-        // overflow — reproduced deterministically, and gone with a plain
-        // runtime_error, which is also what this port always threw. port/Load
-        // then reports the field-known "Port IO error: request timed out".
+        // Deliberately not TResponseTimeoutException: retrying it under Asyncify
+        // overflowed the native stack, so every catch of that type is dead for this port.
         throw std::runtime_error("request timed out");
     }
 
@@ -162,19 +160,23 @@ void TWASMPort::SleepSinceLastInteraction(const std::chrono::microseconds& us)
 
 std::chrono::microseconds TWASMPort::GetSendTimeBytes(double bytesNumber) const
 {
-    // Start bit, data bits, an optional parity bit and the stop bits: the
-    // protocol code sizes its inter-frame gaps and arbitration windows in
-    // these units, and they used to come out as zero here.
-    double bitsPerByte = 1 + Settings.DataBits + (Settings.Parity == 'N' ? 0 : 1) + Settings.StopBits;
-    return GetSendTimeBits(static_cast<size_t>(bitsPerByte * bytesNumber + 0.5));
+    // Start bit, data bits, an optional parity bit and the stop bits, rounded up
+    // exactly as TSerialPort does: rounding down shortens the derived timeouts.
+    size_t bitsPerByte = 1 + Settings.DataBits + Settings.StopBits;
+    if (Settings.Parity != 'N') {
+        ++bitsPerByte;
+    }
+    return GetSendTimeBits(std::ceil(bitsPerByte * bytesNumber));
 }
 
 std::chrono::microseconds TWASMPort::GetSendTimeBits(size_t bitsNumber) const
 {
+    // Unlike TSerialPort's, these settings come from a request, so guard the divisor.
     if (Settings.BaudRate <= 0) {
         return std::chrono::microseconds(0);
     }
-    return std::chrono::microseconds(static_cast<int64_t>(bitsNumber) * 1000000 / Settings.BaudRate);
+    auto us = std::ceil(bitsNumber * 1000000.0 / double(Settings.BaudRate));
+    return std::chrono::microseconds(static_cast<std::chrono::microseconds::rep>(us));
 }
 
 std::string TWASMPort::GetDescription(bool verbose) const
@@ -199,7 +201,5 @@ void TWASMPort::ApplySerialPortSettings(const TSerialPortConnectionSettings& set
 
 void TWASMPort::ResetSerialPortSettings()
 {
-    // A request may set its own line settings for the duration (see
-    // TSerialPortSettingsGuard); the browser's port keeps them until the next
-    // request states its own, so there is nothing to restore here.
+    // No InitialSettings to restore to: Settings only ever holds the last request's.
 }
