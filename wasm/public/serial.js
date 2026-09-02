@@ -27,6 +27,8 @@ class SerialPort {
     options = new Object();
     isOpen = false;
     api = null;
+    reader = null;
+    writer = null;
 
     async init() {
         if (navigator.serial) {
@@ -66,6 +68,15 @@ class SerialPort {
     }
 
     setOptions(baudRate, dataBits, parity, stopBits) {
+        try {
+            this.applyOptions(baudRate, dataBits, parity, stopBits);
+        } catch (error) {
+            // Called straight from EM_ASM: a throw here tears down the C++ stack.
+            console.warn('Serial setOptions failed:', error);
+        }
+    }
+
+    applyOptions(baudRate, dataBits, parity, stopBits) {
         switch (true) {
             case baudRate < 4800: this.replyTimeout = 1000; break;
             case baudRate < 38400: this.replyTimeout = 500; break;
@@ -180,15 +191,59 @@ class SerialPort {
         localStorage.setItem('serialPort', this.portKey(this.port.getInfo()));
     }
 
+    /** True if the promise settled in time — a USB call that never returns suspends the C++ caller for good. */
+    async settled(promise, timeoutMs) {
+        let timer;
+        const guard = new Promise((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); });
+        try {
+            return await Promise.race([promise.then(() => true, () => true), guard]);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /** Give back a reader/writer a failed request left behind: close() hangs while a stream is locked. */
+    async releaseStreams() {
+        const reader = this.reader;
+        this.reader = null;
+        if (reader) {
+            await this.settled(reader.cancel(), 1000);
+            try {
+                reader.releaseLock();
+            } catch (releaseError) {
+            }
+        }
+
+        const writer = this.writer;
+        this.writer = null;
+        if (writer) {
+            await this.settled(writer.abort(), 1000);
+            try {
+                writer.releaseLock();
+            } catch (releaseError) {
+            }
+        }
+    }
+
     async open() {
+        try {
+            await this.openPort();
+        } catch (error) {
+            // Never reject: Asyncify.handleAsync attaches no catch, so a
+            // rejection would suspend the C++ call for good.
+            console.warn('Serial open failed:', error);
+            this.isOpen = false;
+        }
+    }
+
+    async openPort() {
         // Close on the object, not on `isOpen`: failure paths mark the port
         // closed without closing it, and Chrome then rejects open() forever.
         if (this.port) {
-            try {
-                await this.port.close();
-            } catch (closeError) {
-                // Already closed, or never opened: nothing to undo.
-            }
+            await this.releaseStreams();
+            // Already closed, never opened, or wedged by a foreign lock: the
+            // retry loop below deals with a port that would not close.
+            await this.settled(this.port.close(), 1000);
         }
         this.isOpen = false;
         if (!this.api) {
@@ -227,18 +282,32 @@ class SerialPort {
     }
 
     async close() {
-        if (!this.port || !this.isOpen)
-            return;
-
         try {
-            await this.port.close();
-        } catch (e) {
-            console.warn('Serial port close error:', e);
+            if (!this.port || !this.isOpen)
+                return;
+
+            await this.releaseStreams();
+            if (!(await this.settled(this.port.close(), 1000)))
+                console.warn('Serial port close did not finish in time');
+            this.isOpen = false;
+        } catch (error) {
+            console.warn('Serial close failed:', error);
+            this.isOpen = false;
         }
-        this.isOpen = false;
     }
 
     async write(data) {
+        try {
+            await this.writeData(data);
+        } catch (error) {
+            // Never reject: Asyncify.handleAsync attaches no catch, so a
+            // rejection would suspend the C++ call for good.
+            console.warn('Serial write failed:', error);
+            this.isOpen = false;
+        }
+    }
+
+    async writeData(data) {
         // Closing and reopening the USB port on every write cost tens of
         // milliseconds per Modbus exchange; the port stays open until the line
         // settings change or a request fails.
@@ -251,16 +320,26 @@ class SerialPort {
             return;
         }
 
-        const writer = this.port.writable.getWriter();
+        let writer;
+        try {
+            writer = this.port.writable.getWriter();
+        } catch (lockError) {
+            // A writer outlived a failed request: reopening drops the lock.
+            console.warn('Serial write: stream is locked, will reopen:', lockError);
+            this.isOpen = false;
+            return;
+        }
+
+        this.writer = writer;
         try {
             await writer.write(data);
         } catch (error) {
             // Dead stream (unplug, errored port): mark it closed, the next
-            // request reopens. Never rethrow — Asyncify.handleAsync attaches
-            // no catch, so a rejection suspends the C++ call forever.
-            console.warn('Serial write failed, will reopen:', error);
+            // request reopens.
+            console.warn('Serial write error, will reopen:', error);
             this.isOpen = false;
         } finally {
+            this.writer = null;
             // close() rejects while the stream is locked, so always release.
             try {
                 writer.releaseLock();
@@ -277,6 +356,24 @@ class SerialPort {
      * caller asks for it in pieces.
      */
     async readChunk(count, timeoutMs, allowExtended = true) {
+        // On the unwind pass Asyncify.handleAsync hands the C++ caller back the
+        // PREVIOUS reply, which ReadChunk then copies into a buffer sized for
+        // this one — a heap overflow whenever the previous chunk was longer.
+        if (typeof Asyncify !== 'undefined')
+            Asyncify.handleSleepReturnValue = 0;
+
+        try {
+            return await this.readChunkData(count, timeoutMs, allowExtended);
+        } catch (error) {
+            // Never reject: Asyncify.handleAsync attaches no catch, so a
+            // rejection would suspend the C++ call for good.
+            console.warn('Serial readChunk failed:', error);
+            this.isOpen = false;
+            return new Uint8Array();
+        }
+    }
+
+    async readChunkData(count, timeoutMs, allowExtended) {
         if (this.pending && this.pending.length) {
             return this.takePending(count);
         }
@@ -290,7 +387,17 @@ class SerialPort {
         if (this.extendedTimeout && allowExtended)
             timeoutMs = Math.max(timeoutMs, this.replyTimeout);
 
-        const reader = this.port.readable.getReader();
+        let reader;
+        try {
+            reader = this.port.readable.getReader();
+        } catch (lockError) {
+            // A reader outlived a failed request: reopening drops the lock.
+            console.warn('Serial readChunk: stream is locked, will reopen:', lockError);
+            this.isOpen = false;
+            return new Uint8Array();
+        }
+
+        this.reader = reader;
         let timer;
         let timedOut = false;
         const timeout = new Promise((resolve) => {
@@ -304,7 +411,13 @@ class SerialPort {
                 // Cancelling settles the pending read with done=true. It has to
                 // be awaited before the lock is released, or the next reader
                 // is handed the closing stream and reads nothing at all.
-                await reader.cancel().catch(() => {});
+                if (!(await this.settled(reader.cancel(), 1000))) {
+                    // Give up on a port whose cancel never returns, instead of
+                    // leaving the C++ caller suspended on it.
+                    read.catch(() => {});
+                    this.isOpen = false;
+                    return new Uint8Array();
+                }
             }
             ({ value } = await read);
         } catch (error) {
@@ -312,6 +425,9 @@ class SerialPort {
             value = undefined;
         } finally {
             clearTimeout(timer);
+            this.reader = null;
+            // Nothing waits on the reader being detached: the read above is
+            // either settled or explicitly abandoned.
             try { reader.releaseLock(); } catch {}
         }
         if (!value || !value.length) {
@@ -329,6 +445,17 @@ class SerialPort {
 
     /** Drop what has arrived but nobody asked for — a late reply to a request that already timed out. */
     async discardPending() {
+        try {
+            await this.drain();
+        } catch (error) {
+            // Never reject: Asyncify.handleAsync attaches no catch, so a
+            // rejection would suspend the C++ call for good.
+            console.warn('Serial discardPending failed:', error);
+            this.pending = new Uint8Array();
+        }
+    }
+
+    async drain() {
         this.pending = new Uint8Array();
         if (!this.port || !this.port.readable)
             return;
