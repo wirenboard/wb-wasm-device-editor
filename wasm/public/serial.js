@@ -29,6 +29,8 @@ class SerialPort {
     api = null;
     reader = null;
     writer = null;
+    inflight = null;
+    pending = new Uint8Array();
 
     async init() {
         if (navigator.serial) {
@@ -202,12 +204,25 @@ class SerialPort {
         }
     }
 
+    /** One task turn without a timer: Chrome clamps every timer in a hidden
+     *  tab to 1 s, and a drain must not pay that. */
+    tick() {
+        return new Promise((resolve) => {
+            const channel = new MessageChannel();
+            channel.port1.onmessage = () => { channel.port1.close(); resolve(); };
+            channel.port2.postMessage(0);
+        });
+    }
+
     /** Give back a reader/writer a failed request left behind: close() hangs while a stream is locked. */
     async releaseStreams() {
         const reader = this.reader;
         this.reader = null;
+        this.inflight = null;
         if (reader) {
-            await this.settled(reader.cancel(), 1000);
+            // Bounded, then abandoned: the lock goes back either way, and a
+            // cancel that never returns must not suspend the C++ caller.
+            await this.settled(reader.cancel(), 200);
             try {
                 reader.releaseLock();
             } catch (releaseError) {
@@ -355,7 +370,7 @@ class SerialPort {
      * call, so a frame the port delivers in one chunk is not lost when the
      * caller asks for it in pieces.
      */
-    async readChunk(count, timeoutMs, allowExtended = true) {
+    async readChunk(count, timeoutMs) {
         // On the unwind pass Asyncify.handleAsync hands the C++ caller back the
         // PREVIOUS reply, which ReadChunk then copies into a buffer sized for
         // this one — a heap overflow whenever the previous chunk was longer.
@@ -363,7 +378,7 @@ class SerialPort {
             Asyncify.handleSleepReturnValue = 0;
 
         try {
-            return await this.readChunkData(count, timeoutMs, allowExtended);
+            return await this.readChunkData(count, timeoutMs);
         } catch (error) {
             // Never reject: Asyncify.handleAsync attaches no catch, so a
             // rejection would suspend the C++ call for good.
@@ -373,8 +388,8 @@ class SerialPort {
         }
     }
 
-    async readChunkData(count, timeoutMs, allowExtended) {
-        if (this.pending && this.pending.length) {
+    async readChunkData(count, timeoutMs) {
+        if (this.pending.length) {
             return this.takePending(count);
         }
         if (!this.port || !this.port.readable) {
@@ -382,59 +397,105 @@ class SerialPort {
             this.isOpen = false;
             return new Uint8Array();
         }
-        // Firmware flows ask for extra patience — but only where a reply is
-        // awaited: stretching a drain read to replyTimeout stalls SkipNoise.
-        if (this.extendedTimeout && allowExtended)
+        // Firmware flows ask for extra patience. Every readChunk waits for a
+        // reply now — the drain no longer goes through here at all.
+        if (this.extendedTimeout)
             timeoutMs = Math.max(timeoutMs, this.replyTimeout);
 
-        let reader;
+        const reader = this.acquireReader();
+        if (!reader)
+            return new Uint8Array();
+        await this.awaitRead(this.startRead(reader), timeoutMs);
+        return this.takePending(count);
+    }
+
+    /** The one reader an open port gets. A reader per call meant a cancel()
+     *  per timeout, which throws away bytes the next frame still needs. */
+    acquireReader() {
+        if (this.reader)
+            return this.reader;
+        if (!this.port || !this.port.readable)
+            return null;
         try {
-            reader = this.port.readable.getReader();
+            this.reader = this.port.readable.getReader();
         } catch (lockError) {
             // A reader outlived a failed request: reopening drops the lock.
             console.warn('Serial readChunk: stream is locked, will reopen:', lockError);
             this.isOpen = false;
-            return new Uint8Array();
+            return null;
         }
+        return this.reader;
+    }
 
-        this.reader = reader;
+    /** Keep one read() outstanding. Its bytes land in pending even when the
+     *  caller that started it has already given up, so none are lost. */
+    startRead(reader) {
+        if (this.inflight)
+            return this.inflight;
+        const record = { settled: false };
+        // A reader swapped out under us belongs to a port that is gone: its
+        // bytes must not land in the buffer of the one that replaced it.
+        record.promise = reader.read().then(
+            ({ value, done }) => {
+                record.settled = true;
+                if (this.reader !== reader)
+                    return;
+                this.inflight = null;
+                if (value && value.length)
+                    this.appendPending(value);
+                if (done)
+                    this.dropReader();
+            },
+            (error) => {
+                record.settled = true;
+                if (this.reader !== reader)
+                    return;
+                this.inflight = null;
+                // Unplugged, or the lock went away: the next request reopens.
+                console.warn('Serial read error:', error);
+                this.dropReader();
+            });
+        this.inflight = record;
+        return record;
+    }
+
+    /** Wait for the read, or stop waiting: an abandoned read stays in flight
+     *  and delivers into pending, so the next call still gets those bytes. */
+    async awaitRead(record, timeoutMs) {
+        if (record.settled)
+            return;
         let timer;
-        let timedOut = false;
-        const timeout = new Promise((resolve) => {
-            timer = setTimeout(() => { timedOut = true; resolve(); }, timeoutMs);
-        });
-        let value;
+        const guard = new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); });
         try {
-            const read = reader.read();
-            await Promise.race([read, timeout]);
-            if (timedOut) {
-                // Cancelling settles the pending read with done=true. It has to
-                // be awaited before the lock is released, or the next reader
-                // is handed the closing stream and reads nothing at all.
-                if (!(await this.settled(reader.cancel(), 1000))) {
-                    // Give up on a port whose cancel never returns, instead of
-                    // leaving the C++ caller suspended on it.
-                    read.catch(() => {});
-                    this.isOpen = false;
-                    return new Uint8Array();
-                }
-            }
-            ({ value } = await read);
-        } catch (error) {
-            console.warn('Serial read error:', error);
-            value = undefined;
+            await Promise.race([record.promise, guard]);
         } finally {
             clearTimeout(timer);
-            this.reader = null;
-            // Nothing waits on the reader being detached: the read above is
-            // either settled or explicitly abandoned.
-            try { reader.releaseLock(); } catch {}
         }
-        if (!value || !value.length) {
-            return new Uint8Array();
+    }
+
+    /** Let go of a reader whose stream is finished; the next request reopens. */
+    dropReader() {
+        const reader = this.reader;
+        this.reader = null;
+        this.inflight = null;
+        this.isOpen = false;
+        if (!reader)
+            return;
+        try {
+            reader.releaseLock();
+        } catch (releaseError) {
         }
-        this.pending = value;
-        return this.takePending(count);
+    }
+
+    appendPending(value) {
+        if (!this.pending.length) {
+            this.pending = value;
+            return;
+        }
+        const joined = new Uint8Array(this.pending.length + value.length);
+        joined.set(this.pending, 0);
+        joined.set(value, this.pending.length);
+        this.pending = joined;
     }
 
     takePending(count) {
@@ -457,15 +518,24 @@ class SerialPort {
 
     async drain() {
         this.pending = new Uint8Array();
-        if (!this.port || !this.port.readable)
-            return;
-        // A zero-length wait would race the port; a few milliseconds is enough
-        // to collect what the adapter already holds.
+        // Only what has already arrived is dropped, and a task turn is all it
+        // takes to collect it: waiting 5 ms here cost a full second per
+        // exchange in a hidden tab, where Chrome clamps timers to 1 s.
         // Bounded: a noisy line, or a second master polling the same bus,
         // delivers bytes continuously, and an unbounded drain would hold the
         // whole request pipeline hostage.
         const deadline = performance.now() + 100;
-        while ((await this.readChunk(4096, 5, false)).length) {
+        for (;;) {
+            const reader = this.acquireReader();
+            if (!reader || !this.isOpen)
+                break;
+            const record = this.startRead(reader);
+            await this.tick();
+            if (!record.settled)
+                await this.tick();
+            if (!record.settled)
+                break;
+            this.pending = new Uint8Array();
             if (performance.now() > deadline) {
                 console.warn('Serial drain gave up: the line keeps delivering data');
                 break;
