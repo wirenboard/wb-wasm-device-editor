@@ -31,6 +31,28 @@ function makeSerial(port: any) {
   return serial;
 }
 
+/** A port whose reads are resolved by the test, so a read can be left in
+ * flight exactly as a timed-out caller leaves it. */
+function makeControlledPort(cancelSettles = true) {
+  const waiting: Array<(v: any) => void> = [];
+  const queued: any[] = [];
+  const state = { cancels: 0, releases: 0 };
+  const reader = {
+    read: () => (queued.length ? Promise.resolve(queued.shift()) : new Promise((resolve) => { waiting.push(resolve); })),
+    cancel: () => { state.cancels += 1; return cancelSettles ? Promise.resolve() : new Promise(() => {}); },
+    releaseLock: () => { state.releases += 1; },
+  };
+  const push = (result: any) => { if (waiting.length) waiting.shift()!(result); else queued.push(result); };
+  const port = makePort({ readable: { locked: false, getReader: () => reader } });
+  return {
+    port,
+    state,
+    inFlight: () => waiting.length,
+    deliver: (bytes: number[]) => push({ value: new Uint8Array(bytes), done: false }),
+    finish: () => push({ value: undefined, done: true }),
+  };
+}
+
 describe('SerialPort never rejects into Asyncify', () => {
   beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -113,5 +135,81 @@ describe('SerialPort never rejects into Asyncify', () => {
     const serial = makeSerial(port);
     await expect(serial.close()).resolves.toBeUndefined();
     expect(serial.isOpen).toBe(false);
+  });
+});
+
+describe('SerialPort keeps one reader and loses no bytes', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('delivers a read that landed after the caller stopped waiting', async () => {
+    const ctl = makeControlledPort();
+    const serial = makeSerial(ctl.port);
+    expect((await serial.readChunk(8, 5)).length).toBe(0);
+    // The read is still outstanding: cancelling it here is what used to throw
+    // away bytes that arrived a moment later.
+    expect(ctl.inFlight()).toBe(1);
+    expect(ctl.state.cancels).toBe(0);
+    ctl.deliver([1, 2, 3]);
+    expect([...(await serial.readChunk(8, 5))]).toEqual([1, 2, 3]);
+  });
+
+  it('loses no bytes when a frame lands across a timeout', async () => {
+    const frame = [0x40, 0x03, 0x02, 0x00, 0x57, 0xc5, 0xb5];
+    const ctl = makeControlledPort();
+    const serial = makeSerial(ctl.port);
+    expect((await serial.readChunk(3, 5)).length).toBe(0);
+    ctl.deliver(frame);
+    const head = await serial.readChunk(3, 5);
+    const tail = await serial.readChunk(16, 5);
+    expect([...head, ...tail]).toEqual(frame);
+  });
+
+  it('takes one reader for many reads instead of one per call', async () => {
+    const ctl = makeControlledPort();
+    const serial = makeSerial(ctl.port);
+    for (let i = 0; i < 3; i += 1) {
+      ctl.deliver([i]);
+      expect([...(await serial.readChunk(1, 5))]).toEqual([i]);
+    }
+    expect(ctl.state.cancels).toBe(0);
+    expect(ctl.state.releases).toBe(0);
+    expect(serial.reader).not.toBe(null);
+  });
+
+  it('drops what has already arrived without waiting for what has not', async () => {
+    const ctl = makeControlledPort();
+    const serial = makeSerial(ctl.port);
+    ctl.deliver([9, 9, 9]);
+    const started = Date.now();
+    await serial.discardPending();
+    // No timer: a 5 ms wait here cost a full second in a hidden tab.
+    expect(Date.now() - started).toBeLessThan(50);
+    expect(serial.pending.length).toBe(0);
+    expect((await serial.readChunk(8, 5)).length).toBe(0);
+  });
+
+  it('resolves close() promptly when cancel() never settles', async () => {
+    const ctl = makeControlledPort(false);
+    const serial = makeSerial(ctl.port);
+    await serial.readChunk(4, 5);
+    const started = Date.now();
+    await expect(serial.close()).resolves.toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(900);
+    expect(serial.reader).toBe(null);
+    expect(serial.inflight).toBe(null);
+    expect(serial.isOpen).toBe(false);
+  });
+
+  it('marks the port dead when the stream closes under it', async () => {
+    const ctl = makeControlledPort();
+    const serial = makeSerial(ctl.port);
+    const waiting = serial.readChunk(8, 50);
+    ctl.finish();
+    expect((await waiting).length).toBe(0);
+    expect(serial.isOpen).toBe(false);
+    expect(serial.reader).toBe(null);
   });
 });
