@@ -70,15 +70,6 @@ class SerialPort {
     }
 
     setOptions(baudRate, dataBits, parity, stopBits) {
-        try {
-            this.applyOptions(baudRate, dataBits, parity, stopBits);
-        } catch (error) {
-            // Called straight from EM_ASM: a throw here tears down the C++ stack.
-            console.warn('Serial setOptions failed:', error);
-        }
-    }
-
-    applyOptions(baudRate, dataBits, parity, stopBits) {
         switch (true) {
             case baudRate < 4800: this.replyTimeout = 1000; break;
             case baudRate < 38400: this.replyTimeout = 500; break;
@@ -86,6 +77,7 @@ class SerialPort {
         }
 
         let parityName;
+
         switch (String.fromCharCode(parity)) {
             case 'E': parityName = 'even'; break;
             case 'O': parityName = 'odd'; break;
@@ -95,12 +87,10 @@ class SerialPort {
         if (this.extendedTimeout)
             this.replyTimeout *= 2;
 
-        // The port is reopened to take new settings; a request that restates
-        // the settings already in force must not pay for that.
         if (this.options.baudRate !== baudRate || this.options.dataBits !== dataBits ||
-            this.options.parity !== parityName || this.options.stopBits !== stopBits) {
+            this.options.parity !== parityName || this.options.stopBits !== stopBits)
             this.optionsChanged = true;
-        }
+
         this.options.parity = parityName;
         this.options.baudRate = baudRate;
         this.options.dataBits = dataBits;
@@ -152,10 +142,7 @@ class SerialPort {
 
     async forceSelect() {
         this.checkSerial('forceSelect');
-        // The open port belongs to the previous selection; without this the
-        // swapped-in port is never opened (writes used to reopen every time).
         await this.close();
-        this.pending = new Uint8Array();
         this.port = await this.api.requestPort({ filters: this.filters });
         localStorage.setItem('serialPort', this.portKey(this.port.getInfo()));
     }
@@ -193,10 +180,11 @@ class SerialPort {
         localStorage.setItem('serialPort', this.portKey(this.port.getInfo()));
     }
 
-    /** True if the promise settled in time — a USB call that never returns suspends the C++ caller for good. */
-    async settled(promise, timeoutMs) {
+    // A USB call that never returns would suspend the C++ caller for good
+    async settled(promise, timeout) {
         let timer;
-        const guard = new Promise((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); });
+        const guard = new Promise((resolve) => { timer = setTimeout(() => resolve(false), timeout); });
+
         try {
             return await Promise.race([promise.then(() => true, () => true), guard]);
         } finally {
@@ -204,8 +192,7 @@ class SerialPort {
         }
     }
 
-    /** One task turn without a timer: Chrome clamps every timer in a hidden
-     *  tab to 1 s, and a drain must not pay that. */
+    // One task turn without a timer: Chrome clamps timers in a hidden tab to 1 s
     tick() {
         return new Promise((resolve) => {
             const channel = new MessageChannel();
@@ -214,62 +201,40 @@ class SerialPort {
         });
     }
 
-    /** Give back a reader/writer a failed request left behind: close() hangs while a stream is locked. */
     async releaseStreams() {
         const reader = this.reader;
         this.reader = null;
         this.inflight = null;
+
         if (reader) {
-            // Bounded, then abandoned: the lock goes back either way, and a
-            // cancel that never returns must not suspend the C++ caller.
             await this.settled(reader.cancel(), 200);
-            try {
-                reader.releaseLock();
-            } catch (releaseError) {
-            }
+            try { reader.releaseLock(); } catch {}
         }
 
         const writer = this.writer;
         this.writer = null;
+
         if (writer) {
             await this.settled(writer.abort(), 1000);
-            try {
-                writer.releaseLock();
-            } catch (releaseError) {
-            }
+            try { writer.releaseLock(); } catch {}
         }
     }
 
     async open() {
-        try {
-            await this.openPort();
-        } catch (error) {
-            // Never reject: Asyncify.handleAsync attaches no catch, so a
-            // rejection would suspend the C++ call for good.
-            console.warn('Serial open failed:', error);
-            this.isOpen = false;
-        }
-    }
-
-    async openPort() {
-        // Close on the object, not on `isOpen`: failure paths mark the port
-        // closed without closing it, and Chrome then rejects open() forever.
+        // Failure paths clear isOpen without closing, and Chrome then rejects open() forever
         if (this.port) {
             await this.releaseStreams();
-            // Already closed, never opened, or wedged by a foreign lock: the
-            // retry loop below deals with a port that would not close.
             await this.settled(this.port.close(), 1000);
         }
+
         this.isOpen = false;
+        this.optionsChanged = false;
+        this.pending = new Uint8Array();
+
         if (!this.api) {
-            // No WebSerial/WebUSB in this browser: retrying cannot conjure a
-            // port, and the 100-attempt loop below turned every request into
-            // a 150 ms stall — thousands of them per device load.
             delete this.port;
             return;
         }
-        this.pending = new Uint8Array();
-        this.optionsChanged = false;
 
         for (let i = 0; i < 100; i++) {
             try {
@@ -278,8 +243,7 @@ class SerialPort {
                 this.isOpen = true;
             } catch (error) {
                 this.error = error;
-                // No port chosen, or the chooser needs a user gesture we do
-                // not have — retrying only spams requestPort a hundred times.
+                // Terminal: no port, or the chooser needs a user gesture we don't have
                 if (error instanceof DOMException
                     && ['NotFoundError', 'SecurityError', 'NotAllowedError'].includes(error.name)) {
                     delete this.port;
@@ -297,35 +261,28 @@ class SerialPort {
     }
 
     async close() {
-        try {
-            if (!this.port || !this.isOpen)
-                return;
+        if (!this.port || !this.isOpen)
+            return;
 
-            await this.releaseStreams();
-            if (!(await this.settled(this.port.close(), 1000)))
-                console.warn('Serial port close did not finish in time');
-            this.isOpen = false;
-        } catch (error) {
-            console.warn('Serial close failed:', error);
-            this.isOpen = false;
-        }
+        await this.releaseStreams();
+
+        if (!(await this.settled(this.port.close(), 1000)))
+            console.warn('Serial port close did not finish in time');
+
+        this.isOpen = false;
     }
 
+    // Asyncify.handleAsync attaches no catch: a rejection suspends the C++ call for good
     async write(data) {
         try {
             await this.writeData(data);
         } catch (error) {
-            // Never reject: Asyncify.handleAsync attaches no catch, so a
-            // rejection would suspend the C++ call for good.
             console.warn('Serial write failed:', error);
             this.isOpen = false;
         }
     }
 
     async writeData(data) {
-        // Closing and reopening the USB port on every write cost tens of
-        // milliseconds per Modbus exchange; the port stays open until the line
-        // settings change or a request fails.
         if (!this.isOpen || this.optionsChanged || !this.port || !this.port.writable)
             await this.open();
 
@@ -335,137 +292,128 @@ class SerialPort {
             return;
         }
 
+        // Drop the tail of an answer nobody took: it sits in the port's stream, not in pending
+        await this.discardPending();
+
         let writer;
+
         try {
             writer = this.port.writable.getWriter();
-        } catch (lockError) {
-            // A writer outlived a failed request: reopening drops the lock.
-            console.warn('Serial write: stream is locked, will reopen:', lockError);
+        } catch (error) {
+            console.warn('Serial write: stream is locked, will reopen:', error);
             this.isOpen = false;
             return;
         }
 
         this.writer = writer;
+
         try {
             await writer.write(data);
         } catch (error) {
-            // Dead stream (unplug, errored port): mark it closed, the next
-            // request reopens.
             console.warn('Serial write error, will reopen:', error);
             this.isOpen = false;
         } finally {
             this.writer = null;
-            // close() rejects while the stream is locked, so always release.
-            try {
-                writer.releaseLock();
-            } catch (releaseError) {
-                // The stream is already gone; the reopen path handles it.
-            }
+            try { writer.releaseLock(); } catch {}
         }
     }
 
-    /**
-     * Whatever bytes arrive within timeoutMs, at most count of them; an empty
-     * array when nothing does. Bytes beyond count stay queued for the next
-     * call, so a frame the port delivers in one chunk is not lost when the
-     * caller asks for it in pieces.
-     */
-    async readChunk(count, timeoutMs) {
-        // On the unwind pass Asyncify.handleAsync hands the C++ caller back the
-        // PREVIOUS reply, which ReadChunk then copies into a buffer sized for
-        // this one — a heap overflow whenever the previous chunk was longer.
-        if (typeof Asyncify !== 'undefined')
-            Asyncify.handleSleepReturnValue = 0;
-
+    // At most count bytes; whatever is left stays queued for the next call
+    async readChunk(count, timeout) {
         try {
-            return await this.readChunkData(count, timeoutMs);
+            return await this.readChunkData(count, timeout);
         } catch (error) {
-            // Never reject: Asyncify.handleAsync attaches no catch, so a
-            // rejection would suspend the C++ call for good.
             console.warn('Serial readChunk failed:', error);
             this.isOpen = false;
             return new Uint8Array();
         }
     }
 
-    async readChunkData(count, timeoutMs) {
-        if (this.pending.length) {
+    async readChunkData(count, timeout) {
+        if (this.pending.length)
             return this.takePending(count);
-        }
+
         if (!this.port || !this.port.readable) {
             console.error('Serial port is not open or not readable');
             this.isOpen = false;
             return new Uint8Array();
         }
-        // Firmware flows ask for extra patience. Every readChunk waits for a
-        // reply now — the drain no longer goes through here at all.
+
         if (this.extendedTimeout)
-            timeoutMs = Math.max(timeoutMs, this.replyTimeout);
+            timeout = Math.max(timeout, this.replyTimeout);
 
         const reader = this.acquireReader();
+
         if (!reader)
             return new Uint8Array();
-        await this.awaitRead(this.startRead(reader), timeoutMs);
+
+        await this.awaitRead(this.startRead(reader), timeout);
         return this.takePending(count);
     }
 
-    /** The one reader an open port gets. A reader per call meant a cancel()
-     *  per timeout, which throws away bytes the next frame still needs. */
     acquireReader() {
         if (this.reader)
             return this.reader;
+
         if (!this.port || !this.port.readable)
             return null;
+
         try {
             this.reader = this.port.readable.getReader();
-        } catch (lockError) {
-            // A reader outlived a failed request: reopening drops the lock.
-            console.warn('Serial readChunk: stream is locked, will reopen:', lockError);
+        } catch (error) {
+            console.warn('Serial read: stream is locked, will reopen:', error);
             this.isOpen = false;
             return null;
         }
+
         return this.reader;
     }
 
-    /** Keep one read() outstanding. Its bytes land in pending even when the
-     *  caller that started it has already given up, so none are lost. */
+    // One read() outstanding: its bytes land in pending even if the caller gave up
     startRead(reader) {
         if (this.inflight)
             return this.inflight;
+
         const record = { settled: false };
-        // A reader swapped out under us belongs to a port that is gone: its
-        // bytes must not land in the buffer of the one that replaced it.
+
         record.promise = reader.read().then(
             ({ value, done }) => {
                 record.settled = true;
+
+                // A reader swapped out under us belongs to a port that is gone
                 if (this.reader !== reader)
                     return;
+
                 this.inflight = null;
+
                 if (value && value.length)
                     this.appendPending(value);
+
                 if (done)
                     this.dropReader();
             },
             (error) => {
                 record.settled = true;
+
                 if (this.reader !== reader)
                     return;
+
                 this.inflight = null;
-                // Unplugged, or the lock went away: the next request reopens.
                 console.warn('Serial read error:', error);
                 this.dropReader();
             });
+
         this.inflight = record;
         return record;
     }
 
-    /** Wait for the read, or stop waiting: an abandoned read stays in flight
-     *  and delivers into pending, so the next call still gets those bytes. */
-    async awaitRead(record, timeoutMs) {
+    async awaitRead(record, timeout) {
         if (record.settled)
             return;
+
         let timer;
-        const guard = new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs); });
+        const guard = new Promise((resolve) => { timer = setTimeout(resolve, timeout); });
+
         try {
             await Promise.race([record.promise, guard]);
         } finally {
@@ -473,17 +421,14 @@ class SerialPort {
         }
     }
 
-    /** Let go of a reader whose stream is finished; the next request reopens. */
     dropReader() {
         const reader = this.reader;
         this.reader = null;
         this.inflight = null;
         this.isOpen = false;
-        if (!reader)
-            return;
-        try {
-            reader.releaseLock();
-        } catch (releaseError) {
+
+        if (reader) {
+            try { reader.releaseLock(); } catch {}
         }
     }
 
@@ -492,6 +437,7 @@ class SerialPort {
             this.pending = value;
             return;
         }
+
         const joined = new Uint8Array(this.pending.length + value.length);
         joined.set(this.pending, 0);
         joined.set(value, this.pending.length);
@@ -504,62 +450,41 @@ class SerialPort {
         return taken;
     }
 
-    /** Drop what has arrived but nobody asked for — a late reply to a request that already timed out. */
     async discardPending() {
         try {
             await this.drain();
         } catch (error) {
-            // Never reject: Asyncify.handleAsync attaches no catch, so a
-            // rejection would suspend the C++ call for good.
             console.warn('Serial discardPending failed:', error);
-            this.pending = new Uint8Array();
         }
+
+        this.pending = new Uint8Array();
     }
 
     async drain() {
-        this.pending = new Uint8Array();
-        // Only what has already arrived is dropped, and a task turn is all it
-        // takes to collect it: waiting 5 ms here cost a full second per
-        // exchange in a hidden tab, where Chrome clamps timers to 1 s.
-        // Bounded: a noisy line, or a second master polling the same bus,
-        // delivers bytes continuously, and an unbounded drain would hold the
-        // whole request pipeline hostage.
+        // Bounded: a noisy line delivers bytes without end
         const deadline = performance.now() + 100;
-        for (;;) {
+
+        while (this.isOpen) {
             const reader = this.acquireReader();
-            if (!reader || !this.isOpen)
+
+            if (!reader)
                 break;
+
             const record = this.startRead(reader);
             await this.tick();
+
             if (!record.settled)
                 await this.tick();
+
             if (!record.settled)
                 break;
+
             this.pending = new Uint8Array();
+
             if (performance.now() > deadline) {
                 console.warn('Serial drain gave up: the line keeps delivering data');
                 break;
             }
         }
-        this.pending = new Uint8Array();
-    }
-
-    /** Read up to count bytes within the reply timeout — the pre-chunked contract, kept for older module builds. */
-    async read(count) {
-        const deadline = performance.now() + this.replyTimeout;
-        let data = new Uint8Array();
-        while (data.length < count) {
-            const left = deadline - performance.now();
-            if (left <= 0)
-                break;
-            const chunk = await this.readChunk(count - data.length, left);
-            if (!chunk.length)
-                break;
-            const joined = new Uint8Array(data.length + chunk.length);
-            joined.set(data, 0);
-            joined.set(chunk, data.length);
-            data = joined;
-        }
-        return data;
     }
 }
