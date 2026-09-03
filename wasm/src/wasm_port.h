@@ -26,6 +26,5 @@ public:
     void ApplySerialPortSettings(const TSerialPortConnectionSettings& settings) override;
 
 private:
-    // The line settings in force, for the send time the protocol code builds its timeouts from
     TSerialPortConnectionSettings Settings;
 };
