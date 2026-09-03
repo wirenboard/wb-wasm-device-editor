@@ -13,28 +13,22 @@
 
 namespace
 {
-    // WebSerial hands bytes over in USB-sized batches with a latency of its
-    // own (an FTDI adapter's latency timer alone is 16 ms), so the
-    // microsecond-scale gaps the protocol code computes from the baud rate
-    // cannot be told apart from a batch boundary. Every wait is floored to
-    // what the browser can actually resolve.
+    // WebSerial hands bytes over in USB-sized batches with a latency of its own,
+    // so the microsecond gaps computed from the baud rate are not observable
     const std::chrono::milliseconds MIN_RESPONSE_TIMEOUT(30);
     const std::chrono::milliseconds MIN_FRAME_TIMEOUT(25);
 
     int ToMilliseconds(const std::chrono::microseconds& us, const std::chrono::milliseconds& floor)
     {
-        auto ms = std::chrono::ceil<std::chrono::milliseconds>(us);
-        return static_cast<int>(std::max(ms, floor).count());
+        return static_cast<int>(std::max(std::chrono::ceil<std::chrono::milliseconds>(us), floor).count());
     }
 
-    // One chunk from the serial port: whatever has arrived within timeoutMs,
-    // at most count bytes. Zero means nothing arrived.
+    // Whatever has arrived within timeoutMs, at most count bytes, 0 if nothing
     int ReadChunk(uint8_t* buffer, size_t count, int timeoutMs)
     {
-        // Emscripten runs this body twice — once to unwind, once to rewind —
-        // and only the async callback runs exactly once, on the real reply.
-        // Anything outside it would run on the unwind pass against the value
-        // the PREVIOUS suspension delivered, so every side effect lives inside.
+        // Emscripten runs the body twice, to unwind and to rewind, and only the
+        // async callback runs once, on the real reply. Anything outside it works
+        // on the value the previous suspension delivered
         // clang-format off
         return EM_ASM_INT(
         {
@@ -42,7 +36,7 @@ namespace
                 const result = await Module.serial.readChunk($1, $2);
 
                 // A reply longer than the buffer is a broken contract, not
-                // something to truncate: writing it would corrupt the heap.
+                // something to truncate: writing it would corrupt the heap
                 if (!(result instanceof Uint8Array) || result.length === 0 || result.length > $1) {
                     return 0;
                 }
@@ -90,11 +84,11 @@ void TWASMPort::WriteBytes(const uint8_t* buffer, int count)
 uint8_t TWASMPort::ReadByte(const std::chrono::microseconds& timeout)
 {
     uint8_t byte = 0;
-    if (ReadChunk(&byte, 1, ToMilliseconds(timeout, MIN_RESPONSE_TIMEOUT)) == 0) {
-        // TFileDescriptorPort::ReadByte's type: a plain runtime_error escapes
-        // every catch (const TSerialDeviceException&) in the drivers.
+
+    if (!ReadChunk(&byte, 1, ToMilliseconds(timeout, MIN_RESPONSE_TIMEOUT))) {
         throw TSerialDeviceTransientErrorException("timeout");
     }
+
     return byte;
 }
 
@@ -104,37 +98,41 @@ TReadFrameResult TWASMPort::ReadFrame(uint8_t* buffer,
                                       const std::chrono::microseconds& frameTimeout,
                                       TFrameCompletePred frame_complete)
 {
-    // The same contract as TFileDescriptorPort::ReadFrame: wait up to
-    // responseTimeout for the first byte, then treat a gap of frameTimeout as
-    // the end of the frame — or stop as soon as the protocol says the frame
-    // is complete, which is how a reply of known size returns without waiting
-    // for any gap at all.
+    // The TFileDescriptorPort contract: responseTimeout until the first byte,
+    // then frameTimeout as the inter-byte gap that ends the frame, or an early
+    // return as soon as the protocol says the frame is complete
     TReadFrameResult res;
+
     if (!count) {
         return res;
     }
 
     auto start = std::chrono::steady_clock::now();
-    int timeoutMs = ToMilliseconds(responseTimeout, MIN_RESPONSE_TIMEOUT);
+    auto timeoutMs = ToMilliseconds(responseTimeout, MIN_RESPONSE_TIMEOUT);
+
     while (res.Count < count) {
         if (frame_complete && frame_complete(buffer, res.Count)) {
             break;
         }
-        int n = ReadChunk(buffer + res.Count, count - res.Count, timeoutMs);
-        if (n <= 0) {
+
+        auto length = ReadChunk(buffer + res.Count, count - res.Count, timeoutMs);
+
+        if (length <= 0) {
             break;
         }
-        if (res.Count == 0) {
+
+        if (!res.Count) {
             res.ResponseTime =
                 std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
         }
-        res.Count += n;
+
+        res.Count += length;
         timeoutMs = ToMilliseconds(frameTimeout, MIN_FRAME_TIMEOUT);
     }
 
     if (!res.Count) {
-        // Deliberately not TResponseTimeoutException: retrying it under Asyncify
-        // overflowed the native stack, so every catch of that type is dead for this port.
+        // Not TResponseTimeoutException: wb-mqtt-serial retries that one in a way
+        // that recurses under Asyncify and kills the renderer
         throw std::runtime_error("request timed out");
     }
 
@@ -144,9 +142,6 @@ TReadFrameResult TWASMPort::ReadFrame(uint8_t* buffer,
 
 void TWASMPort::SkipNoise()
 {
-    // Whatever is sitting in the receive path — a late reply to a request that
-    // already timed out — would otherwise be taken for the answer to the next
-    // one. Only what is there now is dropped; nothing is waited for.
     // clang-format off
     EM_ASM(
     {
@@ -160,21 +155,22 @@ void TWASMPort::SleepSinceLastInteraction(const std::chrono::microseconds& us)
 
 std::chrono::microseconds TWASMPort::GetSendTimeBytes(double bytesNumber) const
 {
-    // Start bit, data bits, an optional parity bit and the stop bits, rounded up
-    // exactly as TSerialPort does: rounding down shortens the derived timeouts.
     size_t bitsPerByte = 1 + Settings.DataBits + Settings.StopBits;
+
     if (Settings.Parity != 'N') {
         ++bitsPerByte;
     }
+
     return GetSendTimeBits(std::ceil(bitsPerByte * bytesNumber));
 }
 
 std::chrono::microseconds TWASMPort::GetSendTimeBits(size_t bitsNumber) const
 {
-    // Unlike TSerialPort's, these settings come from a request, so guard the divisor.
+    // Unlike TSerialPort's, these settings come from a request, so guard the divisor
     if (Settings.BaudRate <= 0) {
         return std::chrono::microseconds(0);
     }
+
     auto us = std::ceil(bitsNumber * 1000000.0 / double(Settings.BaudRate));
     return std::chrono::microseconds(static_cast<std::chrono::microseconds::rep>(us));
 }
@@ -187,6 +183,7 @@ std::string TWASMPort::GetDescription(bool verbose) const
 void TWASMPort::ApplySerialPortSettings(const TSerialPortConnectionSettings& settings)
 {
     Settings = settings;
+
     // clang-format off
     EM_ASM(
     {
@@ -197,9 +194,4 @@ void TWASMPort::ApplySerialPortSettings(const TSerialPortConnectionSettings& set
 
     LOG(Debug) << "set options: " << settings.BaudRate << " " << settings.DataBits << "-" << settings.Parity << "-"
                << settings.StopBits;
-}
-
-void TWASMPort::ResetSerialPortSettings()
-{
-    // No InitialSettings to restore to: Settings only ever holds the last request's.
 }

@@ -24,10 +24,8 @@ public:
     std::chrono::microseconds GetSendTimeBits(size_t bitsNumber) const override;
     std::string GetDescription(bool verbose) const override;
     void ApplySerialPortSettings(const TSerialPortConnectionSettings& settings) override;
-    void ResetSerialPortSettings() override;
 
 private:
-    // The line settings in force, for the send-time arithmetic the protocol
-    // code builds its frame and arbitration timeouts from.
+    // The line settings in force, for the send time the protocol code builds its timeouts from
     TSerialPortConnectionSettings Settings;
 };

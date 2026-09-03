@@ -76,12 +76,11 @@ window.Module =
           }
 
           const timeout = ['fwUpdate', 'fwRestore'].includes(type) ? 600000 : 120000;
-          // Woken by the reply rather than polled: Chrome clamps every timer
-          // in a hidden tab to 1 s, and a 1 ms poll then cost a full second
-          // on top of each request.
+          // Woken by the reply, not polled: Chrome clamps every timer in a
+          // hidden tab to 1 s, so a 1 ms poll cost a second per request
           let timer;
           await new Promise((resolve) => {
-              // The call may have finished without ever suspending.
+              // The call may have finished without ever suspending
               if (this.finished) {
                   resolve();
                   return;
