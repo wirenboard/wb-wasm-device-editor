@@ -25,6 +25,15 @@ const HASHED_ASSETS = [
   // __HASHED_ASSETS__
 ];
 
+// The DALI runtime: a Python interpreter and its packages, ~13 MB, reached only
+// from the DALI view. NOT precached: fetching it eagerly would make every
+// first visit to the Modbus editor pay for it. It is cached the first time the
+// DALI view actually requests it (see the fetch handler) and served
+// cache-first from then on.
+const DALI_ASSETS = [
+  // __DALI_ASSETS__
+];
+
 // Small assets precached eagerly
 const PRECACHE_ASSETS = [
   '/',
@@ -112,6 +121,21 @@ self.addEventListener('fetch', (event) => {
             caches.match('/').then((cached) => resolve(cached));
           });
       }),
+    );
+    return;
+  }
+
+  // DALI runtime assets: cached on first use, then cache-first — the Modbus
+  // editor's visitors never pay for them (see DALI_ASSETS above).
+  if (DALI_ASSETS.includes(url.pathname)) {
+    event.respondWith(
+      caches.match(request).then((cached) => cached || fetch(request).then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      })),
     );
     return;
   }

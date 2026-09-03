@@ -28,6 +28,18 @@ const BLOB_ID = {
   firmware: 'offline-firmware',
 } as const;
 
+// The DALI runtime's byte assets: a Python interpreter, its stdlib and the
+// wb-mqtt-dali bundle. Read back by src/dali-wasm/inline-assets.ts — keep the
+// ids and the gzip flags in step with it. The two `.tar.gz` payloads and the
+// stdlib `.zip` are already compressed, so they go in as plain base64.
+const DALI_BLOBS = [
+  { id: 'offline-pyodide-wasm-gz', file: 'node_modules/pyodide/pyodide.asm.wasm', gzip: true },
+  { id: 'offline-pyodide-stdlib', file: 'node_modules/pyodide/python_stdlib.zip', gzip: false },
+  { id: 'offline-pyodide-lock-gz', file: 'node_modules/pyodide/pyodide-lock.json', gzip: true },
+  { id: 'offline-wbdali-py', file: '.python-bundle/wbdali-py.tar.gz', gzip: false },
+  { id: 'offline-wbdali-data', file: '.python-bundle/wbdali-data.tar.gz', gzip: false },
+] as const;
+
 const FW_BASE_URL = 'https://fw-releases.wirenboard.com/';
 const BUCKET_LIST_URL = 'https://fw-releases.wirenboard.com/__s3_bucket_list';
 const FW_RELEASE_YAML_PATH = 'fw/by-signature/release-versions.yaml';
@@ -59,6 +71,23 @@ function sanitizeScriptText(text: string): string {
 
 function readGzipBase64(file: string): string {
   return zlib.gzipSync(fs.readFileSync(file), { level: 9 }).toString('base64');
+}
+
+function readBase64(file: string): string {
+  return fs.readFileSync(file).toString('base64');
+}
+
+function daliRuntimeBlobs(): string[] {
+  return DALI_BLOBS.map(({ id, file, gzip }) => {
+    const absolute = path.resolve(__dirname, file);
+    if (!fs.existsSync(absolute)) {
+      throw new Error(
+        `[offline-embed] ${file} is missing; run "npm run build:python" before the offline build`,
+      );
+    }
+    const body = gzip ? readGzipBase64(absolute) : readBase64(absolute);
+    return `<script type="application/gzip+base64" id="${id}">${body}</script>`;
+  });
 }
 
 async function fetchCached(relPath: string): Promise<Buffer> {
@@ -134,11 +163,27 @@ async function buildFirmwareBundle(): Promise<FirmwareEmbed> {
   //    latest.wbfw for each. The downloader requests <version>.wbfw, where
   //    <version> is the content of latest.txt, so we store the wbfw under
   //    that versioned URL key (latest.wbfw and <version>.wbfw share content).
-  const bootloaderSigs: string[] = [];
-  for await (const { key } of listBucket('bootloader/by-signature/')) {
-    if (BOOTLOADER_LATEST_TXT_RE.test(key)) {
-      bootloaderSigs.push(key.split('/')[2]);
+  // The S3 listing is the one fetch the blob cache cannot answer — cache the
+  // list of signatures itself, so a network flap degrades to yesterday's
+  // catalog instead of failing the whole build.
+  const sigsCachePath = path.join(FIRMWARE_CACHE_DIR, 'bootloader-signatures.json');
+  let bootloaderSigs: string[] = [];
+  try {
+    for await (const { key } of listBucket('bootloader/by-signature/')) {
+      if (BOOTLOADER_LATEST_TXT_RE.test(key)) {
+        bootloaderSigs.push(key.split('/')[2]);
+      }
     }
+    fs.mkdirSync(FIRMWARE_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(sigsCachePath, JSON.stringify(bootloaderSigs));
+  } catch (error) {
+    // Only fall back when a cached listing exists — a missing cache would
+    // otherwise surface as ENOENT and bury the actual network failure.
+    if (!fs.existsSync(sigsCachePath)) {
+      throw error;
+    }
+    bootloaderSigs = JSON.parse(fs.readFileSync(sigsCachePath, 'utf8'));
+    console.log(`[offline-embed] firmware: bucket listing unreachable, using cached list of ${bootloaderSigs.length} signatures`);
   }
 
   console.log(`[offline-embed] firmware: ${stableList.length} stable blobs + ${bootloaderSigs.length} bootloaders to fetch (cache: ${FIRMWARE_CACHE_DIR})`);
@@ -363,6 +408,7 @@ export function offlineEmbedPlugin(): Plugin {
         `<script type="application/gzip+base64" id="${BLOB_ID.data}">${readGzipBase64(path.join(publicDir, 'module.data'))}</script>`,
         `<script type="application/gzip+base64" id="${BLOB_ID.moduleJs}">${readGzipBase64(path.join(publicDir, 'module.js'))}</script>`,
         `<script type="application/json" id="${BLOB_ID.firmware}">${firmwareJson}</script>`,
+        ...daliRuntimeBlobs(),
         `<script>${LOADER_SOURCE}</script>`,
       ].join('\n');
       html = html.includes('</body>')

@@ -1,0 +1,25 @@
+.daliGatewayTab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.daliGatewayTab-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 24px;
+  margin: 0;
+}
+
+.daliGatewayTab-facts dt {
+  font-weight: 600;
+}
+
+.daliGatewayTab-facts dd {
+  margin: 0;
+}
+
+.daliGatewayTab-hint {
+  margin: 0;
+  color: var(--wb-color-text-secondary, #6c757d);
+}

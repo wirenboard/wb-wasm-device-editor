@@ -1,0 +1,25 @@
+.daliBoot-hint {
+  color: var(--text-secondary-color);
+}
+
+.daliBoot-log {
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--card-border-radius);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.daliBoot-loader {
+  display: flex;
+  justify-content: center;
+  padding: 24px 0;
+}
+
+.daliBoot-retry {
+  margin-bottom: 12px;
+}

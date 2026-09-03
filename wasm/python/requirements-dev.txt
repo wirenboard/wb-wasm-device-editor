@@ -1,0 +1,7 @@
+# Testing the browser runtime under CPython. Everything it imports at runtime is
+# vendored into python/vendor by scripts/fetch-python-sources.sh, except the
+# jsonschema stack, which the daemon needs to validate device parameters and
+# which comes from Pyodide's own wheels in the browser.
+jsonschema==4.26.0
+pytest==8.3.5
+pytest-asyncio==0.25.1

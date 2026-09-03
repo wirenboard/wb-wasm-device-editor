@@ -1,73 +1,95 @@
 {
-   "wasm": {
-      "title": "Wiren Board Device Editor",
-      "buttons": {
-         "select": "Select port",
-         "change-port": "Change port",
-         "scan": "Scan",
-         "save": "Save",
-         "save-local": "Save local",
-         "remove-local": "Remove local",
-         "add-device": "Add device",
-         "add": "Add",
-         "refresh": "Refresh",
-         "stop": "Stop",
-         "restore": "Restore",
-         "reload": "Reload parameters"
-      },
-      "labels": {
-         "scanning": "Scanning in progress {{message}}…",
-         "boot-scan": "Find devices in bootloader mode",
-         "boot-scanning": "Searching for devices in bootloader mode {{message}}…",
-         "boot-scan-broadcast": "Quick scan for bootloader devices {{message}}…",
-         "boot-scan-cache": "Checking known devices {{message}}…",
-         "found-devices_one": "Found {{count}} device",
-         "found-devices_other": "Found {{count}} devices",
-         "runtime-view": "Runtime View",
-         "auto-refresh": "Auto-refresh",
-         "device-type": "Device type",
-         "slave-id": "Slave id of the device",
-         "baudrate": "Baudrate",
-         "databits": "Data bits",
-         "stopbits": "Stop bits",
-         "parity": "Parity",
-         "parity-never": "Never",
-         "parity-even": "Even",
-         "parity-odd": "Odd",
-         "bootloader-device": "Device is in bootloader mode. Firmware restore is required.",
-         "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to specify device type and address manually."
-      },
-      "errors": {
-         "invalid-slave-id": "Slave ID must be an integer between 1 and 247",
-         "select-port-failed": "Failed to select port: {{error}}",
-         "port-not-selected": "Communication with devices requires a USB - RS485 interface converter, e.g. <a href=\"https://wirenboard.com/ru/product/WB-USB485/\" target=\"_blank\" rel=\"noopener noreferrer\">WB-USB485</a>. To continue, select the converter port."
-      },
-      "sw": {
-         "offline": "Offline mode",
-         "update-available": "New version available — reload"
-      },
-      "offline-fw": {
-         "banner": "Offline mode — using embedded firmware. Updates work, but you won't get the latest versions until you reconnect."
-      },
-      "offline-download": {
-         "link": "offline version"
-      },
-      "version": {
-         "standalone-suffix": "standalone",
-         "update-available": "Version {{version}} is available.",
-         "open-online": "open online",
-         "download-standalone": "download standalone"
-      },
-      "release": {
-         "testing-banner": "Attention: using testing release —",
-         "switch-to-stable-link": "switch to stable",
-         "switch-to-testing-link": "switch to testing",
-         "switch-to-testing-title": "Switching to testing release",
-         "switch-to-testing-text": "The configurator will use testing versions of firmware and templates. Operation may be unstable. The page will reload.",
-         "switch-to-stable-title": "Switching to stable release",
-         "switch-to-stable-text": "The configurator will use stable versions of firmware and templates. The page will reload.",
-         "cancel": "Cancel",
-         "switch": "Switch"
-      }
-   }
+  "wasm": {
+    "title": "Wiren Board Device Editor",
+    "buttons": {
+      "select": "Select port",
+      "change-port": "Change port",
+      "scan": "Scan",
+      "save": "Save",
+      "save-local": "Save local",
+      "remove-local": "Remove local",
+      "add-device": "Add device",
+      "add": "Add",
+      "refresh": "Refresh",
+      "stop": "Stop",
+      "restore": "Restore",
+      "reload": "Reload parameters"
+    },
+    "labels": {
+      "scanning": "Scanning in progress {{message}}…",
+      "boot-scan": "Find devices in bootloader mode",
+      "boot-scanning": "Searching for devices in bootloader mode {{message}}…",
+      "boot-scan-broadcast": "Quick scan for bootloader devices {{message}}…",
+      "boot-scan-cache": "Checking known devices {{message}}…",
+      "found-devices_one": "Found {{count}} device",
+      "found-devices_other": "Found {{count}} devices",
+      "runtime-view": "Runtime View",
+      "auto-refresh": "Auto-refresh",
+      "device-type": "Device type",
+      "slave-id": "Slave id of the device",
+      "baudrate": "Baudrate",
+      "databits": "Data bits",
+      "stopbits": "Stop bits",
+      "parity": "Parity",
+      "parity-never": "Never",
+      "parity-even": "Even",
+      "parity-odd": "Odd",
+      "bootloader-device": "Device is in bootloader mode. Firmware restore is required.",
+      "empty-state": "No devices found. Use \"Scan\" to detect connected devices or \"Manually add device\" to specify device type and address manually.",
+      "status-yes": "Yes",
+      "status-no": "No",
+      "downloading-module": "Downloading the device editor engine — {{loaded}} / {{total}}"
+    },
+    "errors": {
+      "invalid-slave-id": "Slave ID must be an integer between 1 and 247",
+      "select-port-failed": "Failed to select port: {{error}}",
+      "port-not-selected": "Communication with devices requires a USB - RS485 interface converter, e.g. <a href=\"https://wirenboard.com/ru/product/WB-USB485/\" target=\"_blank\" rel=\"noopener noreferrer\">WB-USB485</a>. To continue, select the converter port."
+    },
+    "sw": {
+      "offline": "Offline mode",
+      "update-available": "New version available — reload"
+    },
+    "offline-fw": {
+      "banner": "Offline mode — using embedded firmware. Updates work, but you won't get the latest versions until you reconnect."
+    },
+    "offline-download": {
+      "link": "offline version"
+    },
+    "version": {
+      "standalone-suffix": "standalone",
+      "update-available": "Version {{version}} is available.",
+      "open-online": "open online",
+      "download-standalone": "download standalone"
+    },
+    "release": {
+      "testing-banner": "Attention: using testing release —",
+      "switch-to-stable-link": "switch to stable",
+      "switch-to-testing-link": "switch to testing",
+      "switch-to-testing-title": "Switching to testing release",
+      "switch-to-testing-text": "The configurator will use testing versions of firmware and templates. Operation may be unstable. The page will reload.",
+      "switch-to-stable-title": "Switching to stable release",
+      "switch-to-stable-text": "The configurator will use stable versions of firmware and templates. The page will reload.",
+      "cancel": "Cancel",
+      "switch": "Switch"
+    }
+  },
+  "dali-wasm": {
+    "buttons": {
+      "open": "DALI Configurator",
+      "back": "Back to Modbus devices",
+      "retry": "Retry"
+    },
+    "labels": {
+      "boot-failed": "The DALI service failed to start.",
+      "boot-hint-timeout": "The gateway did not answer on the serial line. Check that the module is powered and the A/B wires are connected, then retry.",
+      "boot-hint-network": "Part of the runtime failed to download. Check the network connection, then retry.",
+      "select-port-hint": "Choose the serial port the WB-DALI gateway is connected to.",
+      "mode-gateway": "Connected: {{name}}",
+      "gateway-type": "Module",
+      "gateway-address": "Modbus address",
+      "gateway-line": "Serial line",
+      "gateway-hint": "Select a bus in the tree to scan it and configure the DALI devices on it.",
+      "no-gateway": "No WB-DALI gateway has been found yet. Go back to the Modbus devices and run a scan; the DALI configurator opens from there once a gateway turns up."
+    }
+  }
 }

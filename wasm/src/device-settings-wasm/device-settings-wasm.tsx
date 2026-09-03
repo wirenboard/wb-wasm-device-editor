@@ -13,7 +13,9 @@ import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { useAsyncAction } from '@/utils/async-action';
-import { setReactLocale } from '~/react-directives/locale';
+import { findDaliGateways, rememberGateways, SCAN_RESULTS_KEY } from '../dali-wasm/gateways';
+import { setLanguage as setI18nLanguage } from '../i18n/config';
+import { openDali } from '../navigation';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
@@ -25,12 +27,35 @@ import { useModule } from './module';
 import type { Device } from './types';
 import './styles.css';
 
+const readScanResults = (): Device[] => {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(SCAN_RESULTS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+};
+
 export const DeviceSettingsWasm = observer(() => {
   const { t } = useTranslation();
   const [language, setLanguage] = useState(localStorage.getItem('language') || 'en');
-  const [devices, setDevices] = useState<Device[]>([]);
+  // The scan result outlives this component: opening the DALI view unmounts the
+  // whole editor, and coming back to an empty list — with a fourteen-second
+  // rescan as the only way to refill it — makes the round trip painful. Session
+  // storage matches the lifetime of the result: a scan is a snapshot of what is
+  // on the wire right now, not something to keep across days.
+  const [devices, setDevices] = useState<Device[]>(readScanResults);
   const [tabstore, setTabstore] = useState(null);
-  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [selectedDevice, setSelectedDevice] = useState(
+    () => readScanResults().at(0)?.cfg.slave_id ?? null,
+  );
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(SCAN_RESULTS_KEY, JSON.stringify(devices));
+    } catch {
+      // Losing the cache only costs the next visitor a rescan.
+    }
+  }, [devices]);
   const [isConfigLoading, setIsConfigLoading] = useState(false);
   const [isModalOpened, setIsModalOpened] = useState(false);
   const [configDeviceTypesStore, setConfigDeviceTypesStore] = useState(null);
@@ -220,11 +245,6 @@ export const DeviceSettingsWasm = observer(() => {
     }
   }, [selectPort, refreshPortInfo]);
 
-  const reset = () => {
-    setDevices([]);
-    setTabstore(null);
-  };
-
   const configDeviceTypes = async () => {
     return configGetDeviceTypes(language).then((res) => {
       const deviceTypesStore = new DeviceTypesStore(configGetSchema);
@@ -233,10 +253,6 @@ export const DeviceSettingsWasm = observer(() => {
       return deviceTypesStore;
     });
   };
-
-  useEffect(() => {
-    setReactLocale();
-  }, []);
 
   useEffect(() => {
     if (moduleInitialized) {
@@ -316,7 +332,10 @@ export const DeviceSettingsWasm = observer(() => {
   };
 
   const handleScan = async () => {
-    reset();
+    // The previous scan's workspace stays on screen (dimmed, non-interactive)
+    // until new results arrive: an accidental press of the bright-green Scan
+    // used to wipe the list, the open device page, and the DALI button, with
+    // a full rescan as the only way back.
     bootScanRequestedRef.current = false;
 
     // If no granted ports match — prompt user to pick one first.
@@ -387,8 +406,8 @@ export const DeviceSettingsWasm = observer(() => {
         ));
         loadDeviceSettings(updatedDevice, configDeviceTypesStore);
       } else {
-        // Broadcast restore — rescan to find the device at its real address
-        reset();
+        // Broadcast restore — rescan to find the device at its real address.
+        // The workspace stays visible (dimmed) here too.
         bootScanRequestedRef.current = false;
         setIsPortScanning(true);
         const res = await scan();
@@ -403,16 +422,38 @@ export const DeviceSettingsWasm = observer(() => {
     }
   });
 
-  const getType = (device: Device) => {
-    return configDeviceTypesStore.findNotDeprecatedDeviceTypes(
+  const getType = (device: Device, deviceTypesStore = configDeviceTypesStore) => {
+    return deviceTypesStore.findNotDeprecatedDeviceTypes(
       device.device_signature,
       device.fw?.version,
     ).at(0) || device.device_signature;
   };
 
+  // The DALI configurator is only offered once the scan has found something to
+  // configure, and it is pointed at what the scan found: the module's Modbus
+  // address and the line settings it answered on.
+  const daliGateways = useMemo(
+    () => (configDeviceTypesStore ? findDaliGateways(allDevices, getType) : []),
+    [allDevices, configDeviceTypesStore]
+  );
+
+  // Record the gateways the moment the scan knows them, not only when the DALI
+  // button is clicked: the DALI page reached by URL — or after the browser
+  // profile was cleared — reads this record, and "rescan to get the button
+  // back" is a poor recovery path.
+  useEffect(() => {
+    if (daliGateways.length) {
+      rememberGateways(daliGateways);
+    }
+  }, [daliGateways]);
+
   const loadDeviceSettings = useCallback(async (device: Device, deviceTypesStore = configDeviceTypesStore) => {
     setError(null);
-    const deviceType = getType(device);
+    // Resolve the type through the store handed in, not the state variable:
+    // on the restore-at-mount path this runs inside the .then that has only
+    // just produced the store, and the state closure still holds null — which
+    // used to throw here and silently cost the whole settings pane.
+    const deviceType = getType(device, deviceTypesStore);
 
     setIsConfigLoading(true);
 
@@ -570,6 +611,17 @@ export const DeviceSettingsWasm = observer(() => {
               {t('wasm.sw.update-available')}
             </a>
           )}
+          {!!daliGateways.length && (
+            <Button
+              label={t('dali-wasm.buttons.open')}
+              variant="secondary"
+              disabled={isBusy}
+              onClick={() => {
+                rememberGateways(daliGateways);
+                openDali();
+              }}
+            />
+          )}
           <Button
             label={t('wasm.buttons.add-device')}
             variant="secondary"
@@ -599,8 +651,12 @@ export const DeviceSettingsWasm = observer(() => {
             value={language}
             onChange={(option: Option<string>) => {
               localStorage.setItem('language', option.value);
+              // Both worlds: the state drives the template reload, and i18next
+              // drives every translated string in the editor and the DALI page.
+              // The state setter used to shadow the i18n import of the same
+              // name, so switching languages translated nothing but templates.
               setLanguage(option.value);
-              setReactLocale();
+              setI18nLanguage(option.value);
             }}
           />
         </>
@@ -610,7 +666,10 @@ export const DeviceSettingsWasm = observer(() => {
         loader: loadingProgress?.percent !== 100 ? 'progress' : 'spinner',
         progress: loadingProgress?.percent,
         label: loadingProgress?.percent !== 100
-          ? `${formatBytes(loadingProgress?.loaded)} / ${formatBytes(loadingProgress?.total)}`
+          ? t('wasm.labels.downloading-module', {
+            loaded: formatBytes(loadingProgress?.loaded),
+            total: formatBytes(loadingProgress?.total),
+          })
           : null,
       }}
       footer={
@@ -685,9 +744,16 @@ export const DeviceSettingsWasm = observer(() => {
         bootScanRequestedRef={bootScanRequestedRef}
         onStopBootScan={handleStopBootScan}
       />
-      {!isPortScanning && !isBootScanning && (
-        <main className="deviceSettingsWasm-container">
-          <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy })}>
+      <main
+        // `pointer-events: none` alone leaves the dimmed workspace in the
+        // tab order — Enter on a focused Save could race the scan for the
+        // port. `inert` removes it from focus and activation entirely.
+        {...((isPortScanning || isBootScanning) ? ({ inert: '' } as any) : {})}
+        className={classNames('deviceSettingsWasm-container', {
+          'deviceSettingsWasm-container--scanning': isPortScanning || isBootScanning,
+        })}
+      >
+          <aside className={classNames('deviceSettingsWasm-aside', { 'deviceSettingsWasm-aside--disabled': isBusy || isPortScanning || isBootScanning })}>
             {!!(devices.length || manualDevices.length) && (
               <Tabs
                 items={allDevices
@@ -793,7 +859,6 @@ export const DeviceSettingsWasm = observer(() => {
             )}
           </section>
         </main>
-      )}
 
       {isModalOpened && (
         <AddDevice

@@ -1,0 +1,68 @@
+/*
+ * The DALI page sizes itself against the layout's `max-height: 100%`, which only
+ * works if every ancestor has a height. `wasm/index.html` has a bare `#root`, so
+ * homeui's own `#wrapper { height: 100vh }` never applies here.
+ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/*
+ * The console panel the bus monitor docks into is app chrome in homeui, laid
+ * out beside or below the page. This editor has no such chrome, so the DALI
+ * view provides it.
+ */
+.daliWasm {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.daliWasm-consoleRight {
+  flex-direction: row;
+}
+
+.daliWasm-page {
+  flex: 1;
+  min-width: 0;
+  /* A flex child's implicit min-height is `auto`, so tall DALI content would
+     push this past its bounds, the overflow would propagate to the viewport,
+     and the whole document would scroll — carrying the console panel, which is
+     laid out at the bottom of a viewport-sized box, away with it. */
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+ * With the page area bounded, scrolling must happen INSIDE it — homeui's
+ * `.dali` pane is written to do exactly that (`height: 100%; overflow: auto`),
+ * but two links in the height chain above it only hold inside homeui's own
+ * app shell: `.page-container` declares min-height rather than height, and
+ * `.page-contentWrapper` is a flex child without min-height. Left unrepaired,
+ * the inner scroll never engages and the bounded page CLIPS: content ends up
+ * unreachable behind the console panel instead of scrollable above it.
+ */
+.daliWasm-page .page-container {
+  height: 100%;
+}
+
+.daliWasm-page .page-contentWrapper {
+  min-height: 0;
+}
+
+
+/* Reclaim the dead band above the docked console panel: homeui's page keeps a
+   48px bottom padding for its own scrolling shell, and `.dali`'s height: 100%
+   resolves against the padded box, leaving a second 48px short. Inside this
+   bounded layout the flex chain already sizes everything. */
+.daliWasm-page .page-container {
+  padding-bottom: 12px;
+}
+
+.daliWasm-page .dali {
+  height: auto;
+  min-height: 0;
+}
