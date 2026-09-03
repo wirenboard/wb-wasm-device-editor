@@ -59,14 +59,17 @@ describe('SerialPort never rejects into Asyncify', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
-  it('clears the stale Asyncify reply before suspending the C++ caller', async () => {
-    // The unwind pass returns the PREVIOUS value; ReadChunk copies it into a
-    // buffer sized for this call, so a longer stale chunk overflows the heap.
-    (globalThis as any).Asyncify = { handleSleepReturnValue: new Uint8Array(109) };
-    const serial = makeSerial(makePort());
-    await serial.readChunk(4, 10);
-    expect((globalThis as any).Asyncify.handleSleepReturnValue).toBe(0);
-    delete (globalThis as any).Asyncify;
+  it('never hands back more bytes than the caller asked for', async () => {
+    // ReadChunk copies the reply into a buffer sized for this call, so a longer
+    // chunk overflows the heap; the surplus must stay queued instead.
+    const ctl = makeControlledPort();
+    const serial = makeSerial(ctl.port);
+    ctl.deliver(Array.from({ length: 109 }, (_, i) => i & 0xff));
+    const head = await serial.readChunk(20, 5);
+    expect(head).toBeInstanceOf(Uint8Array);
+    expect(head.length).toBe(20);
+    expect(serial.pending.length).toBe(89);
+    expect([...(await serial.readChunk(89, 5))]).toEqual([...Array(89).keys()].map((i) => (i + 20) & 0xff));
   });
 
   it('treats a locked readable as a dead port instead of throwing', async () => {
