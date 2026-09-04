@@ -56,6 +56,7 @@ SRC = \
 	$(SERIAL_DIR)/src/rpc/rpc_device_load_config_task.cpp             \
 	$(SERIAL_DIR)/src/rpc/rpc_device_set_task.cpp                     \
 	$(SERIAL_DIR)/src/rpc/rpc_device_probe_task.cpp                   \
+	$(SERIAL_DIR)/src/rpc/rpc_device_type_json.cpp                    \
 	$(SERIAL_DIR)/src/rpc/rpc_exception.cpp                           \
 	$(SERIAL_DIR)/src/rpc/rpc_fw_downloader.cpp                       \
 	$(SERIAL_DIR)/src/rpc/rpc_fw_get_firmware_info_task.cpp           \

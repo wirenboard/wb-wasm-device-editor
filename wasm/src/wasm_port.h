@@ -24,4 +24,7 @@ public:
     std::chrono::microseconds GetSendTimeBits(size_t bitsNumber) const override;
     std::string GetDescription(bool verbose) const override;
     void ApplySerialPortSettings(const TSerialPortConnectionSettings& settings) override;
+
+private:
+    TSerialPortConnectionSettings Settings;
 };

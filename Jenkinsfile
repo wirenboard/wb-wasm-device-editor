@@ -138,8 +138,13 @@ pipeline {
                 dir(path: 'wasm') {
                     sh '''
                         export PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-                        npm run test:e2e
+                        npm run test:e2e -- --trace retain-on-failure
                     '''
+                }
+            }
+            post {
+                failure {
+                    archiveArtifacts artifacts: 'wasm/test-results/**', allowEmptyArchive: true
                 }
             }
         }

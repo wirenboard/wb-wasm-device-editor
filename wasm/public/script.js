@@ -24,6 +24,7 @@ window.Module =
       },
 
       _requestLock: Promise.resolve(),
+      _finish: null,
 
       async onRuntimeInitialized() {
           this.setReleaseSuite(localStorage.getItem('release') || 'stable');
@@ -75,17 +76,20 @@ window.Module =
           }
 
           const timeout = ['fwUpdate', 'fwRestore'].includes(type) ? 600000 : 120000;
-          const deadline = Date.now() + timeout;
+          // Woken by the reply, not polled: Chrome clamps every timer in a
+          // hidden tab to 1 s, so a 1 ms poll cost a second per request
+          let timer;
           await new Promise((resolve) => {
-              const check = () => {
-                  if (this.finished || Date.now() > deadline) {
-                      resolve();
-                      return;
-                  }
-                  setTimeout(check, 1);
-              };
-              check();
+              // The call may have finished without ever suspending
+              if (this.finished) {
+                  resolve();
+                  return;
+              }
+              this._finish = resolve;
+              timer = setTimeout(resolve, timeout);
           });
+          clearTimeout(timer);
+          this._finish = null;
 
           if (!this.finished) {
               this.print('RPC request timeout (' + (timeout / 1000) + 's) for: ' + type);
@@ -153,6 +157,8 @@ window.Module =
               this.print('request error ' + this.reply.error.code + ': ' + this.reply.error.message);
 
           this.finished = true;
+          if (this._finish)
+              this._finish();
       },
 
       subscribeFwUpdateState(callback) {
