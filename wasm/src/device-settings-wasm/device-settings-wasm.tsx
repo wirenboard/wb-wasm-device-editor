@@ -13,7 +13,7 @@ import { Tabs, useTabs } from '@/components/tabs';
 import { PageLayout } from '@/layouts/page';
 import { DeviceTabStore, DeviceTypesStore } from '@/stores/device-manager';
 import { useAsyncAction } from '@/utils/async-action';
-import { setReactLocale } from '~/react-directives/locale';
+import i18n from '@/i18n/config';
 import { formatBytes } from '../utils/format-bytes';
 import { useLocalStorage } from '../utils/useLocalStorage';
 import { AddDevice } from './components/add-device';
@@ -235,10 +235,6 @@ export const DeviceSettingsWasm = observer(() => {
   };
 
   useEffect(() => {
-    setReactLocale();
-  }, []);
-
-  useEffect(() => {
     if (moduleInitialized) {
       configDeviceTypes().then((store) => {
         if (selectedDevice) {
@@ -251,7 +247,7 @@ export const DeviceSettingsWasm = observer(() => {
               '',
               store,
               fwUpdateProxy,
-              { LoadConfig: () => Promise.resolve({}) },
+              { LoadConfig: () => Promise.resolve({ parameters: {}, fw: '', model: '' }) },
             );
             setTabstore(tabStore);
           }
@@ -309,7 +305,7 @@ export const DeviceSettingsWasm = observer(() => {
         '',
         configDeviceTypesStore,
         fwUpdateProxy,
-        { LoadConfig: () => Promise.resolve({}) },
+        { LoadConfig: () => Promise.resolve({ parameters: {}, fw: '', model: '' }) },
       );
       setTabstore(store);
     }
@@ -410,6 +406,14 @@ export const DeviceSettingsWasm = observer(() => {
     ).at(0) || device.device_signature;
   };
 
+  const getPortConfig = useCallback((deviceCfg: any) => ({
+    path: 'wasm',
+    baudRate: deviceCfg?.baud_rate || 9600,
+    stopBits: deviceCfg?.stop_bits || 2,
+    parity: deviceCfg?.parity || 'N',
+    dataBits: deviceCfg?.data_bits || 8,
+  }), []);
+
   const loadDeviceSettings = useCallback(async (device: Device, deviceTypesStore = configDeviceTypesStore) => {
     setError(null);
     const deviceType = getType(device);
@@ -437,26 +441,18 @@ export const DeviceSettingsWasm = observer(() => {
         }),
       },
     );
-    await store.loadContent(device.cfg);
+    await store.loadContent(getPortConfig(device.cfg));
     store.updateEmbeddedSoftwareVersion(getPortConfig(device.cfg));
     store.schemaStore.customChannels = null;
 
     setTabstore(store);
     setIsConfigLoading(false);
     refreshPortInfo();
-  }, [configDeviceTypesStore, refreshPortInfo]);
+  }, [configDeviceTypesStore, getPortConfig, refreshPortInfo]);
 
   const getDevice = useCallback((slaveId: number = selectedDevice) => {
     return allDevices.find((device) => device.cfg.slave_id === slaveId) || {};
   }, [allDevices, selectedDevice]);
-
-  const getPortConfig = useCallback((deviceCfg: any) => ({
-    path: 'wasm',
-    baudRate: deviceCfg?.baud_rate || 9600,
-    stopBits: deviceCfg?.stop_bits || 2,
-    parity: deviceCfg?.parity || 'N',
-    dataBits: deviceCfg?.data_bits || 8,
-  }), []);
 
   const handleSave = async () => {
     const device = getDevice();
@@ -600,7 +596,7 @@ export const DeviceSettingsWasm = observer(() => {
             onChange={(option: Option<string>) => {
               localStorage.setItem('language', option.value);
               setLanguage(option.value);
-              setReactLocale();
+              i18n.changeLanguage(option.value);
             }}
           />
         </>
@@ -623,6 +619,7 @@ export const DeviceSettingsWasm = observer(() => {
           </span>
         </div>
       }
+      infoLink={null}
       hasRights
     >
       {isTesting && isTestingAlertVisible && (
@@ -715,7 +712,7 @@ export const DeviceSettingsWasm = observer(() => {
                       '',
                       configDeviceTypesStore,
                       fwUpdateProxy,
-                      { LoadConfig: () => Promise.resolve({}) },
+                      { LoadConfig: () => Promise.resolve({ parameters: {}, fw: '', model: '' }) },
                     );
                     setTabstore(store);
                   }

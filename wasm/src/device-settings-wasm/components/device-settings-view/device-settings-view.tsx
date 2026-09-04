@@ -9,7 +9,7 @@ import { Tabs, TabContent, useTabs } from '@/components/tabs';
 import { EmbeddedSoftwarePanel } from '@/pages/settings/device-manager';
 import {
   MakeEditors,
-} from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
+} from '@/pages/settings/device-manager/config-editor/components/device-settings-editor/device-settings-param-editor';
 import type { WbDeviceParameterEditorsGroup } from '@/stores/device-manager';
 import { RuntimeView } from '../runtime-view';
 import { SettingsTabContent } from '../tab-content';

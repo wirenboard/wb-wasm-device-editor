@@ -192,7 +192,6 @@ export const RuntimeView = observer(({
         const device = (schema as any)?.device;
         const channels: TemplateChannel[] = device?.channels || [];
         const translations = device?.translations || {};
-
         // Initial poll — no channel list, C++ reads all supported channels
         const cfg = deviceCfg;
         try {
