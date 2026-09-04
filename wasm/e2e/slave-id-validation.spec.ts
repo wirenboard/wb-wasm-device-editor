@@ -42,7 +42,7 @@ async function addDevice(page: Page, slaveId: number) {
   await expect(page.locator('.confirm-content')).toBeVisible();
 
   // Select first available device type (react-select with isSearchable)
-  await page.locator('#device-type').click();
+  await page.locator('.dropdown__control:has(#device-type)').click();
   await page.locator('.dropdown__option').first().click();
 
   // Set slave_id in the modal's number input

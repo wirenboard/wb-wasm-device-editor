@@ -406,6 +406,14 @@ export const DeviceSettingsWasm = observer(() => {
     ).at(0) || device.device_signature;
   };
 
+  const getPortConfig = useCallback((deviceCfg: any) => ({
+    path: 'wasm',
+    baudRate: deviceCfg?.baud_rate || 9600,
+    stopBits: deviceCfg?.stop_bits || 2,
+    parity: deviceCfg?.parity || 'N',
+    dataBits: deviceCfg?.data_bits || 8,
+  }), []);
+
   const loadDeviceSettings = useCallback(async (device: Device, deviceTypesStore = configDeviceTypesStore) => {
     setError(null);
     const deviceType = getType(device);
@@ -440,19 +448,11 @@ export const DeviceSettingsWasm = observer(() => {
     setTabstore(store);
     setIsConfigLoading(false);
     refreshPortInfo();
-  }, [configDeviceTypesStore, refreshPortInfo]);
+  }, [configDeviceTypesStore, getPortConfig, refreshPortInfo]);
 
   const getDevice = useCallback((slaveId: number = selectedDevice) => {
     return allDevices.find((device) => device.cfg.slave_id === slaveId) || {};
   }, [allDevices, selectedDevice]);
-
-  const getPortConfig = useCallback((deviceCfg: any) => ({
-    path: 'wasm',
-    baudRate: deviceCfg?.baud_rate || 9600,
-    stopBits: deviceCfg?.stop_bits || 2,
-    parity: deviceCfg?.parity || 'N',
-    dataBits: deviceCfg?.data_bits || 8,
-  }), []);
 
   const handleSave = async () => {
     const device = getDevice();
@@ -619,6 +619,7 @@ export const DeviceSettingsWasm = observer(() => {
           </span>
         </div>
       }
+      infoLink={null}
       hasRights
     >
       {isTesting && isTestingAlertVisible && (
