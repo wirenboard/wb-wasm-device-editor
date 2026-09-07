@@ -18,7 +18,7 @@ export const SubGroupContent = observer((
   return (
     <div className="deviceSettingsEditor-subGroup">
       {!group.properties.ui_options?.wb?.disable_title && (
-        <label>{translator.find(group.properties.title, currentLanguage)}</label>
+        <label>{translator.find(group.properties.title || group.properties.id, currentLanguage)}</label>
       )}
       <div
         className={classNames({

@@ -76,7 +76,8 @@ export const DeviceSettingsView = observer(({
               'deviceSettingsEditor-tabWithWarning': group.hasBadValuesFromRegisters && !group.hasErrors,
             })}
           >
-            {translator?.find(group.properties.title, i18n.language) ?? group.properties.title}
+            {translator?.find(group.properties.title || group.properties.id, i18n.language)
+              ?? group.properties.title ?? group.properties.id}
           </span>
         ),
       }));
