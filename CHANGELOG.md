@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.1...wb-wasm-device-editor-v1.12.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* never answer a navigation with undefined in the service worker ([#99](https://github.com/wirenboard/wb-wasm-device-editor/issues/99)) ([db25206](https://github.com/wirenboard/wb-wasm-device-editor/commit/db25206eeb98080df1ac4c7254104e3b63693319))
+
 ## [1.12.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.0...wb-wasm-device-editor-v1.12.1) (2026-09-03)
 
 
