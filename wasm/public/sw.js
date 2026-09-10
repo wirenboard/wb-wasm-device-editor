@@ -72,6 +72,62 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+const NAVIGATE_TIMEOUT_MS = 3000;
+const TIMED_OUT = Symbol('timed-out');
+
+async function taggedCacheCopy(response) {
+  const headers = new Headers(response.headers);
+  headers.set('X-SW-Source', 'cache');
+  return new Response(await response.blob(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+// Must never resolve with undefined: the browser turns that into
+// net::ERR_FAILED, i.e. a Chrome error page instead of the app.
+async function handleNavigate(event) {
+  const { request } = event;
+  const controller = new AbortController();
+  const cached = caches.match('/').catch(() => undefined);
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), NAVIGATE_TIMEOUT_MS);
+  });
+  const network = fetch(request, { signal: controller.signal }).then((response) => {
+    if (response.ok) {
+      const clone = response.clone();
+      event.waitUntil(
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {}),
+      );
+    }
+    return response;
+  });
+
+  try {
+    const first = await Promise.race([
+      network.then((response) => ({ response }), (error) => ({ error })),
+      timeout,
+    ]);
+    if (first !== TIMED_OUT) {
+      if (!first.error && first.response.ok) return first.response;
+      const hit = await cached;
+      if (hit) return taggedCacheCopy(hit);
+      return first.error ? Response.error() : first.response;
+    }
+    const hit = await cached;
+    if (hit) {
+      controller.abort();
+      return taggedCacheCopy(hit);
+    }
+    // Nothing cached: a slow page still beats an error page.
+    return network.catch(() => Response.error());
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -91,28 +147,7 @@ self.addEventListener('fetch', (event) => {
 
   // Navigation requests: network-first with 3s timeout, fall back to cache
   if (request.mode === 'navigate') {
-    const controller = new AbortController();
-    event.respondWith(
-      new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          controller.abort();
-          caches.match('/').then((cached) => cached && resolve(cached));
-        }, 3000);
-        fetch(request, { signal: controller.signal })
-          .then((response) => {
-            clearTimeout(timeout);
-            if (response.ok) {
-              const clone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-            }
-            resolve(response);
-          })
-          .catch(() => {
-            clearTimeout(timeout);
-            caches.match('/').then((cached) => resolve(cached));
-          });
-      }),
-    );
+    event.respondWith(handleNavigate(event));
     return;
   }
 
@@ -129,7 +164,7 @@ self.addEventListener('fetch', (event) => {
         return fetch(request).then((response) => {
           if (response.ok && !isHtml(response)) {
             const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)));
           }
           return response;
         });
@@ -141,15 +176,19 @@ self.addEventListener('fetch', (event) => {
   // All other same-origin requests: stale-while-revalidate
   event.respondWith(
     caches.match(request).then((cached) => {
+      let write = Promise.resolve();
       const fetchPromise = fetch(request)
         .then((response) => {
           if (response.ok) {
             const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            write = caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }
           return response;
         })
-        .catch(() => cached);
+        .catch(() => cached || Response.error());
+      // The revalidation write outlives respondWith on a cache hit, so it
+      // needs waitUntil to survive.
+      event.waitUntil(fetchPromise.then(() => write).catch(() => {}));
       return cached || fetchPromise;
     }),
   );
