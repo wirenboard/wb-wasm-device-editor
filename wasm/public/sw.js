@@ -75,8 +75,6 @@ self.addEventListener('activate', (event) => {
 const NAVIGATE_TIMEOUT_MS = 3000;
 const TIMED_OUT = Symbol('timed-out');
 
-// A copy of a cached response tagged with its provenance, so tests and
-// DevTools can tell a cache fallback from a real network answer.
 async function taggedCacheCopy(response) {
   const headers = new Headers(response.headers);
   headers.set('X-SW-Source', 'cache');
@@ -87,14 +85,12 @@ async function taggedCacheCopy(response) {
   });
 }
 
-// Navigation: network-first with a 3s timeout, cache as the fallback.
-// Never resolves with undefined — the browser turns that into net::ERR_FAILED
-// (a Chrome error page) instead of showing the app.
+// Must never resolve with undefined: the browser turns that into
+// net::ERR_FAILED, i.e. a Chrome error page instead of the app.
 async function handleNavigate(event) {
   const { request } = event;
   const controller = new AbortController();
-  // Started up front so the timeout can answer without another round trip.
-  const cached = caches.match('/');
+  const cached = caches.match('/').catch(() => undefined);
   let timer;
   const timeout = new Promise((resolve) => {
     timer = setTimeout(() => resolve(TIMED_OUT), NAVIGATE_TIMEOUT_MS);
@@ -102,7 +98,9 @@ async function handleNavigate(event) {
   const network = fetch(request, { signal: controller.signal }).then((response) => {
     if (response.ok) {
       const clone = response.clone();
-      event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)));
+      event.waitUntil(
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)).catch(() => {}),
+      );
     }
     return response;
   });
@@ -113,18 +111,16 @@ async function handleNavigate(event) {
       timeout,
     ]);
     if (first !== TIMED_OUT) {
-      // Network won the race: its answer, or the cache if it failed outright.
       if (!first.error) return first.response;
       const hit = await cached;
       return hit ? taggedCacheCopy(hit) : Response.error();
     }
     const hit = await cached;
     if (hit) {
-      // Timed out with a copy on hand: stop waiting and serve it.
       controller.abort();
       return taggedCacheCopy(hit);
     }
-    // Nothing cached: keep waiting for the network, a slow page beats an error.
+    // Nothing cached: a slow page still beats an error page.
     return network.catch(() => Response.error());
   } finally {
     clearTimeout(timer);
@@ -188,9 +184,9 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => cached);
-      // The revalidation write outlives respondWith on a cache hit; register
-      // it here, while the fetch event is still active.
+        .catch(() => cached || Response.error());
+      // The revalidation write outlives respondWith on a cache hit, so it
+      // needs waitUntil to survive.
       event.waitUntil(fetchPromise.then(() => write).catch(() => {}));
       return cached || fetchPromise;
     }),

@@ -28,8 +28,8 @@ export class TestServer {
       next();
     });
 
-    // The navigation document must not come from Chrome's HTTP cache, or the
-    // SW's fetch() never reaches the deliberately slow network.
+    // Without this the SW's fetch() is answered by Chrome's HTTP cache and
+    // never reaches the deliberately slow network.
     this.app.use((req, res, next) => {
       if (req.path === '/' || !path.extname(req.path)) {
         res.setHeader('Cache-Control', 'no-store');
