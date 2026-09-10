@@ -6,6 +6,7 @@ export class TestServer {
   private app: express.Application;
   private server: Server | null = null;
   private delayMs = 0;
+  private docStatus = 0;
 
   constructor(
     private distDir: string,
@@ -31,8 +32,14 @@ export class TestServer {
     // Without this the SW's fetch() is answered by Chrome's HTTP cache and
     // never reaches the deliberately slow network.
     this.app.use((req, res, next) => {
-      if (req.path === '/' || !path.extname(req.path)) {
-        res.setHeader('Cache-Control', 'no-store');
+      if (req.path !== '/' && path.extname(req.path)) {
+        next();
+        return;
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      if (this.docStatus) {
+        res.status(this.docStatus).send('the server is having a bad day');
+        return;
       }
       next();
     });
@@ -47,6 +54,10 @@ export class TestServer {
 
   setDelay(ms: number) {
     this.delayMs = ms;
+  }
+
+  setDocStatus(code: number) {
+    this.docStatus = code;
   }
 
   start(): Promise<void> {

@@ -69,3 +69,20 @@ test('SW waits for the slow network when the cached page is gone', async ({
   expect(response!.headers()['x-sw-source']).toBeUndefined();
   await expect(page).toHaveTitle('Wiren Board Device Editor');
 });
+
+test('SW serves the cached page when the server answers 5xx', async ({
+  page,
+  context,
+}) => {
+  await loadAppWithSW(page, context);
+  await assertControlled(page);
+
+  server.setDocStatus(503);
+  const response = await page.reload({ waitUntil: 'commit' });
+  server.setDocStatus(0);
+
+  expect(response).not.toBeNull();
+  expect(response!.status()).toBe(200);
+  expect(response!.headers()['x-sw-source']).toBe('cache');
+  await expect(page).toHaveTitle('Wiren Board Device Editor');
+});
