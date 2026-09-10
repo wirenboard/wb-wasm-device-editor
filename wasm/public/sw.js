@@ -111,9 +111,10 @@ async function handleNavigate(event) {
       timeout,
     ]);
     if (first !== TIMED_OUT) {
-      if (!first.error) return first.response;
+      if (!first.error && first.response.ok) return first.response;
       const hit = await cached;
-      return hit ? taggedCacheCopy(hit) : Response.error();
+      if (hit) return taggedCacheCopy(hit);
+      return first.error ? Response.error() : first.response;
     }
     const hit = await cached;
     if (hit) {
