@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.4](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.3...wb-wasm-device-editor-v1.12.4) (2026-09-10)
+
+
+### Bug Fixes
+
+* **SOFT-7485:** restore firmware updates, monitoring and MWAC v2 in stable ([#105](https://github.com/wirenboard/wb-wasm-device-editor/issues/105)) ([d8b982b](https://github.com/wirenboard/wb-wasm-device-editor/commit/d8b982b12856296d98c307cec4ce9e554436fb71))
+
 ## [1.12.3](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.2...wb-wasm-device-editor-v1.12.3) (2026-09-10)
 
 
