@@ -113,8 +113,13 @@ namespace
         {
             if (Prepare) {
                 RegisterProtocols(DeviceFactory);
-                TemplateMap =
-                    std::make_shared<TTemplateMap>(LoadConfigTemplatesSchema(TEMPLATES_SCHEMA_FILE, CommonSchema));
+                auto templatesSchema = LoadConfigTemplatesSchema(TEMPLATES_SCHEMA_FILE, CommonSchema);
+
+                // wb-mqtt-serial 2.267.0 renamed the control type to local_time,
+                // stable templates come from a branch that predates the rename
+                templatesSchema["definitions"]["control_type"]["enum"].append("unixtime");
+
+                TemplateMap = std::make_shared<TTemplateMap>(templatesSchema);
                 DevicesSchemasMap =
                     std::make_shared<TDevicesConfedSchemasMap>(*TemplateMap, DeviceFactory, CommonSchema);
                 ProtocolSchemasMap = //
@@ -335,6 +340,7 @@ void FwGetInfo(const std::string& requestString)
 {
     try {
         THelper helper(requestString, std::string(), "fw-update/GetFirmwareInfo");
+        FwDownloader->PrefetchReleaseIndexes();
         TFwGetFirmwareInfoTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
                                     "modbus",
                                     ReleaseSuite,
