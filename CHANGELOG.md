@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.3](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.2...wb-wasm-device-editor-v1.12.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* don't touch schemaStore when loadContent didn't create it ([#103](https://github.com/wirenboard/wb-wasm-device-editor/issues/103)) ([d74e32f](https://github.com/wirenboard/wb-wasm-device-editor/commit/d74e32f90e043398039910b863f1e45b5e809726))
+
 ## [1.12.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.1...wb-wasm-device-editor-v1.12.2) (2026-09-10)
 
 
