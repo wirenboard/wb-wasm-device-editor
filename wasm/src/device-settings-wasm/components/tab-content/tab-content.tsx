@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ParamDescription } from '@/components/json-schema-editor';
 import {
   MakeEditors,
-} from '@/pages/settings/device-manager/components/device-settings-editor/device-settings-param-editor';
+} from '@/pages/settings/device-manager/config-editor/components/device-settings-editor/device-settings-param-editor';
 import { type WbDeviceParameterEditorsGroup } from '@/stores/device-manager';
 import type { Translator } from '@/stores/json-schema-editor';
 import { SubGroupContent } from '../sub-group-content';

@@ -128,9 +128,9 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '../submodule/homeui/frontend/src'),
-        '~': path.resolve(__dirname, '../submodule/homeui/frontend/app/scripts'),
-        '~scripts': path.resolve(__dirname, '../submodule/homeui/frontend/app/scripts'),
-        '~styles': path.resolve(__dirname, '../submodule/homeui/frontend/app/styles'),
+
+        'glyphicons-only-bootstrap': path.resolve(homeuiNodeModules, 'glyphicons-only-bootstrap'),
+        'bootstrap': path.resolve(homeuiNodeModules, 'bootstrap'),
 
         react: path.resolve(homeuiNodeModules, 'react'),
         'react-dom': path.resolve(homeuiNodeModules, 'react-dom'),

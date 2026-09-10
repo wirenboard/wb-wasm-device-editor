@@ -68,7 +68,7 @@ export const AddDevice = ({ isOpened, deviceTypes, onSave, onClose }: AddDeviceP
         {t('wasm.labels.baudrate')}
         <Dropdown
           id="baudrate-type"
-          options={baudrateOptions.map((item) => ({ label: item, value: item }))}
+          options={baudrateOptions.map((item) => ({ label: String(item), value: item }))}
           value={cfg.baud_rate}
           onChange={({ value }: Option<number>) => {
             setCfg({ ...cfg, baud_rate: value });
@@ -92,7 +92,7 @@ export const AddDevice = ({ isOpened, deviceTypes, onSave, onClose }: AddDeviceP
         {t('wasm.labels.databits')}
         <Dropdown
           id="data_bits"
-          options={databitsOptions.map((item) => ({ label: item, value: item }))}
+          options={databitsOptions.map((item) => ({ label: String(item), value: item }))}
           value={cfg.data_bits}
           onChange={({ value }: Option<string>) => {
             setCfg({ ...cfg, data_bits: value });
@@ -104,7 +104,7 @@ export const AddDevice = ({ isOpened, deviceTypes, onSave, onClose }: AddDeviceP
         {t('wasm.labels.stopbits')}
         <Dropdown
           id="data_bits"
-          options={stopOptions.map((item) => ({ label: item, value: item }))}
+          options={stopOptions.map((item) => ({ label: String(item), value: item }))}
           value={cfg.stop_bits}
           onChange={({ value }: Option<string>) => {
             setCfg({ ...cfg, stop_bits: value });

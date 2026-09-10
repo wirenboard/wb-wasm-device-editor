@@ -1,8 +1,11 @@
 # common
 .clang-format
 .vscode
+.idea
+.eslintcache
 wasm/public/module.*
 wasm/public/vendor/
+wasm/test-results/
 wblib/json
 
 # assets

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.12.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.0...wb-wasm-device-editor-v1.12.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **port:** keep Asyncify side effects inside the async callback ([0d16342](https://github.com/wirenboard/wb-wasm-device-editor/commit/0d16342b1e35ff69983a55bd07443f67d66a5315))
+* **port:** match TSerialPort's send-time rounding and ReadByte's timeout type ([8687498](https://github.com/wirenboard/wb-wasm-device-editor/commit/8687498337e5d51fe446f0ea38f8a0df7f05bcff))
+* **port:** read frames by wb-mqtt-serial's timeouts, not the JS reply timeout ([ad7b09c](https://github.com/wirenboard/wb-wasm-device-editor/commit/ad7b09c10cc0d8541fd2d7b7926039d844a89c09))
+* **port:** wait out the frame, not the gap between USB batches ([db7cb97](https://github.com/wirenboard/wb-wasm-device-editor/commit/db7cb97bfaa95327ac40be8cb5af2206552856c6))
+* **rpc:** wake the request loop on the reply, not on a 1 ms poll ([385fdae](https://github.com/wirenboard/wb-wasm-device-editor/commit/385fdae5230a8e37638baebf73ad071670b60a89))
+* **serial:** don't hand ReadChunk the previous reply on the unwind pass ([043fda6](https://github.com/wirenboard/wb-wasm-device-editor/commit/043fda66c638dbc440664a3cb83f2d7116a01df1))
+* **serial:** never reject into Asyncify, and actually close a wedged port ([0774ffc](https://github.com/wirenboard/wb-wasm-device-editor/commit/0774ffc876fc93b04dffe181ed2d4744248c89cd))
+* **serial:** one long-lived reader, no cancel() per read ([1faaa9b](https://github.com/wirenboard/wb-wasm-device-editor/commit/1faaa9b8a0669dce23c1e1515e0ca71daca3dabd))
+
 ## [1.12.0](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.11.0...wb-wasm-device-editor-v1.12.0) (2026-08-18)
 
 

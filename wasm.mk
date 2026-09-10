@@ -50,12 +50,12 @@ SRC = \
 	$(SERIAL_DIR)/src/port/port.cpp                                   \
 	$(SERIAL_DIR)/src/port/feature_port.cpp                           \
 	$(SERIAL_DIR)/src/rpc/rpc_config_handler.cpp                      \
-	$(SERIAL_DIR)/src/rpc/rpc_config.cpp                              \
 	$(SERIAL_DIR)/src/rpc/rpc_device_handler.cpp                      \
 	$(SERIAL_DIR)/src/rpc/rpc_device_load_task.cpp                    \
 	$(SERIAL_DIR)/src/rpc/rpc_device_load_config_task.cpp             \
 	$(SERIAL_DIR)/src/rpc/rpc_device_set_task.cpp                     \
 	$(SERIAL_DIR)/src/rpc/rpc_device_probe_task.cpp                   \
+	$(SERIAL_DIR)/src/rpc/rpc_device_type_json.cpp                    \
 	$(SERIAL_DIR)/src/rpc/rpc_exception.cpp                           \
 	$(SERIAL_DIR)/src/rpc/rpc_fw_downloader.cpp                       \
 	$(SERIAL_DIR)/src/rpc/rpc_fw_get_firmware_info_task.cpp           \
@@ -94,7 +94,7 @@ all: templates
 # fix include
 	cp -r $(JSONCPP_DIR)/include/json wblib/
 # build module
-	$(CC) -O3 $(addprefix -I, $(INC)) $(SRC) wblib/static/wblib.a -o $(WASM_DIR)/public/module.js --preload-file $(ASSETS_DIR)@/ $(OPT)
+	$(CC) -O3 -std=c++20 $(addprefix -I, $(INC)) $(SRC) wblib/static/wblib.a -o $(WASM_DIR)/public/module.js --preload-file $(ASSETS_DIR)@/ $(OPT)
 
 templates:
 	bash scripts/build-templates.sh $(STABLE_BRANCH) $(TESTING_BRANCH) $(TEMPLATES_DIR)

@@ -32,7 +32,7 @@ async function addDevice(page: Page, slaveId: number) {
   await page.getByRole('button', { name: 'Add device' }).click();
   await expect(page.locator('.confirm-content')).toBeVisible();
 
-  await page.locator('#device-type').click();
+  await page.locator('.dropdown__control:has(#device-type)').click();
   await page.locator('.dropdown__option').first().click();
 
   const modalSlaveIdInput = page.locator('.confirm-content input[type="number"]');

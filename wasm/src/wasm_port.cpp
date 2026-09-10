@@ -1,13 +1,42 @@
-
 #include <emscripten/emscripten.h>
-#include <emscripten/val.h>
-
 #include <wblib/utils.h>
 
 #include "log.h"
+#include "serial_exc.h"
 #include "wasm_port.h"
 
 #define LOG(logger) logger.Log() << "[wasm port] "
+
+namespace
+{
+    const std::chrono::milliseconds MIN_RESPONSE_TIMEOUT(30);
+    const std::chrono::milliseconds MAX_RESPONSE_TIMEOUT(500);
+
+    int ToMilliseconds(const std::chrono::microseconds& us, const std::chrono::milliseconds& floor)
+    {
+        return static_cast<int>(std::max(std::chrono::ceil<std::chrono::milliseconds>(us), floor).count());
+    }
+
+    int ReadChunk(uint8_t* buffer, size_t count, int timeoutMs)
+    {
+        // clang-format off
+        return EM_ASM_INT(
+        {
+            return Asyncify.handleAsync(async() => {
+                const result = await Module.serial.readChunk($1, $2);
+
+                if (!(result instanceof Uint8Array) || result.length === 0 || result.length > $1) {
+                    return 0;
+                }
+
+                Module.HEAPU8.set(result, $0);
+                return result.length;
+            });
+        },
+        buffer, count, timeoutMs);
+        // clang-format on
+    }
+}
 
 TWASMPort::TWASMPort()
 {}
@@ -42,7 +71,13 @@ void TWASMPort::WriteBytes(const uint8_t* buffer, int count)
 
 uint8_t TWASMPort::ReadByte(const std::chrono::microseconds& timeout)
 {
-    return 0;
+    uint8_t byte = 0;
+
+    if (!ReadChunk(&byte, 1, ToMilliseconds(timeout, MIN_RESPONSE_TIMEOUT))) {
+        throw TSerialDeviceTransientErrorException("timeout");
+    }
+
+    return byte;
 }
 
 TReadFrameResult TWASMPort::ReadFrame(uint8_t* buffer,
@@ -51,46 +86,76 @@ TReadFrameResult TWASMPort::ReadFrame(uint8_t* buffer,
                                       const std::chrono::microseconds& frameTimeout,
                                       TFrameCompletePred frame_complete)
 {
-    // clang-format off
-    auto length = EM_ASM_INT(
-    {
-        let result = Asyncify.handleAsync(async() => { return await Module.serial.read($1); });
+    TReadFrameResult res;
 
-        if (!(result instanceof Uint8Array)) {
-            return 0;
+    if (!count) {
+        return res;
+    }
+
+    auto wireTime = std::chrono::ceil<std::chrono::milliseconds>(GetSendTimeBytes(count));
+    auto floor = std::min(MIN_RESPONSE_TIMEOUT + wireTime, MAX_RESPONSE_TIMEOUT);
+    auto start = std::chrono::steady_clock::now();
+    auto timeoutMs = ToMilliseconds(responseTimeout, floor);
+
+    while (res.Count < count) {
+        if (frame_complete && frame_complete(buffer, res.Count)) {
+            break;
         }
 
-        Module.HEAPU8.set(result, $0);
-        return result.length;
-    },
-    buffer, count);
-    // clang-format on
+        auto length = ReadChunk(buffer + res.Count, count - res.Count, timeoutMs);
 
-    if (!length) {
+        if (length <= 0) {
+            break;
+        }
+
+        if (!res.Count) {
+            res.ResponseTime =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        }
+
+        res.Count += length;
+    }
+
+    if (!res.Count) {
         throw std::runtime_error("request timed out");
     }
 
-    TReadFrameResult res;
-    res.Count = length;
-
-    LOG(Debug) << "read " << length << " bytes: " << WBMQTT::HexDump(buffer, length);
+    LOG(Debug) << "read " << res.Count << " bytes: " << WBMQTT::HexDump(buffer, res.Count);
     return res;
 }
 
 void TWASMPort::SkipNoise()
-{}
+{
+    // clang-format off
+    EM_ASM(
+    {
+        Asyncify.handleAsync(async() => { await Module.serial.discardPending(); });
+    });
+    // clang-format on
+}
 
 void TWASMPort::SleepSinceLastInteraction(const std::chrono::microseconds& us)
 {}
 
 std::chrono::microseconds TWASMPort::GetSendTimeBytes(double bytesNumber) const
 {
-    return std::chrono::microseconds(0);
+    size_t bitsPerByte = 1 + Settings.DataBits + Settings.StopBits;
+
+    if (Settings.Parity != 'N') {
+        ++bitsPerByte;
+    }
+
+    return GetSendTimeBits(std::ceil(bitsPerByte * bytesNumber));
 }
 
 std::chrono::microseconds TWASMPort::GetSendTimeBits(size_t bitsNumber) const
 {
-    return std::chrono::microseconds(0);
+    if (Settings.BaudRate <= 0) {
+        return std::chrono::microseconds(0);
+    }
+
+    auto us = std::ceil(bitsNumber * 1000000.0 / double(Settings.BaudRate));
+    return std::chrono::microseconds(static_cast<std::chrono::microseconds::rep>(us));
 }
 
 std::string TWASMPort::GetDescription(bool verbose) const
@@ -100,6 +165,8 @@ std::string TWASMPort::GetDescription(bool verbose) const
 
 void TWASMPort::ApplySerialPortSettings(const TSerialPortConnectionSettings& settings)
 {
+    Settings = settings;
+
     // clang-format off
     EM_ASM(
     {

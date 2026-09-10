@@ -45,7 +45,7 @@ test('empty state disappears after adding a device manually', async ({ page }) =
   await page.getByRole('button', { name: 'Add device' }).click();
   await expect(page.locator('.confirm-content')).toBeVisible();
 
-  await page.locator('#device-type').click();
+  await page.locator('.dropdown__control:has(#device-type)').click();
   // Wait for dropdown options to appear
   await expect(page.locator('.dropdown__option').first()).toBeVisible();
   await page.locator('.dropdown__option').first().click();

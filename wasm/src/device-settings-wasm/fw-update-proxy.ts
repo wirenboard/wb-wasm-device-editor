@@ -7,10 +7,6 @@ import type {
   FwUpdateProxyRestoreParams,
 } from '@/stores/device-manager/types';
 
-declare const Module: {
-  request(type: string, data: unknown): Promise<{ error?: { message: string }; result?: unknown }>;
-};
-
 export class WasmFwUpdateProxy implements FwUpdateProxy {
   private _isOffline: () => boolean;
 
