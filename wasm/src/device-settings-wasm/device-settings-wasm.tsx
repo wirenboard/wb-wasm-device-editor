@@ -441,13 +441,18 @@ export const DeviceSettingsWasm = observer(() => {
         }),
       },
     );
-    await store.loadContent(getPortConfig(device.cfg));
-    store.updateEmbeddedSoftwareVersion(getPortConfig(device.cfg));
-    store.schemaStore.customChannels = null;
-
-    setTabstore(store);
-    setIsConfigLoading(false);
-    refreshPortInfo();
+    const portConfig = getPortConfig(device.cfg);
+    try {
+      await store.loadContent(portConfig);
+      store.updateEmbeddedSoftwareVersion(portConfig);
+      if (store.schemaStore) {
+        store.schemaStore.customChannels = null;
+      }
+      setTabstore(store);
+    } finally {
+      setIsConfigLoading(false);
+      refreshPortInfo();
+    }
   }, [configDeviceTypesStore, getPortConfig, refreshPortInfo]);
 
   const getDevice = useCallback((slaveId: number = selectedDevice) => {
