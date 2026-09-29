@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.5](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.4...wb-wasm-device-editor-v1.12.5) (2026-09-29)
+
+
+### Bug Fixes
+
+* **SOFT-7505:** render stable unixtime controls as local_time, unstick the update banner ([#107](https://github.com/wirenboard/wb-wasm-device-editor/issues/107)) ([066b0e3](https://github.com/wirenboard/wb-wasm-device-editor/commit/066b0e356933d5532979703d91bdebc9ada3b4b7))
+
 ## [1.12.4](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.3...wb-wasm-device-editor-v1.12.4) (2026-09-10)
 
 
