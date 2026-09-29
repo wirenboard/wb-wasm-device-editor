@@ -62,6 +62,7 @@
 .deviceSettingsWasm-header {
     display: flex;
     justify-content: space-between;
+    margin-bottom: 8px;
 }
 
 .deviceSettingsWasm-title {
@@ -213,7 +214,6 @@
     .deviceSettingsWasm-header {
         flex-wrap: wrap;
         gap: 8px;
-        margin-bottom: 8px;
     }
 
     .deviceSettingsWasm-title {

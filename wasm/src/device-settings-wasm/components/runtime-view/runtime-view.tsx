@@ -44,7 +44,9 @@ function createCells(
       onWrite(ch.name, value);
     });
 
-    const cellType = (ch.type || 'value') as CellType;
+    // wb-mqtt-serial 2.267.0 renamed unixtime to local_time,
+    // stable templates come from a branch that predates the rename
+    const cellType = (ch.type === 'unixtime' ? 'local_time' : (ch.type || 'value')) as CellType;
     cell.setType(cellType);
     cell.setReadOnly(ch.readonly ?? null);
     cell.setName(translateName(ch.name, translations, lang));
