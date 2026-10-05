@@ -17,6 +17,7 @@ class SerialPort {
           { usbVendorId: 0x10c4, usbProductId: 0xea61 },
           { usbVendorId: 0x10c4, usbProductId: 0xea63 },
           { usbVendorId: 0x10c4, usbProductId: 0xea71 },
+          { usbVendorId: 0x16d0, usbProductId: 0x15a6 }, // Wiren Board USB485-mini
           { usbVendorId: 0x1a86, usbProductId: 0x55d2 },
           { usbVendorId: 0x1a86, usbProductId: 0x55d3 },
           { usbVendorId: 0x1a86, usbProductId: 0x55d4 },
