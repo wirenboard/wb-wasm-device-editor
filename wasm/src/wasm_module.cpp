@@ -176,9 +176,15 @@ namespace
                 list.push_back(Device);
             }
 
-            TSerialClientRegisterAndEventsReader client(list, 50ms, []() { return steady_clock::now(); });
-            return TSerialClientDeviceAccessHandler(client.GetEventsReader());
+            Client = std::make_unique<TSerialClientRegisterAndEventsReader>(list, 50ms, []() {
+                return steady_clock::now();
+            });
+
+            return TSerialClientDeviceAccessHandler(Client->GetEventsReader());
         }
+
+    private:
+        std::unique_ptr<TSerialClientRegisterAndEventsReader> Client;
     };
 
     EFwSoftwareType SoftwareType(const Json::Value& request)
