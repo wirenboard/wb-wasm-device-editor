@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.6](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.5...wb-wasm-device-editor-v1.12.6) (2026-11-16)
+
+
+### Bug Fixes
+
+* **SOFT-7846:** show channel read errors in Runtime View ([#110](https://github.com/wirenboard/wb-wasm-device-editor/issues/110)) ([3ca1fb4](https://github.com/wirenboard/wb-wasm-device-editor/commit/3ca1fb43987fbc8b90b077a8db1013367beda216))
+
 ## [1.12.5](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.4...wb-wasm-device-editor-v1.12.5) (2026-09-29)
 
 
