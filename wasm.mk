@@ -3,7 +3,7 @@ CC = emcc
 SERIAL_DIR = submodule/wb-mqtt-serial
 JSONCPP_DIR = submodule/valijson/thirdparty/jsoncpp-1.9.4
 
-STABLE_BRANCH = release/wb-2606
+STABLE_BRANCH = release/wb-2609
 TESTING_BRANCH = master
 
 WASM_DIR = wasm
@@ -25,6 +25,7 @@ SRC = \
 	$(SERIAL_DIR)/src/confed_protocol_schemas_map.cpp                 \
 	$(SERIAL_DIR)/src/confed_schema_generator.cpp                     \
 	$(SERIAL_DIR)/src/config_merge_template.cpp                       \
+	$(SERIAL_DIR)/src/device_parameters_cache.cpp                     \
 	$(SERIAL_DIR)/src/expression_evaluator.cpp                        \
 	$(SERIAL_DIR)/src/file_utils.cpp                                  \
 	$(SERIAL_DIR)/src/json_common.cpp                                 \
@@ -68,6 +69,7 @@ SRC = \
 	$(SERIAL_DIR)/src/rpc/rpc_port_load_modbus_serial_client_task.cpp \
 	$(SERIAL_DIR)/src/rpc/rpc_port_load_request.cpp                   \
 	$(SERIAL_DIR)/src/rpc/rpc_port_scan_serial_client_task.cpp        \
+	$(SERIAL_DIR)/src/rpc/rpc_port_settings.cpp                       \
 	$(SERIAL_DIR)/src/rpc/rpc_port_setup_serial_client_task.cpp       \
 	$(WASM_DIR)/src/wasm_http_client.cpp                              \
 	$(WASM_DIR)/src/wasm_port.cpp                                     \

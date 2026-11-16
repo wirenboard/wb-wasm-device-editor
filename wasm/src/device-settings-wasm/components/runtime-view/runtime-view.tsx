@@ -89,6 +89,8 @@ export const RuntimeView = observer(({
   const [cells, setCells] = useState<Cell[]>([]);
   const [channelNames, setChannelNames] = useState<string[]>([]);
   const [unsupportedNames, setUnsupportedNames] = useState<Set<string>>(new Set());
+  const [channelErrors, setChannelErrors] = useState<Record<string, string>>({});
+  const [reloadCount, setReloadCount] = useState(0);
   const [autoRefresh, setAutoRefresh] = useState(() => localStorage.getItem('runtimeViewAutoRefresh') === 'true');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +150,7 @@ export const RuntimeView = observer(({
         }
       });
       setUnsupportedNames(unsupported);
+      setChannelErrors(result.result?.errors || {});
     } catch (e: any) {
       setError(e.message || 'Failed to load channel values');
     }
@@ -212,6 +215,7 @@ export const RuntimeView = observer(({
           }
 
           const channelValues = result.result?.channels || {};
+          const errors: Record<string, string> = result.result?.errors || {};
           const readonlyList: string[] = result.result?.readonly || [];
 
           // Build channel list from C++ response + schema metadata.
@@ -220,13 +224,14 @@ export const RuntimeView = observer(({
           // C++ returns one value per name, so keep only the first matching entry.
           const seen = new Set<string>();
           const returnedChannels = channels
-            .filter((ch) => ch.name in channelValues && !seen.has(ch.name) && seen.add(ch.name));
+            .filter((ch) => (ch.name in channelValues || ch.name in errors) && !seen.has(ch.name) && seen.add(ch.name));
 
           const names = returnedChannels.map((ch) => ch.name);
           const newCells = createCells(returnedChannels, translations, i18n.language, handleWrite);
           applyReadonly(newCells, readonlyList);
           const unsupported = new Set<string>();
           newCells.forEach((cell) => {
+            if (!(cell.controlId in channelValues)) return;
             const val = channelValues[cell.controlId];
             if (val !== 'unsupported') {
               cell.receiveValue(cleanStringValue(String(val)));
@@ -240,6 +245,7 @@ export const RuntimeView = observer(({
           setCells(newCells);
           setChannelNames(names);
           setUnsupportedNames(unsupported);
+          setChannelErrors(errors);
         } catch (e: any) {
           if (!cancelled) setError(e.message || 'Failed to load channel values');
         }
@@ -254,7 +260,7 @@ export const RuntimeView = observer(({
     return () => {
       cancelled = true;
     };
-  }, [deviceCfg.device_type, deviceCfg.slave_id]);
+  }, [deviceCfg.device_type, deviceCfg.slave_id, reloadCount]);
 
   // Polling timer — pauses when page/tab is hidden
   useEffect(() => {
@@ -281,8 +287,13 @@ export const RuntimeView = observer(({
   }, [channelNames, pollValues]);
 
   const handleRefresh = useCallback(() => {
+    // The initial load failed, there are no channels to poll
+    if (!channelNames.length) {
+      setReloadCount((count) => count + 1);
+      return;
+    }
     pollValues();
-  }, [pollValues]);
+  }, [channelNames, pollValues]);
 
   if (isLoading) return null;
 
@@ -297,7 +308,7 @@ export const RuntimeView = observer(({
           label={t('wasm.buttons.refresh')}
           variant="secondary"
           size="small"
-          disabled={autoRefresh}
+          disabled={autoRefresh && channelNames.length > 0}
           onClick={handleRefresh}
         />
       </div>
@@ -307,8 +318,8 @@ export const RuntimeView = observer(({
       <div className="deviceSettingsEditor-topGroupContent">
         {cells.map((cell) => (
           <div key={cell.id} className="deviceSettingsEditor-parameter">
-            {unsupportedNames.has(cell.controlId) ? (
-              <div className="deviceCell deviceCell-error">
+            {unsupportedNames.has(cell.controlId) || cell.controlId in channelErrors ? (
+              <div className="deviceCell deviceCell-error" title={channelErrors[cell.controlId]}>
                 <div className="deviceCell-name">{cell.name}</div>
                 <span>-</span>
               </div>

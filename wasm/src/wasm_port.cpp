@@ -117,7 +117,7 @@ TReadFrameResult TWASMPort::ReadFrame(uint8_t* buffer,
     }
 
     if (!res.Count) {
-        throw std::runtime_error("request timed out");
+        throw TResponseTimeoutException();
     }
 
     LOG(Debug) << "read " << res.Count << " bytes: " << WBMQTT::HexDump(buffer, res.Count);
