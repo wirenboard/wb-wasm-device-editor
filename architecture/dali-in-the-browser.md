@@ -264,10 +264,13 @@ Pyodide 314 (CPython 3.14), loaded from two byte assets and two tarballs:
 stack is not pure Python — `rpds-py` is a Rust extension — so its wheels come
 from the installed Pyodide's own lock file, which is what keeps the ABI matched.
 
-Adaptation is four stub modules under `wasm/python/shims`: `aiomqtt` (re-exports
-the loopback broker's types), `websockets` and `wb_common` (import-time only),
-and a vendored copy of `paho.mqtt.matcher`, the one dependency-free file
-`MQTTDispatcher` actually uses.
+Adaptation is a handful of stub modules under `wasm/python/shims`: `aiomqtt`
+(re-exports the loopback broker's types), `websockets` and `wb_common`
+(import-time only), and `paho.mqtt.client` — a stub, because `mqttrpc.client`,
+where wb-mqtt-dali takes `MQTTRPCError` from, imports paho's network client at
+the top. The rest of `paho` is a vendored copy of `paho.mqtt.matcher`, the one
+dependency-free file `MQTTDispatcher` actually uses; the two halves form one
+package through `pkgutil.extend_path`.
 
 ### 5.3 Where the runtime runs
 
@@ -360,7 +363,7 @@ sequenceDiagram
 | `wasm/python/runtime/wbdali_browser/hardware.py` | Registers over the C++ module's `port/Load` |
 | `wasm/python/runtime/wbdali_browser/browser.py` | The API the JavaScript side calls |
 | `wasm/python/runtime/wbdali_browser/sim/` | The virtual module, bus and units |
-| `wasm/python/shims/` | `aiomqtt`, `websockets`, `wb_common` |
+| `wasm/python/shims/` | `aiomqtt`, `websockets`, `wb_common`, `paho.mqtt.client` (stub) |
 | `wasm/src/dali-wasm/dali-runtime.ts` | Boots Pyodide; host-agnostic |
 | `wasm/src/dali-wasm/dali-worker.ts` | Hosts it in a worker |
 | `wasm/src/dali-wasm/pyodide-backend.ts` | The page's side; picks worker or main thread |
