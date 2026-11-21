@@ -5,7 +5,6 @@ import { daliHostCapabilities } from '@/stores/dali/host-capabilities';
 import { App } from './app';
 import { configI18n } from './i18n/config';
 import 'glyphicons-only-bootstrap/css/bootstrap.min.css';
-import 'bootstrap/dist/css/bootstrap-grid.min.css';
 import '@/assets/styles/index.css';
 
 configure({

@@ -1,9 +1,7 @@
-import path from 'path';
 import { test, expect, type Page } from '@playwright/test';
-import { BASE_URL } from './helpers';
+import { BASE_URL, DIST_DIR } from './helpers';
 import { TestServer } from './test-server';
 
-const DIST_DIR = path.resolve(__dirname, '..', 'dist-configurator');
 
 /**
  * The whole DALI page against the simulated WB-DALI module (slave id 250,
@@ -53,11 +51,11 @@ test('boots the daemon, scans the simulated bus and shows live controls', async 
     .poll(async () => tree.count(), { timeout: 180_000, message: 'auto-scan populates the tree' })
     .toBeGreaterThan(5);
 
-  // The bus tab carries the broadcast strip.
+  // The bus tab carries the broadcast controls pinned above its settings.
   await tree.filter({ hasText: 'Bus 1' }).first().click();
-  const strip = page.locator('.daliDeviceControls-strip');
+  const strip = page.locator('.daliDeviceControls-pinnedControls');
   await expect(strip).toBeVisible({ timeout: 60_000 });
-  await expect(strip).toContainText('Wanted Level');
+  await expect(strip).toContainText('Brightness');
   await expect(strip.getByRole('button', { name: 'Off' })).toBeVisible();
 
   // The syslog toggle is a controller affordance and must not be offered here.
@@ -87,7 +85,7 @@ test('opens a commissioned luminaire and shows its settings form', async ({ page
     .toBeGreaterThan(5);
 
   await tree.filter({ hasText: 'Bus 1' }).first().click();
-  await expect(page.locator('.daliDeviceControls-strip')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.daliDeviceControls-pinnedControls')).toBeVisible({ timeout: 60_000 });
 
   // Any device row under bus 1 will do: the first one the scan produced.
   await tree.nth(2).click();
