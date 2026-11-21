@@ -114,3 +114,44 @@ async def test_the_config_service_lists_the_gateways_the_daemon_looks_for():
     assert service.device_ids == [GATEWAY_DEVICE_ID]
     devices = service.serial_config["ports"][0]["devices"]
     assert all(device["device_type"] == "WB-DALI" for device in devices)
+
+
+class _SlowTransport:
+    """Every register exchange takes long enough that bus startup outlasts the boot wait."""
+
+    def __init__(self, inner, delay_s: float) -> None:
+        self.inner = inner
+        self.delay_s = delay_s
+
+    async def read_input(self, device_id, address, count):
+        await asyncio.sleep(self.delay_s)
+        return await self.inner.read_input(device_id, address, count)
+
+    async def write_holding(self, device_id, address, values):
+        await asyncio.sleep(self.delay_s)
+        await self.inner.write_holding(device_id, address, values)
+
+
+async def test_a_boot_that_times_out_leaves_nothing_running(tmp_path, monkeypatch):
+    """Gateway.run() still starting its buses when the wait gives up refuses to
+    stop them; the teardown must still end it, or the inline offline build runs
+    an orphaned daemon beside the retry."""
+    from pathlib import Path
+
+    from wbdali_browser import runtime as runtime_module
+
+    network = SimulatedModbusNetwork()
+    network.add_module(GATEWAY_DEVICE_ID, {index: SimulatedDaliBus() for index in (1, 2, 3)})
+    monkeypatch.setattr(runtime_module, "GATEWAY_START_TIMEOUT_S", 0.05)
+    runtime = runtime_module.DaliRuntime(
+        transport=_SlowTransport(network, delay_s=0.3),
+        serial_config=serial_config_with(GATEWAY_DEVICE_ID),
+        vendor_dir=Path(__file__).parent.parent / "vendor",
+        root=tmp_path,
+    )
+    with pytest.raises(TimeoutError):
+        await runtime.start()
+
+    await asyncio.sleep(1.0)  # past any bus startup a leaked run() would finish
+    leftover = [task for task in asyncio.all_tasks() if task is not asyncio.current_task() and not task.done()]
+    assert leftover == [], [task.get_name() for task in leftover]

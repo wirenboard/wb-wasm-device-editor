@@ -156,10 +156,11 @@ class DaliRuntime:
 
     async def start(self) -> "DaliRuntime":
         # A failure partway through leaves live tasks behind — the dispatcher,
-        # the serial stub, and (because `Gateway.start` gathers bus startups
-        # with return_exceptions before re-raising) possibly a polling loop
-        # already driving the port. `stop()` tolerates a partial start, so a
-        # failed boot tears down whatever got up instead of orphaning it.
+        # the serial stub, and a `Gateway.run()` that may still be starting
+        # buses (and driving the port) when the wait for it gives up. `stop()`
+        # tears down whatever got up, whatever state it is in, instead of
+        # orphaning it — the inline offline build reuses the interpreter, so an
+        # orphan would run beside the retry.
         try:
             return await self._start()
         except BaseException:
@@ -277,15 +278,37 @@ class DaliRuntime:
     async def stop(self) -> None:
         if hasattr(self.transport, "stop"):
             self.transport.stop()
+        stopped = True
         if self.gateway is not None:
-            await self.gateway.stop()
-            self.gateway = None
+            try:
+                await self.gateway.stop()
+            except Exception:  # pylint: disable=broad-exception-caught
+                # A gateway still starting its buses refuses to stop them
+                # ("must be initialized to stop").
+                logger.warning("wb-mqtt-dali did not stop cleanly; ending its buses directly", exc_info=True)
+                stopped = False
         if self._gateway_task is not None:
+            if not self._gateway_task.done():
+                # Cancelled mid-startup, run() abandons bus drivers it has
+                # already started: their stop is below.
+                stopped = False
+                self._gateway_task.cancel()
             try:
                 await self._gateway_task
+            except asyncio.CancelledError:
+                pass
             except Exception:  # pylint: disable=broad-exception-caught
                 logger.exception("wb-mqtt-dali ended with an error")
             self._gateway_task = None
+        if not stopped and self.gateway is not None:
+            # run() is gone now, but the bus drivers it initialized keep their
+            # send queues — and their port access — running until told to stop.
+            for controller in self._controllers():
+                try:
+                    await controller.driver.deinitialize()
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.exception("Deinitializing the driver of %s failed", controller.uid)
+        self.gateway = None
         for task in (self._ui_task, self._dispatcher_task):
             if task is not None:
                 task.cancel()
