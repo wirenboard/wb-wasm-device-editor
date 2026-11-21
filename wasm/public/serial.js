@@ -21,7 +21,8 @@ class SerialPort {
           { usbVendorId: 0x1a86, usbProductId: 0x55d3 },
           { usbVendorId: 0x1a86, usbProductId: 0x55d4 },
           { usbVendorId: 0x1a86, usbProductId: 0x7522 },
-          { usbVendorId: 0x1a86, usbProductId: 0x7523 }
+          { usbVendorId: 0x1a86, usbProductId: 0x7523 },
+          { usbVendorId: 0x16d0, usbProductId: 0x15a6 }
       ];
 
     options = new Object();
