@@ -369,7 +369,7 @@ export function offlineEmbedPlugin(): Plugin {
       handler: (html) => html.replace(METRIKA_RE, ''),
     },
     async closeBundle() {
-      const outDir = path.resolve(__dirname, 'dist-offline');
+      const outDir = path.resolve(__dirname, process.env.OUT_DIR || 'dist-offline');
       const htmlPath = path.join(outDir, 'index.html');
       const publicDir = path.resolve(__dirname, 'public');
 

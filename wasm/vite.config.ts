@@ -11,12 +11,15 @@ import { offlineEmbedPlugin } from './vite-plugin-offline-embed';
 const homeuiNodeModules = path.resolve(__dirname, '../submodule/homeui/frontend/node_modules');
 const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
 
+// OUT_DIR builds next to a deployed tree instead of over it (it is emptied on build).
+const configuratorOutDir = path.resolve(__dirname, process.env.OUT_DIR || 'dist-configurator');
+
 function swCachePlugin(): Plugin {
   return {
     name: 'sw-cache-inject',
     apply: 'build',
     closeBundle() {
-      const outDir = path.resolve(__dirname, 'dist-configurator');
+      const outDir = configuratorOutDir;
       const swPath = path.join(outDir, 'sw.js');
       if (!fs.existsSync(swPath)) return;
 
@@ -236,7 +239,7 @@ export default defineConfig(() => {
       __APP_OFFLINE_BUILD__: JSON.stringify(offline),
     },
     build: {
-      outDir: path.resolve(__dirname, offline ? 'dist-offline' : 'dist-configurator'),
+      outDir: offline ? path.resolve(__dirname, process.env.OUT_DIR || 'dist-offline') : configuratorOutDir,
       emptyOutDir: true,
       // The offline page is one file; an asset left out of it (the glyphicons
       // font was) renders as missing icons on an air-gapped machine. Inline

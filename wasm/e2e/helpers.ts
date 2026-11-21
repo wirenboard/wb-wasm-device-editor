@@ -1,5 +1,11 @@
 import fs from 'fs';
+import path from 'path';
 import type { BrowserContext, Page } from '@playwright/test';
+
+// The builds under test. Overridable so a local run can point at a build kept
+// apart from the deployed tree (sw-update.spec rewrites the sw.js it serves).
+export const DIST_DIR = path.resolve(__dirname, '..', process.env.E2E_DIST_DIR || 'dist-configurator');
+export const OFFLINE_DIR = path.resolve(__dirname, '..', process.env.E2E_OFFLINE_DIR || 'dist-offline');
 
 export const PORT = 3210;
 export const BASE_URL = `http://localhost:${PORT}`;

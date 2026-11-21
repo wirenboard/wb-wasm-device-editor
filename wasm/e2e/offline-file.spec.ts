@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { test, expect, type Page } from '@playwright/test';
+import { OFFLINE_DIR } from './helpers';
 
 /**
  * The offline build is one self-contained dist-offline/index.html meant to be
@@ -9,7 +10,7 @@ import { test, expect, type Page } from '@playwright/test';
  * fetch fails loudly instead of quietly depending on the network.
  */
 
-const OFFLINE_INDEX = path.resolve(__dirname, '..', 'dist-offline', 'index.html');
+const OFFLINE_INDEX = path.join(OFFLINE_DIR, 'index.html');
 const OFFLINE_URL = `file://${OFFLINE_INDEX}`;
 
 test.skip(!fs.existsSync(OFFLINE_INDEX), 'dist-offline/index.html is not built (npm run build:offline)');

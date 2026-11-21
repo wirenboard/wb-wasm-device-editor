@@ -1,9 +1,7 @@
-import path from 'path';
 import { test, expect, type Page } from '@playwright/test';
-import { BASE_URL } from './helpers';
+import { BASE_URL, DIST_DIR } from './helpers';
 import { TestServer } from './test-server';
 
-const DIST_DIR = path.resolve(__dirname, '..', 'dist-configurator');
 
 let server: TestServer;
 
