@@ -1,9 +1,7 @@
-import path from 'path';
 import { test, expect } from '@playwright/test';
-import { loadAppWithSW } from './helpers';
+import { loadAppWithSW, DIST_DIR } from './helpers';
 import { TestServer } from './test-server';
 
-const DIST_DIR = path.resolve(__dirname, '..', 'dist-configurator');
 
 let server: TestServer;
 

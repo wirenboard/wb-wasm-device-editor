@@ -1,9 +1,8 @@
 import path from 'path';
 import { test, expect } from '@playwright/test';
-import { BASE_URL, waitForSWActivated, mutateSWVersion } from './helpers';
+import { BASE_URL, waitForSWActivated, mutateSWVersion, DIST_DIR } from './helpers';
 import { TestServer } from './test-server';
 
-const DIST_DIR = path.resolve(__dirname, '..', 'dist-configurator');
 const SW_PATH = path.join(DIST_DIR, 'sw.js');
 
 let server: TestServer;

@@ -31,3 +31,16 @@
 .runtimeView .deviceSettingsEditor-parameter {
     max-width: calc(50% - 20px);
 }
+
+.runtimeView-status {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  background: var(--background-accent-color, #f5f5f5);
+  color: var(--text-secondary-color, #6c757d);
+}
+
+.runtimeView-statusActive {
+  background: color-mix(in srgb, var(--primary-color, #5cb300) 15%, transparent);
+  color: var(--primary-color, #5cb300);
+}

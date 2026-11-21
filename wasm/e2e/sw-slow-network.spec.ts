@@ -1,9 +1,7 @@
-import path from 'path';
 import { test, expect, type Page } from '@playwright/test';
-import { loadAppWithSW } from './helpers';
+import { loadAppWithSW, DIST_DIR } from './helpers';
 import { TestServer } from './test-server';
 
-const DIST_DIR = path.resolve(__dirname, '..', 'dist-configurator');
 const SERVER_DELAY = 5000;
 
 let server: TestServer;

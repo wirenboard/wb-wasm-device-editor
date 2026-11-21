@@ -172,17 +172,23 @@ window.Module =
       // data file download, e.g. "Downloading data... (3145728/6291456)".
       // This format is hardcoded in the Emscripten-generated loader (emscripten.py
       // DataRequest), so we have to parse the string to extract loaded/total bytes.
+      //
+      // Never touch `this` here: recent Emscripten detaches the handler before
+      // calling it (`var setStatus=Module["setStatus"];setStatus("Running...")`),
+      // so `this` is `window` — and `this.print` is then window.print, which
+      // opens the browser's PRINT DIALOG on page load.
       setStatus(text) {
-          this.print(text);
+          const M = window.Module;
+          M.print(text);
           const match = text.match(/\((\d+)\/(\d+)\)/);
           if (match) {
               const loaded = parseInt(match[1], 10);
               const total = parseInt(match[2], 10);
-              this.loadingProgress = { loaded, total, percent: total ? Math.round(loaded / total * 100) : 0 };
-              this._notifyLoading();
+              M.loadingProgress = { loaded, total, percent: total ? Math.round(loaded / total * 100) : 0 };
+              M._notifyLoading();
           } else if (text.includes('Downloading')) {
-              this.loadingProgress = { loaded: 0, total: 0, percent: 0 };
-              this._notifyLoading();
+              M.loadingProgress = { loaded: 0, total: 0, percent: 0 };
+              M._notifyLoading();
           }
       },
 

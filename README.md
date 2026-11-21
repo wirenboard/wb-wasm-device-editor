@@ -41,7 +41,7 @@ docker build --no-cache --tag wb-wasm-device-editor:latest wasm
 docker run --rm -v $(PWD):/src -w /src/wasm node:latest npm run build:offline
 ```
 
-Результат: `wasm/dist-offline/index.html` (~14 МБ). Открывается двойным кликом в Chrome/Edge 80+ — WebSerial API работает на `file://` только в Chromium-браузерах.
+Результат: `wasm/dist-offline/index.html` (~25 МБ). Открывается двойным кликом в Chrome/Edge 80+ — WebSerial API работает на `file://` только в Chromium-браузерах. Внутри одного файла: приложение, WASM-модуль конфигуратора, шаблоны устройств, каталог прошивок (~8 МБ) и среда выполнения DALI-конфигуратора — интерпретатор Python (Pyodide) с бандлом wb-mqtt-dali.
 
 При наличии сети обновление прошивок идёт с `fw-releases.wirenboard.com`, иначе используется встроенная копия. Так же приложение проверяет `https://deveditor.wirenboard.com/sw.js` и показывает баннер, если онлайн-версия новее.
 
@@ -62,4 +62,21 @@ cd wasm
 npm run test:e2e
 ```
 
-Тесты проверяют работу Service Worker: офлайн-режим, обнаружение обновлений и поведение при медленном соединении.
+Тесты проверяют работу Service Worker (офлайн-режим, обнаружение обновлений, медленное соединение) и DALI-конфигуратор целиком: страница загружается против симулируемого шлюза (slave id 250) — Pyodide, демон wb-mqtt-dali и интерфейс без железа и без сети.
+
+#### Тесты DALI-рантайма (Python)
+
+Python-код, работающий внутри Pyodide, тестируется под обычным CPython против симулятора модуля WB-DALI:
+
+```
+cd wasm/python
+pip install -r requirements-dev.txt
+python3 -m pytest
+```
+
+#### Юнит-тесты TypeScript
+
+```
+cd wasm
+npm test
+```

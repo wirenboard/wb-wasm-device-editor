@@ -1,0 +1,22 @@
+/* Shown by app.tsx while the DALI chunk itself downloads — before any of the
+   components in this bundle exist to render a nicer one. */
+.daliChunkLoader {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.daliChunkLoader::after {
+  content: '';
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border-color, #d7dcdf);
+  border-top-color: var(--primary-color, #5cb300);
+  border-radius: 50%;
+  animation: daliChunkSpin 0.9s linear infinite;
+}
+
+@keyframes daliChunkSpin {
+  to { transform: rotate(360deg); }
+}

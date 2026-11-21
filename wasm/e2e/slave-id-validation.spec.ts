@@ -1,9 +1,7 @@
-import path from 'path';
 import { test, expect, type Page } from '@playwright/test';
-import { BASE_URL } from './helpers';
+import { BASE_URL, DIST_DIR } from './helpers';
 import { TestServer } from './test-server';
 
-const DIST_DIR = path.resolve(__dirname, '..', 'dist-configurator');
 
 let server: TestServer;
 
@@ -42,7 +40,11 @@ async function addDevice(page: Page, slaveId: number) {
   await expect(page.locator('.confirm-content')).toBeVisible();
 
   // Select first available device type (react-select with isSearchable)
-  await page.locator('.dropdown__control:has(#device-type)').click();
+  // The device-type select arrives preselected, and react-select's
+  // single-value overlay sits over the input, so a hit-tested click on
+  // #device-type never lands. Open the menu from the keyboard instead.
+  await page.locator('#device-type').focus();
+  await page.keyboard.press('ArrowDown');
   await page.locator('.dropdown__option').first().click();
 
   // Set slave_id in the modal's number input

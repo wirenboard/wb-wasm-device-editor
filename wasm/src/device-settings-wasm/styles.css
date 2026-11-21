@@ -29,13 +29,15 @@
 
 .deviceSettingsWasm-scanning {
     width: 100%;
-    text-align: center;
     margin-bottom: 6px;
 }
 
+/* An option, not a status: reads with the other scan text rather than
+   floating centered mid-page while the scan runs. */
 .deviceSettingsWasm-scanActions {
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
+    margin-top: 8px;
 }
 
 .deviceSettingsWasm-scanActions .wb-checkbox {
@@ -300,4 +302,24 @@
     .runtimeView .deviceSettingsEditor-topGroupContent {
         column-gap: 15px;
     }
+}
+
+/* The workspace stays visible while a scan runs, but must read as inert:
+   clicking a device would race the scan for the one serial port. */
+.deviceSettingsWasm-container--scanning {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* The bottom-right links chip is position: fixed; without this the last rows
+   of a scrolled page sit permanently underneath it. */
+.deviceSettingsWasm-content {
+    padding-bottom: 56px;
+}
+
+/* "Runtime View" was ellipsising to "Runtime Vi…" at narrow widths: give the
+   settings tab list room to wrap instead of truncating its labels. */
+.deviceSettingsEditor-tabs .tabs-button {
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
