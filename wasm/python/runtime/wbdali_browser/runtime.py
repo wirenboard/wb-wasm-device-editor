@@ -7,16 +7,17 @@ in-process broker and the stand-in for wb-mqtt-serial (`wb.mqtt_dali.sim`),
 its register link for a host that owns the Modbus side
 (`wb.mqtt_dali.gateway_link`) — wired through the
 seams `Gateway` and `ApplicationController` offer a host: a driver factory,
-group seeding, a relocatable data directory, and awaitables instead of polling.
+the common device schema handed in, group seeding, and awaitables instead of polling.
 
-Boot order is not negotiable (see `Gateway.start()`):
+Boot order is not negotiable (see `Gateway.run()`):
 
 1. `MQTTDispatcher.run()` must already be dispatching, or every subscribe below
    it silently never delivers;
 2. the emulated wb-mqtt-serial must already have published its retained endpoint
-   marker, because `Gateway.start()` waits up to five seconds for
-   `/rpc/v1/wb-mqtt-serial/config/Load` to exist and gives up otherwise;
-3. only then `Gateway.start()`.
+   marker, because `Gateway.run()` waits for `/rpc/v1/wb-mqtt-serial/config/Load`
+   to exist before it starts the buses;
+3. only then `Gateway.run()`, as a task: it serves until `Gateway.stop()`. The
+   daemon is up once the last endpoint it registers (`Bus/ListCommands`) is there.
 
 The web UI attaches to the same broker as an ordinary MQTT client and speaks
 MQTT-RPC, exactly as homeui does against a real controller — so the DALI page
@@ -32,12 +33,12 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from wb.mqtt_dali.common_dali_device import DATA_DIR_ENV
 from wb.mqtt_dali.gateway_link import RegisterLink, RegisterTransport
-from wb.mqtt_dali.mqtt_dispatcher import get_str_payload
+from wb.mqtt_dali.mqtt_dispatcher import MQTTDispatcher, get_str_payload
+from wb.mqtt_dali.mqtt_rpc_client import wait_for_rpc_endpoint
 from wb.mqtt_dali.sim.broker import Broker, Client, Message, topic_matches
 from wb.mqtt_dali.sim.serial_service import FakeWbMqttSerial
-from wb.mqtt_dali.wbdali import WBDALIDriver
+from wb.mqtt_dali.wbdali import WBDALIConfig, WBDALIDriver
 
 logger = logging.getLogger("wbdali_browser.runtime")
 
@@ -51,6 +52,10 @@ CONFED_SCHEMA_PATH = "usr/share/wb-mqtt-confed/schemas/wb-mqtt-dali.schema.json"
 # Shipping it is optional: without it the daemon cannot name a manufacturer and
 # the editor shows the raw GTIN.
 GTIN_DB_PATH = DATA_DIR + "/products.csv"
+COMMON_DEVICE_SCHEMA_PATH = DATA_DIR + "/schemas/common_device.schema.json"
+
+# How long boot waits for Gateway.run() to register its RPC endpoints.
+GATEWAY_START_TIMEOUT_S = 30.0
 
 # How long boot waits for the configured devices' first initialization attempts
 # before showing the page with whatever has come up.
@@ -141,6 +146,7 @@ class DaliRuntime:
         self.dispatcher = None
         self._client: Optional[Client] = None
         self._dispatcher_task: Optional[asyncio.Task] = None
+        self._gateway_task: Optional[asyncio.Task] = None
         self._ui_client: Optional[Client] = None
         self._ui_task: Optional[asyncio.Task] = None
         self._subscriptions: Dict[str, List[Callable[[str, str, bool], None]]] = {}
@@ -170,10 +176,11 @@ class DaliRuntime:
 
         if self.vendor_dir is not None:
             install_data_files(self.vendor_dir, self.root)
-        # The daemon reads its schemas from here; under a shifted root that is
-        # where install_data_files put them, in the browser it is the tarball.
-        os.environ[DATA_DIR_ENV] = str(self.root / DATA_DIR)
         write_config(self.root, self.config)
+        # Under a shifted root install_data_files put the schema here, in the
+        # browser it is the data tarball; main.py reads it the same way.
+        with open(self.root / COMMON_DEVICE_SCHEMA_PATH, "r", encoding="utf-8") as schema_file:
+            common_schema = json.load(schema_file)
 
         self._client = Client(self.broker, "wb-mqtt-dali")
         await self._client.__aenter__()
@@ -188,9 +195,11 @@ class DaliRuntime:
             self.dispatcher,
             str(self.root / CONFIG_PATH),
             DaliDatabase(str(self.root / GTIN_DB_PATH)),
+            common_schema,
             driver_factory=self._make_driver,
         )
-        await self.gateway.start()
+        self._gateway_task = asyncio.create_task(self.gateway.run(), name="wb-mqtt-dali-gateway")
+        await self._wait_gateway_started()
         self._seed_groups(self.groups_seed or {})
         # Not waiting for device initialization: that is tens of seconds of
         # bus reads, and the page already lives with stragglers (ADR 27).
@@ -200,13 +209,29 @@ class DaliRuntime:
         logger.info("wb-mqtt-dali is running")
         return self
 
-    def _make_driver(self, config, mqtt_dispatcher, driver_logger, dev_inst_map) -> WBDALIDriver:
-        """The daemon's driver over this host's Modbus access.
+    async def _wait_gateway_started(self) -> None:
+        """Until Gateway.run() has registered its last endpoint; its failure is raised here."""
+        started = asyncio.ensure_future(
+            wait_for_rpc_endpoint("wb-mqtt-dali", "Bus", "ListCommands", self.dispatcher, GATEWAY_START_TIMEOUT_S)
+        )
+        done, _ = await asyncio.wait({started, self._gateway_task}, return_when=asyncio.FIRST_COMPLETED)
+        if self._gateway_task in done:
+            started.cancel()
+            self._gateway_task.result()  # raises what stopped it
+            raise RuntimeError("wb-mqtt-dali stopped while starting")
+        started.result()
+
+    def _make_driver(
+        self, gateway_mqtt_device_id: str, bus_index: int, mqtt_dispatcher: MQTTDispatcher
+    ) -> WBDALIDriver:
+        """The daemon's driver over this host's Modbus access (see make_bus_driver for the controller's).
 
         No memory memo: every read goes to the bus (SOFT-7409).
         """
+        config = WBDALIConfig(device_name=gateway_mqtt_device_id, bus=bus_index)
+        driver_logger = logging.getLogger(f"{gateway_mqtt_device_id}_bus_{bus_index}")
         link = RegisterLink(config, self.transport, driver_logger)
-        return WBDALIDriver(config, mqtt_dispatcher, driver_logger, dev_inst_map, link=link)
+        return WBDALIDriver(config, mqtt_dispatcher, driver_logger, link=link)
 
     def _controllers(self):
         return [controller for wb_dali_gateway in self.gateway.wb_dali_gateways for controller in wb_dali_gateway.buses]
@@ -255,6 +280,12 @@ class DaliRuntime:
         if self.gateway is not None:
             await self.gateway.stop()
             self.gateway = None
+        if self._gateway_task is not None:
+            try:
+                await self._gateway_task
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.exception("wb-mqtt-dali ended with an error")
+            self._gateway_task = None
         for task in (self._ui_task, self._dispatcher_task):
             if task is not None:
                 task.cancel()

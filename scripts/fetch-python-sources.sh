@@ -110,8 +110,11 @@ cp -r $FETCH_DIR/json-rpc/jsonrpc $DST/
 # is a standalone dependency-free module. The rest of paho is a network client
 # we have no use for in a browser.
 mkdir -p $DST/paho/mqtt
-: > $DST/paho/__init__.py
-: > $DST/paho/mqtt/__init__.py
+# The package spans this directory and wasm/python/shims/paho, which adds a
+# stub of the network client that mqttrpc.client imports.
+for INIT in $DST/paho/__init__.py $DST/paho/mqtt/__init__.py; do
+    echo '__path__ = __import__("pkgutil").extend_path(__path__, __name__)' > $INIT
+done
 cp $FETCH_DIR/paho-mqtt/src/paho/mqtt/matcher.py $DST/paho/mqtt/
 
 # Strip bytecode and caches so the bundle stays small and reproducible

@@ -92,9 +92,9 @@ async def test_colour_driver_reports_its_colour_parameters(runtime):
     assert config["short_address"] == 2
     # A DT8 unit that reports colour temperature gets the Tc controls, and the
     # limits the simulated gear declares.
-    # The unit powers up at its warmest colour temperature, as real gear does;
-    # a mired value of 0 is not a colour, and the editor divides into it.
-    assert config["current_colour_32"] == {"tc": 370, "level": 0}
+    # No current colour among the settings: the daemon shows and sets it with the
+    # device controls (wb-mqtt-dali 1.33.2).
+    assert "current_colour_32" not in config
     assert config["tc_limits"] == {
         "tc_coolest": 153,
         "tc_warmest": 370,

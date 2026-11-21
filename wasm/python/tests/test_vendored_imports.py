@@ -75,6 +75,9 @@ def test_no_networking_module_is_pulled_in():
         f"[__import__(n) for n in {DAEMON_MODULES + DALI_MODULES!r}];"
         "forbidden = {'serial', 'usb', 'hid', 'pymodbus', 'serial_asyncio',"
         " 'paho.mqtt.client', 'aiomqtt.client', 'requests'};"
+        # paho's client is the shim's stub (mqttrpc.client imports it), not the network client.
+        "stub = getattr(sys.modules.get('paho.mqtt.client'), '__file__', '') or '';"
+        f"forbidden -= {{'paho.mqtt.client'}} if stub.startswith({SHIMS!r}) else set();"
         "print(sorted(forbidden & set(sys.modules)))"
     )
     result = subprocess.run(

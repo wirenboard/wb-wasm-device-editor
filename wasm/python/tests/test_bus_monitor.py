@@ -17,7 +17,7 @@ from wb.mqtt_dali.gateway_link import (
 )
 from wb.mqtt_dali.sim.control_gear import SimulatedControlDevice
 
-from .conftest import GATEWAY_DEVICE_ID, SimulatedStack
+from .conftest import GATEWAY_DEVICE_ID, SimulatedStack, send_as_user
 
 
 async def collect_bus_frames(driver, seconds: float):
@@ -104,7 +104,7 @@ async def test_the_gateways_own_frames_do_not_appear_twice(dali_logger):
     await driver.initialize()
     driver.set_bus_monitor_enabled(True)
     try:
-        await driver.send(Off(GearBroadcast()))
+        await send_as_user(driver, Off(GearBroadcast()))
 
         assert await collect_bus_frames(driver, MONITOR_POLL_INTERVAL_S * 3) == []
     finally:

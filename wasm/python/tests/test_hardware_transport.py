@@ -21,7 +21,7 @@ from wb.mqtt_dali.sim.control_gear import SimulatedControlGear
 from wb.mqtt_dali.sim.dali_bus import SimulatedDaliBus
 from wb.mqtt_dali.sim.gateway import VirtualWbDaliGateway
 
-from .conftest import GATEWAY_DEVICE_ID
+from .conftest import GATEWAY_DEVICE_ID, send_as_user
 
 SLAVE_ID = 1
 
@@ -126,8 +126,8 @@ async def test_the_driver_runs_over_this_transport_unchanged(dali_logger):
     driver = WBDALIDriver(config, None, dali_logger, link=RegisterLink(config, transport, dali_logger))
     await driver.initialize()
     try:
-        await driver.send(DAPC(GearShort(0), 128))
-        response = await driver.send(QueryActualLevel(GearShort(0)))
+        await send_as_user(driver, DAPC(GearShort(0), 128))
+        response = await send_as_user(driver, QueryActualLevel(GearShort(0)))
         assert response.value == 128
     finally:
         await driver.deinitialize()

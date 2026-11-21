@@ -75,3 +75,11 @@ async def stack():
         yield instance
     finally:
         await instance.stop()
+
+
+async def send_as_user(driver, command):
+    """What the daemon's user-initiated sends pass: the source, priority and logger main's driver takes."""
+    from wb.mqtt_dali.bus_traffic import BusTrafficSource
+    from wb.mqtt_dali.wbdali import FramePriority
+
+    return await driver.send(command, BusTrafficSource.WB, FramePriority.USER_ACTION, driver.logger)

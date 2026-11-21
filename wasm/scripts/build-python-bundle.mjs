@@ -122,9 +122,9 @@ async function main() {
 
   // `wb` is a PEP 420 namespace package, so there is no wb/__init__.py to copy.
   copyTree(path.join(VENDOR, 'wb'), path.join(site, 'wb'), skipJunk);
-  copyTree(path.join(VENDOR, 'mqttrpc'), path.join(site, 'mqttrpc'), (p, name) =>
-    // client.py is the only file that pulls in paho's network client and threads.
-    skipJunk(p, name) || name === 'client.py');
+  // mqttrpc/client.py comes along: wb-mqtt-dali takes MQTTRPCError from it. The
+  // paho network client it imports is a stub from shims/paho.
+  copyTree(path.join(VENDOR, 'mqttrpc'), path.join(site, 'mqttrpc'), skipJunk);
   copyTree(path.join(VENDOR, 'jsonrpc'), path.join(site, 'jsonrpc'), (p, name) =>
     skipJunk(p, name) || name === 'tests' || name === 'backend');
   copyTree(path.join(VENDOR, 'paho'), path.join(site, 'paho'), skipJunk);
