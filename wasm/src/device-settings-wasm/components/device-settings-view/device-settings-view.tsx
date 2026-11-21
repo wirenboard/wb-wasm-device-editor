@@ -76,7 +76,8 @@ export const DeviceSettingsView = observer(({
               'deviceSettingsEditor-tabWithWarning': group.hasBadValuesFromRegisters && !group.hasErrors,
             })}
           >
-            {translator?.find(group.properties.title, i18n.language) ?? group.properties.title}
+            {translator?.find(group.properties.title || group.properties.id, i18n.language)
+              ?? group.properties.title ?? group.properties.id}
           </span>
         ),
       }));
@@ -95,7 +96,34 @@ export const DeviceSettingsView = observer(({
     items: allTabs,
   });
 
-  if (!tabstore || !schemaStore || !translator) return null;
+  if (!tabstore) return null;
+
+  if (!schemaStore || !translator) {
+    if (tabstore.isUnknownType) {
+      return (
+        <Alert className="deviceSettingsWasm-alert" variant="danger">
+          {t('device-manager.errors.unknown-device-type', {
+            type: tabstore.deviceType || t('device-manager.labels.unknown-device-type')
+          })}
+        </Alert>
+      );
+    }
+    if (tabstore.withSubdevices) {
+      return (
+        <Alert className="deviceSettingsWasm-alert" variant="warn">
+          {t('device-manager.errors.with-subdevices')}
+        </Alert>
+      );
+    }
+    if (tabstore.error) {
+      return (
+        <Alert className="deviceSettingsWasm-alert" variant="danger">
+          {tabstore.error}
+        </Alert>
+      );
+    }
+    return null;
+  }
 
   return (
     <>

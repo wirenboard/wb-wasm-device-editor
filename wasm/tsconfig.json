@@ -2,17 +2,28 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "sourceMap": true,
-    "declaration": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "noEmit": true,
     "baseUrl": "./",
     "paths": {
-      "~/*": ["./submodule/homeui/frontend/app/scripts/*"],
-      "~scripts/*": ["./submodule/homeui/frontend/app/scripts/*"],
-      "~styles/*": ["./submodule/homeui/frontend/app/styles/*"]
+      "@/*": ["../submodule/homeui/frontend/src/*"],
+      "react": ["../submodule/homeui/frontend/node_modules/react"],
+      "react-dom": ["../submodule/homeui/frontend/node_modules/react-dom"],
+      "react-dom/client": ["../submodule/homeui/frontend/node_modules/react-dom/client"],
+      "react/jsx-runtime": ["../submodule/homeui/frontend/node_modules/react/jsx-runtime"],
+      "react-i18next": ["../submodule/homeui/frontend/node_modules/react-i18next"],
+      "i18next": ["../submodule/homeui/frontend/node_modules/i18next"],
+      "classnames": ["../submodule/homeui/frontend/node_modules/classnames"],
+      "mobx": ["../submodule/homeui/frontend/node_modules/mobx"],
+      "mobx-react-lite": ["../submodule/homeui/frontend/node_modules/mobx-react-lite"],
+      "glyphicons-only-bootstrap/*": ["../submodule/homeui/frontend/node_modules/glyphicons-only-bootstrap/*"],
+      "bootstrap/*": ["../submodule/homeui/frontend/node_modules/bootstrap/*"]
     },
-    "typeRoots": ["./node_modules/@types", "./src/types"]
+    "typeRoots": [
+      "../submodule/homeui/frontend/node_modules/@types",
+      "./node_modules/@types",
+      "./src/types"
+    ]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "custom.d.ts"],
-  "exclude": ["node_modules", "dist", "submodule"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
 }

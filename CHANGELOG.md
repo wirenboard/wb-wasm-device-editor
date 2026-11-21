@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.12.6](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.5...wb-wasm-device-editor-v1.12.6) (2026-11-16)
+
+
+### Bug Fixes
+
+* **SOFT-7846:** show channel read errors in Runtime View ([#110](https://github.com/wirenboard/wb-wasm-device-editor/issues/110)) ([3ca1fb4](https://github.com/wirenboard/wb-wasm-device-editor/commit/3ca1fb43987fbc8b90b077a8db1013367beda216))
+
+## [1.12.5](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.4...wb-wasm-device-editor-v1.12.5) (2026-09-29)
+
+
+### Bug Fixes
+
+* **SOFT-7505:** render stable unixtime controls as local_time, unstick the update banner ([#107](https://github.com/wirenboard/wb-wasm-device-editor/issues/107)) ([066b0e3](https://github.com/wirenboard/wb-wasm-device-editor/commit/066b0e356933d5532979703d91bdebc9ada3b4b7))
+
+## [1.12.4](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.3...wb-wasm-device-editor-v1.12.4) (2026-09-10)
+
+
+### Bug Fixes
+
+* **SOFT-7485:** restore firmware updates, monitoring and MWAC v2 in stable ([#105](https://github.com/wirenboard/wb-wasm-device-editor/issues/105)) ([d8b982b](https://github.com/wirenboard/wb-wasm-device-editor/commit/d8b982b12856296d98c307cec4ce9e554436fb71))
+
+## [1.12.3](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.2...wb-wasm-device-editor-v1.12.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* don't touch schemaStore when loadContent didn't create it ([#103](https://github.com/wirenboard/wb-wasm-device-editor/issues/103)) ([d74e32f](https://github.com/wirenboard/wb-wasm-device-editor/commit/d74e32f90e043398039910b863f1e45b5e809726))
+
+## [1.12.2](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.1...wb-wasm-device-editor-v1.12.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* never answer a navigation with undefined in the service worker ([#99](https://github.com/wirenboard/wb-wasm-device-editor/issues/99)) ([db25206](https://github.com/wirenboard/wb-wasm-device-editor/commit/db25206eeb98080df1ac4c7254104e3b63693319))
+
 ## [1.12.1](https://github.com/wirenboard/wb-wasm-device-editor/compare/wb-wasm-device-editor-v1.12.0...wb-wasm-device-editor-v1.12.1) (2026-09-03)
 
 

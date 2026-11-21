@@ -113,8 +113,13 @@ namespace
         {
             if (Prepare) {
                 RegisterProtocols(DeviceFactory);
-                TemplateMap =
-                    std::make_shared<TTemplateMap>(LoadConfigTemplatesSchema(TEMPLATES_SCHEMA_FILE, CommonSchema));
+                auto templatesSchema = LoadConfigTemplatesSchema(TEMPLATES_SCHEMA_FILE, CommonSchema);
+
+                // wb-mqtt-serial 2.267.0 renamed the control type to local_time,
+                // stable templates come from a branch that predates the rename
+                templatesSchema["definitions"]["control_type"]["enum"].append("unixtime");
+
+                TemplateMap = std::make_shared<TTemplateMap>(templatesSchema);
                 DevicesSchemasMap =
                     std::make_shared<TDevicesConfedSchemasMap>(*TemplateMap, DeviceFactory, CommonSchema);
                 ProtocolSchemasMap = //
@@ -171,10 +176,31 @@ namespace
                 list.push_back(Device);
             }
 
-            TSerialClientRegisterAndEventsReader client(list, 50ms, []() { return steady_clock::now(); });
-            return TSerialClientDeviceAccessHandler(client.GetEventsReader());
+            Client = std::make_unique<TSerialClientRegisterAndEventsReader>(list, 50ms, []() {
+                return steady_clock::now();
+            });
+
+            return TSerialClientDeviceAccessHandler(Client->GetEventsReader());
         }
+
+    private:
+        std::unique_ptr<TSerialClientRegisterAndEventsReader> Client;
     };
+
+    EFwSoftwareType SoftwareType(const Json::Value& request)
+    {
+        auto type = request.get("type", "firmware").asString();
+        if (type == "firmware") {
+            return EFwSoftwareType::Firmware;
+        }
+        if (type == "bootloader") {
+            return EFwSoftwareType::Bootloader;
+        }
+        if (type == "component") {
+            return EFwSoftwareType::Component;
+        }
+        throw std::runtime_error("Unknown software type: " + type);
+    }
 
     void DummyResult(const Json::Value&)
     {}
@@ -232,7 +258,7 @@ void PortLoad(const std::string& requestString)
 {
     try {
         THelper helper(requestString, PORT_LOAD_SCHEMA_FILE, "port/Load");
-        TRPCDeviceParametersCache parametersCache;
+        auto parametersCache = std::make_shared<TDeviceParametersCache>();
         auto rpcRequest = ParseRPCPortLoadModbusRequest(helper.Request, parametersCache);
         rpcRequest->OnResult = OnResult;
         rpcRequest->OnError = OnError;
@@ -275,7 +301,7 @@ void DeviceLoadConfig(const std::string& requestString)
 {
     try {
         THelper helper(requestString, DEVICE_LOAD_CONFIG_SCHEMA_FILE, "device/LoadConfig", true);
-        TRPCDeviceParametersCache parametersCache;
+        auto parametersCache = std::make_shared<TDeviceParametersCache>();
         auto rpcRequest = ParseRPCDeviceLoadConfigRequest(helper.Request,
                                                           helper.Params,
                                                           helper.Device,
@@ -335,10 +361,11 @@ void FwGetInfo(const std::string& requestString)
 {
     try {
         THelper helper(requestString, std::string(), "fw-update/GetFirmwareInfo");
+        FwDownloader->PrefetchReleaseIndexes();
         TFwGetFirmwareInfoTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
                                     "modbus",
                                     ReleaseSuite,
-                                    ParseRPCSerialPortSettings(helper.Request),
+                                    TSerialPortSettings("wasm", ParseRPCSerialPortSettings(helper.Request)),
                                     FwDownloader,
                                     OnResult,
                                     OnError);
@@ -356,10 +383,9 @@ void FwUpdate(const std::string& requestString)
         THelper helper(requestString, std::string(), "fw-update/Update");
         TFwUpdateSerialClientTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
                                        "modbus",
-                                       helper.Request.get("type", "firmware").asString(),
-                                       "wasm",
+                                       SoftwareType(helper.Request),
                                        ReleaseSuite,
-                                       ParseRPCSerialPortSettings(helper.Request),
+                                       TSerialPortSettings("wasm", ParseRPCSerialPortSettings(helper.Request)),
                                        FwDownloader,
                                        FwState,
                                        FwUpdateLock,
@@ -380,9 +406,8 @@ void FwRestore(const std::string& requestString)
         THelper helper(requestString, std::string(), "fw-update/Restore");
         TFwRestoreTask task(static_cast<uint8_t>(helper.Request["slave_id"].asInt()),
                             "modbus",
-                            "wasm",
                             ReleaseSuite,
-                            ParseRPCSerialPortSettings(helper.Request),
+                            TSerialPortSettings("wasm", ParseRPCSerialPortSettings(helper.Request)),
                             FwDownloader,
                             FwState,
                             FwUpdateLock,
